@@ -40,6 +40,22 @@
 - 另一个 Agent 只追加 review 段落；用户负责最终 `Decision`，或明确授权某个 Agent 代写决策结论。
 - status 流转建议为：`proposed -> discussing -> accepted/rejected/superseded`。
 
+## Task 规则
+
+执行类指令（"具体改哪个文件、怎么 commit、按什么顺序"）应通过 `wiki-design/tasks/` 传递，机制定义见 [RFC-005](wiki-design/rfcs/RFC-005-task-channel.md)。
+
+- Task 文件放在 `wiki-design/tasks/`，命名 `TASK-NNN-<slug>.md`。
+- Task 必须包含 frontmatter：`id`、`title`、`author`、`executor`、`status`、`type`、`created`、`updated`、`related_rfcs`。
+- 正文骨架：`目标 / 前置条件 / 强约束 / 步骤 / 验证 / 完成后报告格式`，一旦定稿不重写。
+- executor 完成后追加 `## Execution log by <executor> · <date>`，并推进 `status`。
+- evaluator 评估后追加 `## Evaluation by <evaluator> · <date>`，不改动 Execution log。
+- 状态机：`pending -> in-progress -> done/failed`；`pending -> cancelled`。不允许 done/failed 之后再翻转，失败修补另开新 task。
+- 一份 task 可关联 0 或多个 RFC（`related_rfcs`）；Task 不依赖 RFC。
+
+跨 Agent 执行优先用 task 文件而非 chat-paste。Task 模板和索引见 `wiki-design/tasks/README.md`。
+
+当前 RFC 索引见 `wiki-design/rfcs/README.md`，当前 Task 索引见 `wiki-design/tasks/README.md`。
+
 ## Commit 规则
 
 - 如果需要提交，commit message 使用清晰 prefix，例如 `[codex]`、`[claude]`、`[rfc-001]`、`[apply rfc-001]`。
