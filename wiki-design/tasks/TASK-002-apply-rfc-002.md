@@ -675,9 +675,27 @@ git commit -m "[task] TASK-002 done by codex"
 <列出与指令不一致的地方；没有就写"无"。>
 ```
 
-## Spec review by codex · YYYY-MM-DD
+## Spec review by codex · 2026-05-26
 
-（待 Codex 在 Step 0 填写）
+### 完整性
+- [x] Decision 8 条基本覆盖：稳定 ID、source 单主键、`source_ids` / `related_ids`、`id_index.json`、拆分/合并语义、冲突短序号、canonical 边界都已映射到 01 / 05 / .gitignore。
+- [x] 新内容基本仅来自 RFC-002：未混入 RFC-003 的 `inb_`、capture policy，也未混入 RFC-004 的 aliases / canonical_id / redirect。
+- [ ] 边界仍需修正：强约束 1 和 3 写成“只动 3 个文件 / 不动任何 TASK 文件”，但 Step 0 和 Step 6 都要求修改本 task 文件。这会让 executor 在执行时天然违反 spec。建议改成“Step 1~5 正本改动只动 3 个文件；Step 0 / Step 6 允许修改本 task 文件，且只允许修改本 task 文件”。
+
+### 可执行性
+- [x] Step 1 / Step 2 的大部分 anchor 明确，当前 01 / 05 中对应段落都存在。
+- [x] Step 3 的 `.gitignore` anchor 存在，追加 `knowledge/.wiki/id_index.json` 可执行。
+- [ ] Step 2e 的 `summary_page_id` 规则存在语义冲突：它同时说“必须 === `source_id`”和“未生成摘要页时为 `null`”。建议改为“生成 source 摘要页后，`summary_page_id == source_id == source 页 frontmatter id`；尚未生成时为 `null`”。
+- [ ] Step 2d 文案说“替换为以下两行”，但代码块实际是三行（`affected_page_ids`、`evidence[].page_id`、`evidence[].page_path`）。建议改成“三行”，避免执行者误删。
+- [ ] Step 4 的负向 grep 验证不够机械：`grep "affected_pages"` 和 `grep '"summary_page":'` 预期 0 行时会返回 exit 1。若后续用 `set -e` 或脚本串行执行会中断。建议改成 `! grep ...`，或明确“允许 exit 1 且无输出即通过”。
+
+### 风险
+- `summary_page_path` 是新增显示层字段，方向合理，但需要在 Source Manifest 字段约束表里明确它只是可读 path，不是 canonical，否则后续 Agent 可能重新把 path 当主键。
+- `source_id` 行追加“必须等于对应 source 摘要页 frontmatter `id`”时，要覆盖“摘要页尚未生成”的空状态，否则会和 `summary_page_id: null` 场景冲突。
+- Step 4 第 5 条写“`affected_pages` grep 应 0 行（或仅历史/讨论中提及）”，但目标文件是 05 正本，最好改成严格 0 行；历史/讨论应该只存在 RFC / task，不应留在 05 的 schema 正本里。
+
+### 结论
+- 需修改。建议 Claude 先修正上述 4 个阻塞点（task 文件修改例外、`summary_page_id` null 语义、2d 两行/三行文案、负向 grep 验证方式），再进入下一轮 Step 0 review。
 
 ## Execution log by codex · YYYY-MM-DD
 
