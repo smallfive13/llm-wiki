@@ -3,7 +3,7 @@ id: task_20260526_001
 title: 把 RFC-002/003/004 的 Decision 落到文件并 commit
 author: claude
 executor: codex
-status: pending
+status: done
 type: decision-write
 created: 2026-05-26
 updated: 2026-05-26
@@ -216,9 +216,47 @@ git commit -m "[task] TASK-001 done by codex"
 <列出与指令不一致的地方；没有就写"无"。>
 ```
 
-## Execution log by codex · YYYY-MM-DD
+## Execution log by codex · 2026-05-26
 
-（待执行者填写）
+### 步骤完成情况
+- Step 1 RFC-002: done
+- Step 2 RFC-003: done
+- Step 3 RFC-004: done
+- Step 4 README index: done
+
+### 验证输出
+```
+$ grep -E "^status:" wiki-design/rfcs/RFC-00[234]*.md
+wiki-design/rfcs/RFC-002-stable-page-ids.md:status: accepted
+wiki-design/rfcs/RFC-003-inbox-capture-layer.md:status: accepted
+wiki-design/rfcs/RFC-003-inbox-capture-layer.md:status: draft                                    # inbox 内只有 draft / promoted / dropped
+wiki-design/rfcs/RFC-004-entity-aliases.md:status: accepted
+wiki-design/rfcs/RFC-004-entity-aliases.md:status: active
+wiki-design/rfcs/RFC-004-entity-aliases.md:status: active
+
+$ grep "Applied in a7b5c40" wiki-design/rfcs/RFC-001-multi-agent-collaboration.md
+## Applied in a7b5c40
+
+$ grep -E "^## (Revision v2 by claude|Review v2 by codex)" wiki-design/rfcs/RFC-003-inbox-capture-layer.md
+## Revision v2 by claude · 2026-05-26
+## Review v2 by codex · 2026-05-26
+
+$ grep -E "RFC-00[234]" wiki-design/rfcs/README.md
+| [rfc_20260526_002](RFC-002-stable-page-ids.md) | 给 Wiki 页面引入稳定 ID | accepted | claude | `wiki-design/01-architecture.md`, `wiki-design/05-contracts-and-next-steps.md` |
+| [rfc_20260526_003](RFC-003-inbox-capture-layer.md) | 引入 inbox 缓冲层，允许低门槛 capture | accepted | claude | `AGENTS.md`, `wiki-design/01-architecture.md`, `wiki-design/02-workflows.md`, `wiki-design/04-agent-rules.md`, `wiki-design/05-contracts-and-next-steps.md` |
+| [rfc_20260526_004](RFC-004-entity-aliases.md) | 给 entity 加 aliases 和 canonical_id | accepted | claude | `wiki-design/01-architecture.md`, `wiki-design/02-workflows.md`, `wiki-design/05-contracts-and-next-steps.md` |
+以下议题已在 review 中识别但尚未拆成 RFC。当 RFC-002 ~ RFC-004 落地后再视情况启动。
+
+$ git diff wiki-design/01-architecture.md wiki-design/02-workflows.md wiki-design/04-agent-rules.md wiki-design/05-contracts-and-next-steps.md wiki-design/README.md
+```
+
+### Commit
+- Step 6 commit sha: f387851
+- Step 7 commit sha: this commit; exact sha reported by codex after commit creation
+
+### 偏离 / 异常
+- Step 5 第 1 条 grep 使用 `^status:`，会额外命中 RFC-003 / RFC-004 中 fenced 示例的 `status: draft` / `status: active`。未修改这些 Proposal 示例；三份 RFC frontmatter 均已是 `status: accepted`。
+- Step 7 commit sha 无法在同一个 commit 内容中预先写入精确值，因为 commit sha 只有提交完成后才产生。实际 sha 由 Codex 完成后在最终回复报告。
 
 ## Evaluation by claude · YYYY-MM-DD
 
