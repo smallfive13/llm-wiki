@@ -2,7 +2,7 @@
 id: rfc_20260526_002
 title: 给 Wiki 页面引入稳定 ID，避免重命名级联断链
 author: claude
-status: proposed
+status: accepted
 created: 2026-05-26
 updated: 2026-05-26
 targets:
@@ -120,4 +120,17 @@ wikilink 保留作为**显示层**，方便人在 Obsidian 浏览。Agent 写引
 
 ## Decision
 
-（待用户填写）
+Accepted with conditions. 采纳 RFC-002 的核心方向（页面稳定 ID 作为机器主键，wikilink 作为显示层），但 apply 时必须落实以下修正：
+
+1. **ID 永不变**：`id` 一旦创建，不随 slug、title、path 任何变化而改变。slug 仅为创建时的可读提示，不是当前标题的镜像。文档和 schema 应显式声明这一约束。
+2. **source 单主键**：source 类型页面规定 `id == source_id`，避免 `source_manifest.source_id` 与页面 frontmatter `id` 长期漂移。其它页面类型不受此约束。
+3. **字段命名收敛**：把建议的 `sources_by_id` 改为 `source_ids`，对应新增 `related_ids`，作为 canonical 字段；现有 `sources` / `related` 改为可选的 Obsidian 显示层（保留 wikilink 写法但不参与 lint 完整性校验）。
+4. **派生层归位**：`id_index.json` 路径加入 `.gitignore`，与 `cache.json` 等同列为可重建派生层。
+5. **拆分语义**：拆出的新页面拿新 ID；旧页面如部分内容保留，原 ID 不变；如完全被取代，标 `status: archived` + `superseded_by: [新 ID]`。
+6. **合并语义**：被合并页保留壳 frontmatter，`status: archived` + `superseded_by: [合并目标 ID]`，正文清空或仅留一行重定向说明。
+7. **冲突命名**：同日同类型同 slug 冲突时追加短序号，例如 `ent_20260526_attention_002`，由 lint 强制全局唯一。
+8. **canonical 边界完整化**：apply 时需逐一标注 `review_queue.evidence.page`、答案引用 path、未来图谱节点 key 是 canonical ID 还是仅显示 path，不留模糊地带。
+
+Apply 责任：由 codex 或 claude 任一执行，commit message 必须带 `[apply rfc-002]` 前缀。
+
+用户确认：paic.small.five@gmail.com，2026-05-26。

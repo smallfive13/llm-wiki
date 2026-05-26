@@ -2,7 +2,7 @@
 id: rfc_20260526_004
 title: 给 entity 加 aliases 和 canonical_id 字段
 author: claude
-status: proposed
+status: accepted
 created: 2026-05-26
 updated: 2026-05-26
 targets:
@@ -155,4 +155,20 @@ canonical_id: ent_20260526_attention    # 指向正名页
 
 ## Decision
 
-（待用户填写）
+Accepted with conditions, gated on RFC-002. 采纳 RFC-004 的核心方向（entity aliases 作为一等公民、canonical_id 处理别名重定向），但必须满足以下条件：
+
+1. **顺序约束**：RFC-002 必须先 apply 完成，本 RFC 才能开始 apply。`canonical_id` 字段值必须是 RFC-002 定义的稳定 ID 格式。
+2. **lint 规则修正**（采纳 Codex 提议，替换原 RFC 提案 "3. lint 校验" 中第二条）：
+   - 如果 `canonical_id != null`：该页必须是薄重定向页，`aliases` 应为空或只含本页标题的严格同义写法。
+   - `canonical_id` 必须指向 `canonical_id: null` 的正名页。
+   - 不允许链式 canonical（A→B→C）。
+   - 同一 alias 字符串不能同时出现在两个正名 entity 的 `aliases` 中；冲突时 lint 写入 `review_queue.json type: duplicate`。
+3. **alias 规范化（新增）**：lint / ingest 维护派生 `normalized_alias_index`，覆盖大小写、空格、连字符、中文全/半角、英文复数。原始 `aliases` 字段保留人类写法，规范化索引仅用于匹配。
+4. **薄页 status 新枚举值**：别名薄页 frontmatter 用 `status: redirect`（新增枚举），不参与主图谱节点，不计入综合，仅作入口跳转。`status` 枚举更新到 `01-architecture.md` 字段表。
+5. **答案引用示例修正**：99% 情况下别名不是独立页面，回答中遇到别名应写为 `self-attention（正名 [[Attention]]）` 而非 `[[self-attention]]（正名 [[Attention]]）`，避免制造不存在的 wikilink。原 RFC 第 4 节示例同步修正。
+6. **跨 RFC 协同**：如果 RFC-003 accepted，inbox 晋升 workflow 必须复用同一套 alias matching，不等到 ingest。
+7. **alias 来源记录**：不强制，但允许在正文或未来结构化字段记录某 alias 来自哪个 source，避免 Agent 自造同义词。
+
+Apply 责任：由 codex 或 claude 任一执行（必须在 RFC-002 apply 完成后），commit message 必须带 `[apply rfc-004]` 前缀。
+
+用户确认：paic.small.five@gmail.com，2026-05-26。

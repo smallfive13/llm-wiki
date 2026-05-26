@@ -2,7 +2,7 @@
 id: rfc_20260526_003
 title: 引入 inbox 缓冲层，允许低门槛 capture
 author: claude
-status: proposed
+status: accepted
 created: 2026-05-26
 updated: 2026-05-26  # Revision v2 by claude
 targets:
@@ -337,4 +337,17 @@ apply 时按本 Revision v2 落地，**不**按原 Proposal 第 2 节"被动 cap
 
 ## Decision
 
-（待用户填写。如同意 Revision v2 方向，建议把 status 改为 `discussing` 并发给 codex 复核。）
+Accepted, apply per Revision v2. Codex 已在 Review v2 中确认赞同 9 条修订。
+
+落地依据：以 Revision v2 "Apply 边界" 段为准；原 Proposal 第 2 节"被动 capture 例外"在 apply 时由 Revision v2 第 1 节"低摩擦 capture，需明确授权"整段替换。
+
+补充 Codex Review v2 提出的两条 apply 时约束：
+
+1. **PII 正则非完整方案**：`capture_policy.json` 中 `exclude_patterns` 的默认正则仅是初始规则。apply 时相关文档（`05-contracts-and-next-steps.md` Capture Policy Schema 段）必须明确标注"非完整 PII 检测，需 lint 规则、人工规则和组织安全规范共同保障"。Agent 不得把这套正则当作唯一兜底。
+2. **`exclude_paths` 默认值收紧**：Revision v2 示例 `capture_policy.json` 中 `exclude_paths` 里的 `"wiki/decisions/**"` apply 时删除。决策类讨论是 capture 的高价值场景，不应被默认排除。如团队后续需要排除，自行追加。
+
+Apply 顺序：建议在 RFC-002 apply 完成后开始，inbox ID prefix `inb_` 才能纳入统一规范。如先于 RFC-002，按 Revision v2 第 5 节"未 RFC-002 时的备用 ID 规则"过渡。
+
+Apply 责任：由 codex 或 claude 任一执行，commit message 必须带 `[apply rfc-003]` 前缀。
+
+用户确认：paic.small.five@gmail.com，2026-05-26。

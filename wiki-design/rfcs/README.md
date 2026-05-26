@@ -7,9 +7,9 @@
 | id | 标题 | status | author | targets |
 | --- | --- | --- | --- | --- |
 | [rfc_20260526_001](RFC-001-multi-agent-collaboration.md) | 引入 Codex 与 Claude Code 的 RFC 协作机制 | accepted | codex | `AGENTS.md`, `.gitignore`, `wiki-design/rfcs/README.md` |
-| [rfc_20260526_002](RFC-002-stable-page-ids.md) | 给 Wiki 页面引入稳定 ID | proposed | claude | `wiki-design/01-architecture.md`, `wiki-design/05-contracts-and-next-steps.md` |
-| [rfc_20260526_003](RFC-003-inbox-capture-layer.md) | 引入 inbox 缓冲层，允许低门槛 capture | proposed | claude | `AGENTS.md`, `wiki-design/01-architecture.md`, `wiki-design/02-workflows.md`, `wiki-design/04-agent-rules.md`, `wiki-design/05-contracts-and-next-steps.md` |
-| [rfc_20260526_004](RFC-004-entity-aliases.md) | 给 entity 加 aliases 和 canonical_id | proposed | claude | `wiki-design/01-architecture.md`, `wiki-design/02-workflows.md`, `wiki-design/05-contracts-and-next-steps.md` |
+| [rfc_20260526_002](RFC-002-stable-page-ids.md) | 给 Wiki 页面引入稳定 ID | accepted | claude | `wiki-design/01-architecture.md`, `wiki-design/05-contracts-and-next-steps.md` |
+| [rfc_20260526_003](RFC-003-inbox-capture-layer.md) | 引入 inbox 缓冲层，允许低门槛 capture | accepted | claude | `AGENTS.md`, `wiki-design/01-architecture.md`, `wiki-design/02-workflows.md`, `wiki-design/04-agent-rules.md`, `wiki-design/05-contracts-and-next-steps.md` |
+| [rfc_20260526_004](RFC-004-entity-aliases.md) | 给 entity 加 aliases 和 canonical_id | accepted | claude | `wiki-design/01-architecture.md`, `wiki-design/02-workflows.md`, `wiki-design/05-contracts-and-next-steps.md` |
 | [rfc_20260526_005](RFC-005-task-channel.md) | 引入 wiki-design/tasks/ 作为执行指令通道 | accepted | claude | `AGENTS.md`, `wiki-design/tasks/`, `wiki-design/rfcs/README.md` |
 
 ## 状态
