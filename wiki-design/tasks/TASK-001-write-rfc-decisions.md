@@ -258,6 +258,70 @@ $ git diff wiki-design/01-architecture.md wiki-design/02-workflows.md wiki-desig
 - Step 5 第 1 条 grep 使用 `^status:`，会额外命中 RFC-003 / RFC-004 中 fenced 示例的 `status: draft` / `status: active`。未修改这些 Proposal 示例；三份 RFC frontmatter 均已是 `status: accepted`。
 - Step 7 commit sha 无法在同一个 commit 内容中预先写入精确值，因为 commit sha 只有提交完成后才产生。实际 sha 由 Codex 完成后在最终回复报告。
 
-## Evaluation by claude · YYYY-MM-DD
+## Evaluation by claude · 2026-05-26
 
-（待评估者填写）
+### 结论
+
+**PASS**。Codex 按 TASK-001 spec 完整执行，协议合规、内容保真、commit 卫生、状态推进四项全过。
+
+### 详细核对
+
+**协议合规 ✅**
+
+- 三份 RFC 的 `背景 / 提案 / 替代方案 / 影响范围` 原作者正文未被修改（`git diff a7b5c40..HEAD -- wiki-design/0[12]*.md wiki-design/04*.md wiki-design/05*.md wiki-design/README.md` 输出为空）。
+- RFC-001 `## Applied in a7b5c40` 段保留。
+- RFC-003 `## Review by codex` / `## Revision v2 by claude` / `## Review v2 by codex` 三段全部保留。
+- frontmatter 只动 `status` 字段，其它字段未变。
+- pre-RFC baseline 文件（01-architecture / 02-workflows / 04-agent-rules / 05-contracts / README）未被动。
+- AGENTS.md、RFC-005、tasks/README.md 未被动。
+
+**内容保真 ✅**
+
+- RFC-002 / RFC-003 / RFC-004 三份 Decision 文本与 TASK-001 spec 字字一致：所有 inline 代码、加粗、列表层级、`Apply 责任`行、`用户确认`行全部对齐。
+
+**commit 卫生 ✅**
+
+- 两个 commit 分别覆盖一类改动，符合 AGENTS.md "一个 commit 尽量只覆盖一个 RFC 或一类小修" 的指引。
+- Step 6 commit `f387851` 的 message 包含 RFC-001 / 002 / 003 / 004 + README 五项变更，HEREDOC 格式与 Co-Authored-By 标签都正确。
+- Step 7 commit `89ad862` message 简洁清晰。
+- 文件 scope 严格：Step 6 只动 `wiki-design/rfcs/`，Step 7 只动 TASK-001。
+
+**状态推进 ✅**
+
+- TASK-001 frontmatter `status: pending → done`。
+- Execution log 段按"完成后报告格式"完整填写：步骤完成情况、验证输出、commit sha、偏离/异常四节齐备。
+- Codex 主动报告两条非偏离备注（grep 命中范围 + Step 7 sha 自引限制），透明度高。
+
+### 小提示（不影响通过，留给未来 task 改进）
+
+1. **Step 7 sha 自引问题**：Execution log 写在 Step 7 commit 内，无法预先知道自己的 sha，Codex 用占位文字处理。后续 task spec 可考虑两条改进方案：
+   - executor 在 Step 7 commit 后做一次 `git commit --amend` 把 sha 补上；
+   - 或者让 evaluator 在 Evaluation 段登记最终 sha（本次评估已通过用户口头报告确认 `89ad862`）。
+2. **grep 模式精度**：Step 5 第 1 条 `grep -E "^status:"` 会额外命中 RFC fenced 示例中的 `status: draft` / `status: active`。本次 Codex 已正确判定 frontmatter 无误，但未来 task spec 应改为 `grep -E "^status: (proposed|accepted|rejected|superseded|discussing)"` 或用 `yq` 解析 frontmatter，避免误判。
+
+### 链路通过性
+
+Task channel 机制（RFC-005）首次跑通：
+
+```
+用户 → Claude 写 task → Codex 读取并执行 → Claude evaluate
+        a2e77f9          f387851 + 89ad862        本 commit
+```
+
+全程通过 git 文件传递，无 chat-paste，可追溯、可复现、可审计。
+
+### 后续路径
+
+可进入 apply 阶段。建议顺序：
+
+1. **TASK-002**：apply RFC-002（stable page IDs，基础设施）
+2. **TASK-003**：apply RFC-003 + RFC-004（可并行，二者都依赖 RFC-002 完成）
+
+Apply 类 task 的 spec 比 decision-write 类复杂得多（涉及对正本文档的实质性修改），建议由 Claude 写第一份后让 Codex review，再启动执行。
+
+---
+
+- Evaluator: claude
+- Verified at: 2026-05-26
+- Resulting commits: `f387851` (decisions), `89ad862` (task done)
+- Evaluation commit: 见下一个 commit
