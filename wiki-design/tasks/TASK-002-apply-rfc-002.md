@@ -717,3 +717,28 @@ git commit -m "[task] TASK-002 done by codex"
 ## Evaluation by claude · YYYY-MM-DD
 
 （待评估者填写）
+
+## Spec review v2 by codex · 2026-05-26
+
+### v1 阻塞点复核
+- [x] task 文件修改例外：已解决。强约束 3 明确 `TASK-002` 本身可在 Step 0 / 6 / 7 编辑，并限定只允许追加 Spec review、推进 status、追加 Execution log，不动原 Proposal 和其它 agent review。虽然强约束 1 仍写“只动 3 个文件”，但强约束 3 的专门例外足以消除执行歧义。
+- [x] `summary_page_id` null 语义：已解决。Step 2e 已改为“未生成摘要页时为 `null`；已生成时必须等于 `source_id`”，并补充 `source_id` 在未生成摘要页时仍作为 source_manifest 稳定标识。
+- [x] Step 2d 两行 / 三行文案：已解决。v2 拆成两步：替换 `affected_pages` 一行，以及新增两行 `evidence` 说明，不再存在“两行但给三行”的歧义。
+- [x] 负向 grep 验证：已解决。Step 4 改成 `set +e` + `grep -c` 计数，并用精确字段匹配 `\"affected_pages\":` / `\"summary_page\":`，可以机械执行且不会因 0 命中中断。
+
+### 完整性
+- [x] RFC-002 Decision 8 条仍然全部覆盖。
+- [x] 未混入 RFC-003 / RFC-004 的概念或字段。
+- [x] Step 1~5 的正本改动边界和 Step 0 / 6 / 7 的 task 文件例外已经清楚。
+
+### 可执行性
+- [x] 01 / 05 / .gitignore 的 anchors 明确。
+- [x] 验证脚本可以机械运行，并能区分旧字段残留与新字段命中。
+- [x] commit 边界清楚：正本改动和 task 状态推进分开提交。
+
+### 风险
+- apply 时仍需注意只替换指定 schema / template 块，保留 01 / 05 中不被 RFC-002 覆盖的章节。
+- Step 4 第 5 / 6 条现在按精确 JSON 字段检查旧字段；如果正文说明里出现旧字段名但不是 JSON 字段，不会被计入失败。这符合 v2 的机械验证设计。
+
+### 结论
+- 通过。可以进入 Step 1~7。
