@@ -6,7 +6,7 @@ executor: codex
 status: pending
 type: apply
 created: 2026-05-26
-updated: 2026-05-26
+updated: 2026-05-26  # v2 after codex spec review v1
 related_rfcs:
   - rfc_20260526_002
 ---
@@ -38,7 +38,8 @@ related_rfcs:
 
 1. **只动 3 个文件**：`wiki-design/01-architecture.md`、`wiki-design/05-contracts-and-next-steps.md`、`.gitignore`。其它一律不动。
 2. **不创建** `knowledge/` 任何文件或目录（属于 TASK-005）。
-3. **不动** AGENTS.md、wiki-design/02-workflows.md、wiki-design/04-agent-rules.md、wiki-design/README.md、任何 RFC 或 TASK 文件。
+3. **不动** AGENTS.md、wiki-design/02-workflows.md、wiki-design/04-agent-rules.md、wiki-design/README.md、任何 RFC 文件、以及**其它** TASK 文件。
+   - **本 TASK-002 文件本身按 Step 0 / 6 / 7 允许编辑**：追加 Spec review 段、推进 frontmatter `status`、追加 Execution log 段。除此之外不得改本文件其它部分（不动原 Proposal、不动其它 agent 的 Spec review 段）。
 4. **保留** 01/05 原有不被本 task 覆盖的章节和段落（设计目标、分层、与 Repo Wiki 的关系、实施顺序等）。
 5. **必须先经 Codex spec review**：本 task 在 frontmatter `status: pending` 状态下不可执行。Codex 要先在文件末尾追加 `## Spec review by codex · 2026-05-26` 段，给出"通过" 或 "需修改" 结论。只有 spec review 通过后，executor 才能开始 Step 1（见"工作流"段）。
 6. 一次性 commit 所有正本改动；TASK 状态推进单独 commit。
@@ -351,15 +352,22 @@ evidence_count: 1
 }
 ```
 
-更新字段约束表，把 `affected_pages` 行替换为以下两行：
+更新字段约束表，分两步：
+
+**(i) 替换 `affected_pages` 行**（1 行 → 1 行）：
 
 ```markdown
 | `affected_page_ids` | canonical，页面 `id` 数组 |
+```
+
+**(ii) 在约束表中新增 2 行 evidence 相关说明**（插入位置建议紧贴 `evidence.quote` 行之后）：
+
+```markdown
 | `evidence[].page_id` | canonical，页面 `id`；必填 |
 | `evidence[].page_path` | 可选显示层；与 `page_id` 一致时由 lint 维护 |
 ```
 
-（如果当前约束表里没有 `evidence.quote` 之外的行，相应在 `evidence.quote` 行之后插入这两行新行；保留原 `evidence.quote` / `source_ids` / `options.action` / `resolved_action` 等行不动。）
+保留原 `evidence.quote` / `source_ids` / `options.action` / `resolved_action` 等行不动。
 
 #### 2e：更新 "Source Manifest Schema" 的 JSON 示例和约束表
 
@@ -384,14 +392,14 @@ evidence_count: 1
 }
 ```
 
-更新约束表里的 `summary_page` 行，替换为：
+更新约束表里的 `summary_page` 行，替换为以下两行：
 
 ```markdown
-| `summary_page_id` | source 类型页面 `id`，必须 === `source_id`；未生成摘要页时为 `null` |
-| `summary_page_path` | 可选显示层；对应 source 页面当前路径 |
+| `summary_page_id` | source 摘要页 frontmatter 的 `id` 字段。**未生成摘要页时为 `null`；已生成时必须等于 `source_id`**。 |
+| `summary_page_path` | 可选显示层；对应 source 页面当前路径，未生成时为 `null` |
 ```
 
-并在 `source_id` 行的"规则"列追加："必须等于对应 source 摘要页 frontmatter `id` 字段"。
+并在 `source_id` 行的"规则"列追加："**摘要页已生成时**（`summary_page_id != null`），其值必须等于摘要页 frontmatter 的 `id` 字段；未生成摘要页时 `source_id` 仍然存在，作为 source_manifest 的稳定标识"。
 
 #### 2f：更新所有"最小页面模板"的 frontmatter
 
@@ -557,46 +565,51 @@ knowledge/.wiki/id_index.json
 
 ### Step 4：自检验证
 
+所有 grep 用 `-c` 返回计数（即使 0 命中也是 exit 0，避免脚本中断）。每条 echo 都标注"应为 X"方便人眼比对。
+
 ```bash
 cd /Users/zhangjunwu/workspace/llm-wiki/llm-wiki
 
-# 1. id_index.json 应被 .gitignore
-grep "id_index.json" .gitignore
+set +e   # 容忍负向 grep 没有命中（grep 0 命中本身会返回 exit 1）
 
-# 2. 01-architecture.md 包含三个新子节
-grep -E "^### (稳定 ID 规则|拆分与合并语义|Cross-ref 字段说明)" wiki-design/01-architecture.md
+echo "=== 1. .gitignore 包含 id_index.json（应 ≥ 1）==="
+echo "命中: $(grep -c 'id_index.json' .gitignore)"
 
-# 3. 01 中 prefix 表至少 8 行
-grep -cE "^\| (source|entity|topic|comparison|synthesis|decision|query|open-question) \|" wiki-design/01-architecture.md
+echo "=== 2. 01-architecture.md 含三个新子节（应 = 3）==="
+echo "命中: $(grep -cE '^### (稳定 ID 规则|拆分与合并语义|Cross-ref 字段说明)' wiki-design/01-architecture.md)"
 
-# 4. 05 中所有页面模板 frontmatter 都有 id 字段
-grep -c "^id: {{" wiki-design/05-contracts-and-next-steps.md
+echo "=== 3. 01 中 prefix 表 8 个类型行（应 ≥ 8）==="
+echo "命中: $(grep -cE '^\| (source|entity|topic|comparison|synthesis|decision|query|open-question) \|' wiki-design/01-architecture.md)"
 
-# 5. 05 中 review_queue 例子用 affected_page_ids 而不是 affected_pages
-grep "affected_pages" wiki-design/05-contracts-and-next-steps.md
-grep "affected_page_ids" wiki-design/05-contracts-and-next-steps.md
+echo "=== 4. 05 中页面模板 frontmatter id 字段（应 ≥ 6）==="
+echo "命中: $(grep -c '^id: {{' wiki-design/05-contracts-and-next-steps.md)"
 
-# 6. 05 中 source_manifest 用 summary_page_id 而不是 summary_page
-grep '"summary_page":' wiki-design/05-contracts-and-next-steps.md
-grep '"summary_page_id":' wiki-design/05-contracts-and-next-steps.md
+echo "=== 5. affected_pages → affected_page_ids ==="
+echo "  旧字段 '\"affected_pages\":' 命中（应 = 0）: $(grep -c '\"affected_pages\":' wiki-design/05-contracts-and-next-steps.md)"
+echo "  新字段 'affected_page_ids' 命中（应 ≥ 1）: $(grep -c 'affected_page_ids' wiki-design/05-contracts-and-next-steps.md)"
 
-# 7. 其它正本不应被动
-git diff wiki-design/02-workflows.md wiki-design/04-agent-rules.md wiki-design/README.md AGENTS.md
-git diff wiki-design/rfcs/ wiki-design/tasks/
+echo "=== 6. summary_page → summary_page_id ==="
+echo "  旧字段 '\"summary_page\":' 命中（应 = 0）: $(grep -c '\"summary_page\":' wiki-design/05-contracts-and-next-steps.md)"
+echo "  新字段 'summary_page_id' 命中（应 ≥ 1）: $(grep -c 'summary_page_id' wiki-design/05-contracts-and-next-steps.md)"
 
-# 8. 不应有 knowledge/ 新建
-ls knowledge/ 2>/dev/null && echo "ERROR: knowledge/ should not exist yet" || echo "OK: knowledge/ not created"
+echo "=== 7. 白名单外的文件不应被动（应输出空 stat / 无文件列表）==="
+git diff --stat -- wiki-design/02-workflows.md wiki-design/04-agent-rules.md wiki-design/README.md AGENTS.md wiki-design/rfcs/
+git diff --name-only -- wiki-design/tasks/ | grep -v '^wiki-design/tasks/TASK-002-apply-rfc-002.md$' || echo "  (no other task files modified)"
+
+echo "=== 8. knowledge/ 不应存在 ==="
+if [ -d knowledge/ ]; then echo "FAIL: knowledge/ exists"; else echo "OK: knowledge/ absent"; fi
 ```
 
 预期：
 
-- 1：1 行命中
-- 2：3 行命中
+- 1：≥ 1
+- 2：= 3
 - 3：≥ 8
 - 4：≥ 6（六个模板各一个，可能更多）
-- 5：`affected_pages` grep 应 0 行（或仅历史/讨论中提及），`affected_page_ids` ≥ 1 行
-- 6：`"summary_page":` 应 0 行，`"summary_page_id":` ≥ 1 行
-- 7、8：无输出 / "OK"
+- 5：旧字段 = 0，新字段 ≥ 1
+- 6：旧字段 = 0，新字段 ≥ 1
+- 7：`git diff --stat` 输出空（无文件被列）；第二条要么无输出，要么打印 "(no other task files modified)"。**TASK-002 本身允许有改动**（Spec review / status / Execution log），因此从这条检查中排除。
+- 8：`OK: knowledge/ absent`
 
 ### Step 5：Commit 正本改动
 
