@@ -9,7 +9,7 @@ Task 回答"怎么做、谁来做"，与 RFC 回答"要不要这么改"互补。
 | id | 标题 | status | author | executor | related_rfcs |
 | --- | --- | --- | --- | --- | --- |
 | [task_20260526_001](TASK-001-write-rfc-decisions.md) | 把 RFC-002/003/004 的 Decision 落到文件并 commit | done | claude | codex | RFC-002, RFC-003, RFC-004 |
-| [task_20260526_002](TASK-002-apply-rfc-002.md) | Apply RFC-002 — 把稳定 ID 机制落到 01/05/.gitignore | pending (awaiting spec review) | claude | codex | RFC-002 |
+| [task_20260526_002](TASK-002-apply-rfc-002.md) | Apply RFC-002 — 把稳定 ID 机制落到 01/05/.gitignore | pending (spec v2 approved, ready to execute) | claude | codex | RFC-002 |
 
 ## 状态机
 
