@@ -2,6 +2,12 @@
 
 本文件可作为未来 `AGENTS.md`、`CLAUDE.md` 或 Skill 指令的基础。
 
+## 与 `.wiki-schema.md` 的关系
+
+- `knowledge/.wiki-schema.md` 定义知识库的数据契约：目录、页面类型、frontmatter、source manifest、review queue、引用格式。
+- 根目录 `AGENTS.md` 定义 Agent 行为：什么时候读取、什么时候写入、如何 triage、如何引用、如何保持 Git diff 可审查。
+- 本文件是未来根目录 `AGENTS.md` 的草案；不要把字段 schema 只写在这里，否则其他 Agent 和脚本无法稳定复用。
+
 ## 语言
 
 - 默认使用中文。
@@ -12,10 +18,12 @@
 回答项目长期知识相关问题前，优先读取：
 
 ```text
+knowledge/.wiki-schema.md
 knowledge/purpose.md
 knowledge/index.md
 knowledge/overview.md
 knowledge/log.md
+knowledge/.wiki/review_queue.json
 ```
 
 然后再按标题、tag、wikilink 和全文搜索读取相关页面。
@@ -38,6 +46,7 @@ knowledge/log.md
 - 每个页面尽量带 frontmatter。
 - 重要概念使用 `[[wikilink]]`。
 - 强结论必须尽量标注来源。
+- 回答时用固定引用格式：正文使用 `[1]`，末尾列出 wiki 页面、source 页面和原始资料路径。
 - 不确定内容进入 `wiki/open-questions/`。
 - 重要取舍进入 `wiki/decisions/`。
 - 多来源综合进入 `wiki/synthesis/`。
@@ -58,6 +67,8 @@ knowledge/log.md
 
 小规模结晶化可以直接写入，但必须保持 diff 清晰。
 
+如果用户选择“稍后审阅”或存在不确定冲突，把待办写入 `knowledge/.wiki/review_queue.json`，不要只写在对话里。
+
 ## 禁止事项
 
 - 不要把 `.wiki/` 中的索引缓存当作知识正本。
@@ -71,4 +82,3 @@ knowledge/log.md
 - 每次知识库更新应可通过 Git diff 审查。
 - 不提交无关本地资料，尤其是大型 PDF、Excel、私密笔记。
 - 如果需要上传 GitHub，先确认目标仓库、公开/私有属性和需要纳入版本管理的范围。
-

@@ -45,6 +45,18 @@ knowledge/log.md
 -> 用户要求沉淀时，再写入 wiki/queries/
 ```
 
+推荐回答引用格式：
+
+```text
+正文中的关键判断使用 [1]、[2] 标注。
+
+引用：
+- [1] [[页面名]] · wiki/topics/example.md · 支撑：一句话说明
+- [2] [[来源摘要]] · wiki/sources/example.md · 原始资料：raw/sources/example.pdf
+```
+
+如果回答依赖的是 source 摘要页，尽量同时给出原始资料路径或 `source_id`，方便人工回查。
+
 ## 摄入资料
 
 触发语义：
@@ -72,6 +84,9 @@ knowledge/log.md
    - 刷新图谱和搜索索引
    - 运行 lint
 ```
+
+Triage 如果需要异步人工处理，应写入 `knowledge/.wiki/review_queue.json`，字段见
+[05-contracts-and-next-steps.md](05-contracts-and-next-steps.md)。不要让 Agent 自由发挥 review 字段名。
 
 ## 结晶化
 
@@ -158,4 +173,3 @@ wiki apply
 ```
 
 在没有 CLI 前，Agent 可以直接按同样流程修改 Markdown 文件。
-

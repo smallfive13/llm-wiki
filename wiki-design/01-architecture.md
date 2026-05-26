@@ -37,9 +37,13 @@
 
 ```text
 knowledge/purpose.md
+knowledge/.wiki-schema.md
 knowledge/index.md
+knowledge/overview.md
 knowledge/log.md
+knowledge/raw/source_manifest.json
 knowledge/wiki/**
+knowledge/.wiki/review_queue.json
 ```
 
 派生数据：
@@ -80,7 +84,10 @@ knowledge/.wiki/lightrag/
 type: topic
 status: active
 confidence: medium
+created: 2026-05-24
 updated: 2026-05-24
+last_verified: 2026-05-24
+review: false
 tags:
   - wiki/topic
 sources:
@@ -88,7 +95,9 @@ sources:
 related:
   - "[[LightRAG]]"
   - "[[Agent-native Wiki]]"
-review: false
+supersedes: []
+superseded_by: []
+evidence_count: 1
 ---
 ```
 
@@ -99,10 +108,30 @@ review: false
 | `type` | 页面类型 |
 | `status` | `draft`、`active`、`stale`、`archived` |
 | `confidence` | `low`、`medium`、`high` |
+| `created` | 页面创建日期 |
 | `updated` | 最近维护日期 |
+| `last_verified` | 最近一次对照来源验证核心结论的日期 |
 | `sources` | 来源页 wikilink |
 | `related` | 相关页面 |
 | `review` | 是否需要人工审核 |
+| `supersedes` | 本页面替代的旧页面或旧结论 |
+| `superseded_by` | 替代本页面的新页面或新结论 |
+| `evidence_count` | 支撑核心结论的来源或证据数量 |
+
+更完整的字段约定、`review_queue.json` 和 `source_manifest.json` 契约见
+[05-contracts-and-next-steps.md](05-contracts-and-next-steps.md)。
+
+## Schema 与 Agent 规则
+
+后续落地时建议分成两个文件：
+
+```text
+knowledge/.wiki-schema.md   # 知识库结构、字段、页面类型、引用格式
+AGENTS.md                   # Codex / Claude Code 读写边界和操作规则
+```
+
+`.wiki-schema.md` 回答“知识长什么样”，`AGENTS.md` 回答“Agent 在什么情况下怎么读写”。
+本目录中的 `04-agent-rules.md` 只是未来根目录 `AGENTS.md` 的草案，不应混入页面字段定义。
 
 ## 与 Repo Wiki 的关系
 
@@ -120,4 +149,3 @@ Repo Wiki 只是参考，不是主目标。
 - 绑定分支级 Wiki。
 - 实现 IDE 产品级 Repo Wiki UI。
 - 解析整个仓库的 AST、调用图和 import graph。
-

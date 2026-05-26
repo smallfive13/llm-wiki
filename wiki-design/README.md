@@ -37,6 +37,7 @@ knowledge/
   .wiki-schema.md
 
   raw/
+    source_manifest.json
     sources/
 
   wiki/
@@ -84,4 +85,4 @@ knowledge/
 - [02-workflows.md](02-workflows.md)：Agent 触发工作流。
 - [03-obsidian-graph.md](03-obsidian-graph.md)：Obsidian、wikilink、知识图谱和 dashboard 设计。
 - [04-agent-rules.md](04-agent-rules.md)：Codex / Claude Code 可复用规则。
-
+- [05-contracts-and-next-steps.md](05-contracts-and-next-steps.md)：review queue、source manifest、页面模板、答案引用格式和下一步实施顺序。

@@ -1,4 +1,15 @@
 *
 !.gitignore
+!AGENTS.md
 !wiki-design/
 !wiki-design/**
+
+# 以后如果在本仓库直接创建真实知识库，默认把 Markdown 正本和人工队列纳入 Git。
+!knowledge/
+!knowledge/**
+
+# 派生索引和缓存可重建，不作为知识正本跟踪。
+knowledge/.wiki/cache.json
+knowledge/.wiki/search_index/
+knowledge/.wiki/lightrag/
+knowledge/maps/graph-data.json
