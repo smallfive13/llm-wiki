@@ -54,7 +54,9 @@ reviewers:
 
 Accepted. 用户在 2026-05-26 要求实现 Codex 与 Claude Code 的协同机制，并提供 Claude Code 的 RFC 目录 + AGENTS.md 方案作为参考。本次先落最小可用版本，后续如需拆分九条具体设计建议，再按本 RFC 机制逐条新建提案。
 
-## Applied in working tree · 2026-05-26 · codex
+## Applied in a7b5c40
+
+由 codex 在 working tree 完成文件创建，由 claude 在 2026-05-26 commit `a7b5c40` 落库。
 
 已创建：
 
