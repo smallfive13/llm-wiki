@@ -12,6 +12,7 @@ Task 回答"怎么做、谁来做"，与 RFC 回答"要不要这么改"互补。
 | [task_20260526_002](TASK-002-apply-rfc-002.md) | Apply RFC-002 — 把稳定 ID 机制落到 01/05/.gitignore | done | claude | codex | RFC-002 |
 | [task_20260526_003](TASK-003-apply-rfc-003.md) | Apply RFC-003 — capture 机制 + inbox 缓冲层落到 AGENTS / 01 / 02 / 04 / 05 / .gitignore | done | claude | codex | RFC-003 |
 | [task_20260526_004](TASK-004-apply-rfc-004.md) | Apply RFC-004 — entity aliases / canonical_id / status:redirect / normalized index | done | claude | codex | RFC-004 |
+| [task_20260526_005](TASK-005-init-knowledge-skeleton.md) | 初始化 knowledge/ 骨架（基于 RFC-001~005 冻结 schema） | pending (awaiting spec review) | claude | codex | RFC-001~005 |
 
 ## 状态机
 
