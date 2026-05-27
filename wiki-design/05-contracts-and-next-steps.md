@@ -52,6 +52,7 @@ knowledge/
     cache.json
     search_index/
     lightrag/
+    id_index.json
 ```
 
 职责划分：
@@ -64,6 +65,7 @@ knowledge/
 | `knowledge/.wiki/review_queue.json` | 待人工确认的结构化队列 | 是，除非团队决定只做本地状态 |
 | `knowledge/.wiki/cache.json` | hash 缓存，可重建 | 否 |
 | `knowledge/maps/graph-data.json` | 图谱派生数据，可重建 | 否 |
+| `knowledge/.wiki/id_index.json` | ID → 当前 path 索引，可重建 | 否 |
 
 ## Review Queue Schema
 
@@ -93,10 +95,11 @@ knowledge/
   "priority": "medium",
   "source_ids": ["src_20260525_attention"],
   "source_paths": ["raw/sources/attention.md"],
-  "affected_pages": ["wiki/entities/Attention.md", "wiki/topics/Transformer.md"],
+  "affected_page_ids": ["ent_20260525_attention", "top_20260525_transformer"],
   "evidence": [
     {
-      "page": "wiki/entities/Attention.md",
+      "page_id": "ent_20260525_attention",
+      "page_path": "wiki/entities/Attention.md",
       "quote": "复杂度为 O(n^2)",
       "note": "旧结论"
     }
@@ -132,8 +135,10 @@ knowledge/
 | `status` | `pending`、`resolved`、`dismissed` |
 | `priority` | `low`、`medium`、`high` |
 | `source_ids` | 对应 `source_manifest.json` 中的 `source_id` |
-| `affected_pages` | 相对 `knowledge/` 的路径 |
+| `affected_page_ids` | canonical，页面 `id` 数组 |
 | `evidence.quote` | 只放短摘录，长证据回链到 source 页面 |
+| `evidence[].page_id` | canonical，页面 `id`；必填 |
+| `evidence[].page_path` | 可选显示层；与 `page_id` 一致时由 lint 维护 |
 | `options.action` | 用 snake_case，后续脚本可识别 |
 | `resolved_action` | 必须来自 `options.action`，或使用 `manual_resolution` |
 
@@ -166,7 +171,8 @@ knowledge/
   "imported_at": "2026-05-25T15:30:00+08:00",
   "last_ingested_at": "2026-05-25T15:35:00+08:00",
   "status": "ingested",
-  "summary_page": "wiki/sources/attention-is-all-you-need.md",
+  "summary_page_id": "src_20260525_attention",
+  "summary_page_path": "wiki/sources/attention-is-all-you-need.md",
   "adapter": "local_file",
   "language": "en",
   "notes": ""
@@ -177,7 +183,7 @@ knowledge/
 
 | 字段 | 规则 |
 | --- | --- |
-| `source_id` | 稳定、唯一，优先 `src_YYYYMMDD_slug` |
+| `source_id` | 稳定、唯一，优先 `src_YYYYMMDD_slug`；**摘要页已生成时**（`summary_page_id != null`），其值必须等于摘要页 frontmatter 的 `id` 字段；未生成摘要页时 `source_id` 仍然存在，作为 source_manifest 的稳定标识 |
 | `source_type` | `pdf`、`markdown`、`web`、`chat`、`image`、`manual`、`code` |
 | `hash_sha256` | 对进入 ingest 的原始内容计算 hash |
 | `original_path` | 相对 `knowledge/` 的 raw 路径；纯 URL 可为空 |
@@ -185,7 +191,8 @@ knowledge/
 | `imported_at` | 首次登记时间 |
 | `last_ingested_at` | 最近一次进入 ingest 的时间 |
 | `status` | `new`、`triaged`、`ingested`、`skipped`、`failed`、`deleted` |
-| `summary_page` | 对应 `wiki/sources/` 页面；尚未生成时为 `null` |
+| `summary_page_id` | source 摘要页 frontmatter 的 `id` 字段。**未生成摘要页时为 `null`；已生成时必须等于 `source_id`**。 |
+| `summary_page_path` | 可选显示层；对应 source 页面当前路径，未生成时为 `null` |
 | `adapter` | `local_file`、`web_clipper`、`manual`、`llm_wiki_app`、`custom` |
 
 ## Frontmatter 生命周期字段
@@ -194,6 +201,7 @@ knowledge/
 
 ```yaml
 ---
+id: top_20260525_attention                 # 稳定主键，永不变；prefix 与 type 一致
 type: topic
 status: active
 confidence: medium
@@ -201,20 +209,25 @@ created: 2026-05-25
 updated: 2026-05-25
 last_verified: 2026-05-25
 review: false
-sources:
+source_ids:                                # canonical 引用（按 ID）
+  - src_20260525_attention-is-all-you-need
+related_ids:                               # canonical 引用（按 ID）
+  - ent_20260524_transformer
+sources:                                   # 可选显示层
   - "[[attention-is-all-you-need]]"
 related:
   - "[[Transformer]]"
-supersedes: []
-superseded_by: []
+supersedes: []                             # ID 数组
+superseded_by: []                          # ID 数组
 evidence_count: 1
 ---
 ```
 
 字段含义：
 
-| 字段 | 推荐值 |
+| 字段 | 说明 |
 | --- | --- |
+| `id` | 稳定主键 `<prefix>_YYYYMMDD_<slug>`；prefix 与 type 一致；永不随标题/slug/路径变化；详见 [01-architecture.md](01-architecture.md) "稳定 ID 规则" 段 |
 | `type` | `source`、`entity`、`topic`、`comparison`、`synthesis`、`decision`、`query`、`open-question` |
 | `status` | `draft`、`active`、`stale`、`archived` |
 | `confidence` | `low`、`medium`、`high` |
@@ -222,10 +235,12 @@ evidence_count: 1
 | `updated` | 最近内容更新日期 |
 | `last_verified` | 最近一次对照原始资料或 source 页面验证日期 |
 | `review` | `true` 表示需要人工审阅 |
-| `sources` | 支撑该页面的 source 摘要页 wikilink |
-| `related` | 相关 wiki 页面 wikilink |
-| `supersedes` | 本页面替代的旧页面、旧 query 或旧 decision |
-| `superseded_by` | 新页面替代本页面时填写 |
+| `source_ids` | canonical 来源引用（ID 数组） |
+| `related_ids` | canonical 相关页引用（ID 数组） |
+| `sources` | 可选显示层，Obsidian wikilink |
+| `related` | 可选显示层，Obsidian wikilink |
+| `supersedes` | 本页面替代的旧页面 ID 数组 |
+| `superseded_by` | 替代本页面的新页面 ID 数组 |
 | `evidence_count` | 主要结论背后的证据数量 |
 
 ## 最小页面模板
@@ -234,6 +249,7 @@ evidence_count: 1
 
 ```markdown
 ---
+id: {{SOURCE_ID}}                          # === source_id（source 类型单主键）
 type: source
 status: active
 confidence: high
@@ -241,14 +257,16 @@ created: {{DATE}}
 updated: {{DATE}}
 last_verified: {{DATE}}
 review: false
-source_id: {{SOURCE_ID}}
+source_id: {{SOURCE_ID}}                   # 与 id 相同；保留供 source_manifest 直接关联
 hash_sha256: {{HASH}}
 original_path: {{RAW_PATH}}
 source_url: {{SOURCE_URL}}
 imported_at: {{IMPORTED_AT}}
-sources: []
+source_ids: []                             # 本 source 引用的其它 source（按 ID）
+related_ids: []                            # 相关页（按 ID）
+sources: []                                # 可选显示层
 related: []
-supersedes: []
+supersedes: []                             # ID 数组
 superseded_by: []
 evidence_count: 1
 ---
@@ -284,6 +302,7 @@ evidence_count: 1
 
 ```markdown
 ---
+id: {{ENTITY_ID}}                          # ent_YYYYMMDD_<slug>
 type: entity
 status: active
 confidence: medium
@@ -291,6 +310,8 @@ created: {{DATE}}
 updated: {{DATE}}
 last_verified: {{DATE}}
 review: false
+source_ids: []
+related_ids: []
 sources: []
 related: []
 supersedes: []
@@ -315,6 +336,7 @@ evidence_count: 0
 
 ```markdown
 ---
+id: {{TOPIC_ID}}                           # top_YYYYMMDD_<slug>
 type: topic
 status: active
 confidence: medium
@@ -322,6 +344,8 @@ created: {{DATE}}
 updated: {{DATE}}
 last_verified: {{DATE}}
 review: false
+source_ids: []
+related_ids: []
 sources: []
 related: []
 supersedes: []
@@ -349,6 +373,7 @@ evidence_count: 0
 
 ```markdown
 ---
+id: {{DECISION_ID}}                        # dec_YYYYMMDD_<slug>
 type: decision
 status: active
 confidence: medium
@@ -356,6 +381,8 @@ created: {{DATE}}
 updated: {{DATE}}
 last_verified: {{DATE}}
 review: false
+source_ids: []
+related_ids: []
 sources: []
 related: []
 supersedes: []
@@ -380,6 +407,7 @@ evidence_count: 0
 
 ```markdown
 ---
+id: {{OQ_ID}}                              # oq_YYYYMMDD_<slug>
 type: open-question
 status: active
 confidence: low
@@ -387,6 +415,8 @@ created: {{DATE}}
 updated: {{DATE}}
 last_verified: {{DATE}}
 review: true
+source_ids: []
+related_ids: []
 sources: []
 related: []
 supersedes: []
@@ -409,6 +439,7 @@ evidence_count: 0
 
 ```markdown
 ---
+id: {{QUERY_ID}}                           # que_YYYYMMDD_<slug>
 type: query
 status: active
 confidence: medium
@@ -417,6 +448,8 @@ updated: {{DATE}}
 last_verified: {{DATE}}
 review: false
 derived: true
+source_ids: []
+related_ids: []
 sources: []
 related: []
 supersedes: []
@@ -436,6 +469,8 @@ evidence_count: 0
 ```
 
 ## 答案引用格式
+
+> 引用边界：正文中 `## 引用` 列表里的 `wiki/.../X.md` 路径是**显示用**，不是 canonical。canonical 引用走页面 `id`（见 [01-architecture.md](01-architecture.md) "Cross-ref 字段说明"）。如果同时保留 `id` 和 path，path 仅作为可读注释。
 
 查询回答不要只说“根据 Wiki”。固定使用：
 

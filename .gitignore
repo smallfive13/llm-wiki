@@ -13,3 +13,4 @@ knowledge/.wiki/cache.json
 knowledge/.wiki/search_index/
 knowledge/.wiki/lightrag/
 knowledge/maps/graph-data.json
+knowledge/.wiki/id_index.json

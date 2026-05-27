@@ -53,6 +53,7 @@ knowledge/maps/graph-data.json
 knowledge/.wiki/cache.json
 knowledge/.wiki/search_index/
 knowledge/.wiki/lightrag/
+knowledge/.wiki/id_index.json
 ```
 
 原则：
@@ -81,6 +82,7 @@ knowledge/.wiki/lightrag/
 
 ```yaml
 ---
+id: top_20260524_agent-native-wiki         # 稳定主键，永不随 slug / title / path 变化
 type: topic
 status: active
 confidence: medium
@@ -90,13 +92,17 @@ last_verified: 2026-05-24
 review: false
 tags:
   - wiki/topic
-sources:
+source_ids:                                # canonical 来源引用（按 ID）
+  - src_20260524_some-source
+related_ids:                               # canonical 相关页引用（按 ID）
+  - ent_20260524_lightrag
+sources:                                   # 可选显示层，Obsidian wikilink
   - "[[某篇来源摘要]]"
 related:
   - "[[LightRAG]]"
   - "[[Agent-native Wiki]]"
-supersedes: []
-superseded_by: []
+supersedes: []                             # ID 数组
+superseded_by: []                          # ID 数组
 evidence_count: 1
 ---
 ```
@@ -105,21 +111,80 @@ evidence_count: 1
 
 | 字段 | 说明 |
 | --- | --- |
+| `id` | 稳定主键，格式 `<prefix>_YYYYMMDD_<slug>`；**永不随标题、slug、路径变化**；prefix 见下方"稳定 ID 规则" |
 | `type` | 页面类型 |
 | `status` | `draft`、`active`、`stale`、`archived` |
 | `confidence` | `low`、`medium`、`high` |
 | `created` | 页面创建日期 |
 | `updated` | 最近维护日期 |
 | `last_verified` | 最近一次对照来源验证核心结论的日期 |
-| `sources` | 来源页 wikilink |
-| `related` | 相关页面 |
+| `source_ids` | canonical 来源引用，按 ID；lint 校验完整性 |
+| `related_ids` | canonical 相关页引用，按 ID |
+| `sources` | 可选显示层（Obsidian wikilink），不参与 lint 完整性 |
+| `related` | 可选显示层（Obsidian wikilink），不参与 lint 完整性 |
 | `review` | 是否需要人工审核 |
-| `supersedes` | 本页面替代的旧页面或旧结论 |
-| `superseded_by` | 替代本页面的新页面或新结论 |
+| `supersedes` | 本页面替代的旧页面 ID 列表 |
+| `superseded_by` | 替代本页面的新页面 ID 列表 |
 | `evidence_count` | 支撑核心结论的来源或证据数量 |
 
 更完整的字段约定、`review_queue.json` 和 `source_manifest.json` 契约见
 [05-contracts-and-next-steps.md](05-contracts-and-next-steps.md)。
+
+### 稳定 ID 规则
+
+每个页面的 `id` 一旦创建，**永不变化**。重命名、移动目录、改 H1 标题都不动 `id`。
+
+格式：`<prefix>_YYYYMMDD_<slug>`
+
+| 类型 | prefix | 示例 |
+| --- | --- | --- |
+| source | `src_` | `src_20260526_attention-is-all-you-need` |
+| entity | `ent_` | `ent_20260526_attention` |
+| topic | `top_` | `top_20260526_transformer-architecture` |
+| comparison | `cmp_` | `cmp_20260526_rag-vs-graphrag` |
+| synthesis | `syn_` | `syn_20260526_attention-overview` |
+| decision | `dec_` | `dec_20260526_use-lightrag` |
+| query | `que_` | `que_20260526_what-is-rag` |
+| open-question | `oq_` | `oq_20260526_consistency-vs-availability` |
+
+**source 单主键约束**：source 类型页面 `id` 必须等于该 source 在 `knowledge/raw/source_manifest.json` 中的 `source_id`。其它页面类型的 `id` 与业务 ID 无关。
+
+**同日冲突**：同 prefix 同日同 slug 重名时，追加 `_NN` 短序号，例如 `ent_20260526_attention_002`。由 lint 强制全局唯一。
+
+**slug 不是当前标题镜像**：slug 是页面**创建时**的可读提示。页面 H1 改名后 slug 不变。
+
+### 拆分与合并语义
+
+页面被拆分时：
+
+- 拆出的新页面拿**新 ID**。
+- 旧页面若部分内容保留，**原 ID 不变**，正文调整即可。
+- 旧页面若完全被新页面取代，标 `status: archived` + `superseded_by: [新 ID 数组]`。
+
+页面被合并时：
+
+- 被合并页（要消失的那个）保留**壳 frontmatter**，标 `status: archived` + `superseded_by: [合并目标 ID]`，正文清空或留一行重定向说明。
+- 合并目标页保留**原 ID**，吸收被合并页的实质内容。
+
+### Cross-ref 字段说明
+
+下列引用是 **canonical** 的（lint 严格校验、未来工具按 ID 索引）：
+
+| 位置 | 字段 |
+| --- | --- |
+| 页面 frontmatter | `id`、`source_ids`、`related_ids`、`supersedes`、`superseded_by` |
+| `review_queue.json` 单条 item | `affected_page_ids`、`evidence.page_id` |
+| `source_manifest.json` 单条 source | `summary_page_id` |
+| 未来 `maps/graph-data.json` 节点 key | 页面 `id` |
+
+下列是 **可选显示层**（仅给人看，lint 不强制完整性）：
+
+| 位置 | 字段 |
+| --- | --- |
+| 页面 frontmatter | `sources`、`related`（wikilink） |
+| `review_queue.json` 单条 item | `evidence.page_path`、`source_paths` |
+| `source_manifest.json` 单条 source | `summary_page_path` |
+| 答案引用里的 `wiki/.../X.md` 字符串 | 可读 path |
 
 ## Schema 与 Agent 规则
 
