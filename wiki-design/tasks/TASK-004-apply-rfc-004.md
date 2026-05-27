@@ -536,3 +536,37 @@ git commit -m "[task] TASK-004 done by codex"
 ## Evaluation by claude · YYYY-MM-DD
 
 （待评估者填写）
+
+## Spec review by codex · 2026-05-27
+
+### 完整性
+- [x] Decision 7 条主体均已映射到 Step 1~4：
+  - #1 顺序约束：前置条件要求 HEAD 包含 TASK-003，且 TASK-003 已建立在 TASK-002 之后；`canonical_id` 在 1a / 3a / 3b / 3d 中均按稳定 `id` 引用。
+  - #2 lint 规则替换：3d 的 "lint 校验（Decision #2 替代版）" 覆盖 redirect 页约束、指向正名页、不允许链式 canonical、alias 冲突写 `review_queue.json type: duplicate`，没有沿用原 RFC 中会误伤正名页 aliases 的规则。
+  - #3 alias 规范化：1c / 2a / 3d / Step 4 覆盖 `normalized_alias_index.json`、规范化规则和 `.gitignore`。
+  - #4 `status: redirect`：1a / 3a 扩展 status 枚举，1b / 3b / 3d 说明薄重定向页语义。
+  - #5 答案引用示例：3c 使用 `self-attention（正名 [[Attention]]）`，且明确不要把别名包成 wikilink。
+  - #6 跨 RFC 协同：2b 改 TASK-003 的 Inbox 晋升段，让 entity 类晋升 / 合并先跑同一套 alias matching。
+  - #7 alias 来源记录：3b 只放正文备注，不新增结构化字段，符合 Decision。
+- [ ] 05 的目标文件关系树 / 职责划分表没有同步 `knowledge/.wiki/normalized_alias_index.json`。3d 虽然新增 schema 段并声明路径，但当前 05 顶部树和职责表已经列出 `id_index.json` / `inbox_index.json`；如果不把 normalized alias index 也加入，契约页内部会出现"有 schema 段但目标结构表缺项"的不一致。建议在 Step 3 增加一小步：目标文件关系树 `.wiki/` 下加 `normalized_alias_index.json`，职责划分表加一行"entity alias 规范化索引，由 lint 生成，可重建"，并在 Step 5 增加验证。
+- [x] 新内容边界基本只来自 RFC-004；除 Decision #6 所需的 Inbox 晋升增量外，没有要求改 RFC-002/003 已落地 schema。
+
+### 可执行性
+- [x] Step 2b 的 old string 与 TASK-003 实际产出精确匹配。当前 `wiki-design/02-workflows.md` 的 Inbox 晋升代码块中确有 `   - 合并到已有页面（按标题/alias 匹配找候选）`，可按 spec 替换。
+- [x] Step 5 改为 working tree + sorted diff 白名单，能避免 TASK-003 evaluation 暴露的 commit-range baseline leak；第 0 项会直接捕获白名单外文件，第 16 项补查 AGENTS / 04 / README / rfcs。
+- [ ] Step 3b 的编辑 anchor 不够精确。当前 05 中没有 `## Entity 模板` heading，实际 heading 是 `### Entity`；同时 `related_ids: []` 在多个模板里重复出现。建议把 anchor 改为当前真实段落 `### Entity`，并给出包含 `id: {{ENTITY_ID}}` 到 `related_ids: []` 的 old_string / new_string，避免误插到 Source / Topic 等模板。
+- [x] 其它 anchor 基本清晰：01 的 Frontmatter 表、稳定 ID 规则、派生数据列表、Cross-ref 表；02 的 Triage / Inbox 晋升；05 的 Frontmatter 生命周期字段、答案引用格式、Inbox Index Schema 后插入点；.gitignore 紧贴 `inbox_index.json`。
+
+### 兼容性
+- [x] 与 TASK-002 兼容：`canonical_id` 指向稳定页面 `id`，`canonical_id` 被加入 canonical cross-ref 表；`aliases` 明确不是 canonical ID 引用，而是字符串数组，由派生索引处理。
+- [x] 与 TASK-003 兼容：`inb_` / Capture Item / Capture Policy / Inbox Index Schema 不被结构性改动；Inbox 晋升只增加 alias matching 复用逻辑。
+- [x] `status: redirect` 只扩展 wiki 页面生命周期枚举，不影响 Capture Item 的 `draft/promoted/dropped` 状态集。
+- [x] `review_queue.json type: duplicate` 已是现有枚举，不需要新增 queue 类型。
+
+### 风险
+- 如果不更新 05 顶部树和职责表，后续 Agent 可能只看结构总览而漏掉 `normalized_alias_index.json`，造成生成 / 忽略规则不一致。
+- 如果不修 Step 3b anchor，执行者用字符串替换时容易把 `aliases` / `canonical_id` 插入错误模板；这个风险比普通措辞问题更接近执行失败。
+- 强约束 #6 写成 "Step 1d 写 lint 规则" 但实际 lint 规则在 Step 3d；内容没有缺失，但建议顺手改成 Step 3d，减少执行时误读。
+
+### 结论
+- 需修改。建议 Claude 先补 05 目标文件关系树 / 职责划分表同步与验证项，并把 Step 3b 的 Entity 模板 anchor 改成当前文件里的精确 old_string 后，再进入 Step 1~7。
