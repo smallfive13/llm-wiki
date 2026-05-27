@@ -3,7 +3,7 @@ id: task_20260526_005
 title: 初始化 knowledge/ 骨架（基于 RFC-001~005 冻结 schema）
 author: claude
 executor: codex
-status: pending
+status: done
 type: bookkeeping
 created: 2026-05-27
 updated: 2026-05-27  # v2 after codex spec review v1
@@ -844,3 +844,106 @@ git commit -m "[task] TASK-005 done by codex"
 
 ### 结论
 - 通过。可以进入 Step 1~7。
+
+## Execution log by codex · 2026-05-27
+
+### 步骤完成情况
+- Step 0 Spec review: 通过
+- Step 1 目录骨架 + 14 个 .gitkeep: done
+- Step 2 4 个上下文层 markdown: done
+  - 2a purpose.md: done
+  - 2b index.md: done
+  - 2c overview.md: done
+  - 2d log.md: done
+- Step 3 .wiki-schema.md: done
+- Step 4 3 个 JSON 契约: done
+  - 4a source_manifest.json: done
+  - 4b review_queue.json: done
+  - 4c capture_policy.json: done
+- Step 5 验证: 输出见下
+
+### 验证输出
+```
+=== 1. knowledge/ 目录存在 ===
+OK
+=== 2. 14 个 .gitkeep 文件（应 = 14）===
+命中:       14
+=== 3. 4 个上下文层 markdown（应都存在）===
+  OK: purpose.md
+  OK: index.md
+  OK: overview.md
+  OK: log.md
+=== 4. .wiki-schema.md 存在 ===
+OK
+=== 5. 3 个 JSON 契约存在且合法 ===
+  OK: raw/source_manifest.json (valid JSON)
+  OK: .wiki/review_queue.json (valid JSON)
+  OK: .wiki/capture_policy.json (valid JSON)
+=== 6. capture_policy.json 关键字段 ===
+  auto_capture: False (应 = False)
+  exclude_paths: [] (应 = [])
+  max_inbox_files: 100 (应 = 100)
+  version: 1 (应 = 1)
+=== 7. source_manifest / review_queue 初始为空 ===
+  source_manifest.sources: [] (应 = [])
+  review_queue.items: [] (应 = [])
+=== 8. .wiki-schema.md 包含关键 schema 段 ===
+  ^## 页面类型与 ID prefix: 1
+  ^## 标准 frontmatter: 1
+  ^## inbox capture item frontmatter: 1
+  ^## JSON 契约: 1
+  ^## 派生层: 1
+  ^## Cross-ref canonical 边界: 1
+  ^## 答案引用格式: 1
+  ^## 写入规则: 1
+  ^## entity 别名机制: 1
+  ^## Inbox 晋升 workflow: 1
+=== 9. log.md 含初始化记录 ===
+命中: 1
+RFC 引用 (应 ≥ 5): 7
+=== 10. 不应有 frontmatter 在 4 个上下文层文件 ===
+  OK: purpose.md no frontmatter
+  OK: index.md no frontmatter
+  OK: overview.md no frontmatter
+  OK: log.md no frontmatter
+=== 11. 不应有真实 wiki 页面（除 .gitkeep） ===
+命中:        0 (应 = 0)
+=== 12. 白名单外文件不应被动（应输出 (none)）===
+  (none)
+=== 13. knowledge/ 下新增文件总数（应 = 22）===
+命中: 22 （14 .gitkeep + 4 md + 1 .wiki-schema.md + 3 json = 22）
+=== 14. knowledge/ 下文件清单（按类型分组验证）===
+  .gitkeep (      14):
+    knowledge/.wiki/.gitkeep
+    knowledge/inbox/.gitkeep
+    knowledge/inbox/archive/dropped/.gitkeep
+    knowledge/inbox/archive/promoted/.gitkeep
+    knowledge/maps/.gitkeep
+    knowledge/raw/sources/.gitkeep
+    knowledge/wiki/comparisons/.gitkeep
+    knowledge/wiki/decisions/.gitkeep
+    knowledge/wiki/entities/.gitkeep
+    knowledge/wiki/open-questions/.gitkeep
+    knowledge/wiki/queries/.gitkeep
+    knowledge/wiki/sources/.gitkeep
+    knowledge/wiki/synthesis/.gitkeep
+    knowledge/wiki/topics/.gitkeep
+  上下文层 md (4):
+    knowledge/index.md
+    knowledge/log.md
+    knowledge/overview.md
+    knowledge/purpose.md
+  .wiki-schema.md (1):
+    knowledge/.wiki-schema.md
+  JSON 契约 (3):
+    knowledge/.wiki/capture_policy.json
+    knowledge/.wiki/review_queue.json
+    knowledge/raw/source_manifest.json
+```
+
+### Commit
+- Step 6 commit sha: 846e8e836c0ce55a65c9ad13c09239e1f0b9e8c6
+- Step 7 commit sha: 本 commit（实际 sha 由提交后回复报告）
+
+### 偏离 / 异常
+无。
