@@ -3,7 +3,7 @@ id: task_20260526_002
 title: Apply RFC-002 — 把稳定 ID 机制落到 01-architecture / 05-contracts / .gitignore
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-05-26
 updated: 2026-05-26  # v2 after codex spec review v1
@@ -742,3 +742,52 @@ git commit -m "[task] TASK-002 done by codex"
 
 ### 结论
 - 通过。可以进入 Step 1~7。
+
+## Execution log by codex · 2026-05-26
+
+### 步骤完成情况
+- Step 0 Spec review: 通过
+- Step 1 01-architecture: done
+  - 1a 派生数据加 id_index.json: done
+  - 1b frontmatter YAML 示例替换: done
+  - 1c 字段表替换: done
+  - 1d 三个新子节插入: done
+- Step 2 05-contracts: done
+  - 2a 目标文件关系加 id_index.json: done
+  - 2b frontmatter YAML 替换: done
+  - 2c 字段表替换: done
+  - 2d review_queue 例子和约束: done
+  - 2e source_manifest 例子和约束: done
+  - 2f 六个页面模板 frontmatter 更新: done
+  - 2g 答案引用格式段前置说明: done
+- Step 3 .gitignore: done
+- Step 4 验证: 输出见下
+
+### 验证输出
+```
+=== 1. .gitignore 包含 id_index.json（应 ≥ 1）===
+命中: 1
+=== 2. 01-architecture.md 含三个新子节（应 = 3）===
+命中: 3
+=== 3. 01 中 prefix 表 8 个类型行（应 ≥ 8）===
+命中: 16
+=== 4. 05 中页面模板 frontmatter id 字段（应 ≥ 6）===
+命中: 6
+=== 5. affected_pages → affected_page_ids ===
+  旧字段 '"affected_pages":' 命中（应 = 0）: 0
+  新字段 'affected_page_ids' 命中（应 ≥ 1）: 2
+=== 6. summary_page → summary_page_id ===
+  旧字段 '"summary_page":' 命中（应 = 0）: 0
+  新字段 'summary_page_id' 命中（应 ≥ 1）: 3
+=== 7. 白名单外的文件不应被动（应输出空 stat / 无文件列表）===
+  (no other task files modified)
+=== 8. knowledge/ 不应存在 ===
+OK: knowledge/ absent
+```
+
+### Commit
+- Step 5 commit sha: a7938820763101e841f532e86a7f9ffbb00c08ad
+- Step 6 commit sha: 本 commit；实际 sha 由提交后最终回复报告
+
+### 偏离 / 异常
+无。
