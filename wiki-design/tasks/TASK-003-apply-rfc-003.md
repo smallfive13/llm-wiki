@@ -6,7 +6,7 @@ executor: codex
 status: pending
 type: apply
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-27  # v2 after codex spec review v1
 related_rfcs:
   - rfc_20260526_003
 ---
@@ -39,7 +39,7 @@ related_rfcs:
 
 违反任一即视为执行失败，应在 Execution log 写明并把 status 改为 failed：
 
-1. **只动 5 个文件**：`AGENTS.md`、`wiki-design/01-architecture.md`、`wiki-design/02-workflows.md`、`wiki-design/04-agent-rules.md`、`wiki-design/05-contracts-and-next-steps.md`。其它一律不动。
+1. **只动 6 个文件**：`AGENTS.md`、`wiki-design/01-architecture.md`、`wiki-design/02-workflows.md`、`wiki-design/04-agent-rules.md`、`wiki-design/05-contracts-and-next-steps.md`、`.gitignore`。其它一律不动。
 2. **不创建** `knowledge/` 任何文件或目录（属于 TASK-005）。
 3. **不动** `wiki-design/README.md`、任何 RFC 文件、**其它** TASK 文件。
    - 本 TASK-003 文件本身按 Step 0 / 7 / 8 允许编辑（追加 Spec review、推进 status、追加 Execution log）。
@@ -415,6 +415,71 @@ suggested_target_title: "Attention 复杂度讨论"
 ```
 ~~~
 
+#### 5d：新增 "Inbox Index Schema" 整段
+
+紧跟 5c 之后插入（保持 `## h2` 级别）：
+
+~~~markdown
+## Inbox Index Schema
+
+路径：`knowledge/.wiki/inbox_index.json`
+
+用途：Agent 会话开始读取的 inbox 高密度索引；提供 draft 数量、最老 draft 年龄和最近 N 条 draft 轻摘要，避免 Agent 把全部 draft 正文拉进上下文。
+
+**派生层**（由 `wiki-lint` 扫描 `knowledge/inbox/*.md` 生成；可重建；进 `.gitignore`，不作为知识正本）。
+
+### 顶层格式
+
+```json
+{
+  "version": 1,
+  "draft_count": 12,
+  "oldest_draft_age_days": 8,
+  "recent_drafts": [
+    {
+      "filename": "20260526-153012-attention-complexity.md",
+      "summary": "Attention 复杂度讨论",
+      "captured_at": "2026-05-26T15:30:12+08:00"
+    }
+  ],
+  "updated_at": "2026-05-26T16:00:00+08:00"
+}
+```
+
+### 字段约束
+
+| 字段 | 含义 |
+| --- | --- |
+| `version` | schema 版本，当前 `1` |
+| `draft_count` | `knowledge/inbox/*.md` 中 `status: draft` 的文件数；**不含** `archive/` |
+| `oldest_draft_age_days` | 最老 draft 距今天数，按 frontmatter `created` 计算 |
+| `recent_drafts[]` | 最近 N 条 draft 的轻摘要数组，默认 `N = 10` |
+| `recent_drafts[].filename` | inbox 文件名（不含路径） |
+| `recent_drafts[].summary` | 摘要文本，优先来自 frontmatter `suggested_target_title`，回退到正文首句 |
+| `recent_drafts[].captured_at` | ISO 8601 时间戳，优先 frontmatter `created`，回退到文件名解析的秒级时间戳 |
+| `updated_at` | 索引重建时刻，ISO 8601 |
+
+### 生成时机
+
+- `wiki-lint` 每次扫描时重新生成
+- 新 capture 写入 / promotion / drop 后建议触发重建
+
+### 不包含
+
+- draft 正文（保持索引高密度，正文按需另读）
+- `archive/promoted/` 或 `archive/dropped/` 的文件
+~~~
+
+#### 5e：更新 `.gitignore`
+
+`inbox_index.json` 属于派生层（同 `id_index.json`）。在 `.gitignore` 末尾追加（紧贴 `knowledge/.wiki/id_index.json` 之后）：
+
+```
+knowledge/.wiki/inbox_index.json
+```
+
+注意这是本 task 唯一动到 5 个正本之外的文件，对应 强约束 #1 把白名单从 5 个扩到 6 个的来源。
+
 ### Step 6：自检验证
 
 ```bash
@@ -425,8 +490,10 @@ set +e
 echo "=== 1. AGENTS.md 含'低摩擦 capture'子节（应 ≥ 1）==="
 echo "命中: $(grep -c '^### 低摩擦 capture' AGENTS.md)"
 
-echo "=== 2. AGENTS.md 引用 RFC-003 / 02-workflows / 05-contracts（应 ≥ 3）==="
-echo "命中: $(grep -cE 'RFC-003-inbox-capture-layer|02-workflows.md|05-contracts-and-next-steps.md' AGENTS.md)"
+echo "=== 2. AGENTS.md 引用 RFC-003 + 02-workflows + 05-contracts（每项应 ≥ 1 次命中）==="
+echo "  RFC-003-inbox-capture-layer 命中次数: $(grep -oE 'RFC-003-inbox-capture-layer' AGENTS.md | wc -l)"
+echo "  02-workflows.md 命中次数: $(grep -oE '02-workflows.md' AGENTS.md | wc -l)"
+echo "  05-contracts-and-next-steps.md 命中次数: $(grep -oE '05-contracts-and-next-steps.md' AGENTS.md | wc -l)"
 
 echo "=== 3. 01-architecture.md prefix 表含 inb_ 行（应 ≥ 1）==="
 echo "命中: $(grep -c '| \`inb_\` |' wiki-design/01-architecture.md)"
@@ -446,8 +513,8 @@ echo "命中: $(grep -c 'knowledge/.wiki/inbox_index.json' wiki-design/04-agent-
 echo "=== 8. 04-agent-rules.md 写入规则段含 'capture 例外'（应 ≥ 1）==="
 echo "命中: $(grep -c 'capture 例外' wiki-design/04-agent-rules.md)"
 
-echo "=== 9. 05 含 Capture Item Schema 和 Capture Policy Schema 两段（应 = 2）==="
-echo "命中: $(grep -cE '^## Capture (Item|Policy) Schema' wiki-design/05-contracts-and-next-steps.md)"
+echo "=== 9. 05 含 Capture Item / Capture Policy / Inbox Index 三段（应 = 3）==="
+echo "命中: $(grep -cE '^## (Capture (Item|Policy) Schema|Inbox Index Schema)' wiki-design/05-contracts-and-next-steps.md)"
 
 echo "=== 10. 05 capture_policy.json 默认 exclude_paths 不含 wiki/decisions/**（应 = 0）==="
 echo "命中: $(grep -c 'wiki/decisions/\*\*' wiki-design/05-contracts-and-next-steps.md)"
@@ -467,30 +534,39 @@ git diff --name-only 5633239..HEAD -- wiki-design/tasks/ | grep -v 'TASK-003-app
 
 echo "=== 15. knowledge/ 不应存在 ==="
 if [ -d knowledge/ ]; then echo "FAIL: knowledge/ exists"; else echo "OK: knowledge/ absent"; fi
+
+echo "=== 16. .gitignore 含 inbox_index.json（应 ≥ 1）==="
+echo "命中: $(grep -c 'knowledge/.wiki/inbox_index.json' .gitignore)"
+
+echo "=== 17. 05 含 Inbox Index Schema 字段表（应 ≥ 1，验证 5d 内容完整）==="
+echo "命中 'draft_count' 字段: $(grep -c 'draft_count' wiki-design/05-contracts-and-next-steps.md)"
+echo "命中 'oldest_draft_age_days' 字段: $(grep -c 'oldest_draft_age_days' wiki-design/05-contracts-and-next-steps.md)"
 ```
 
 预期：
 
 - 1：≥ 1
-- 2：≥ 3
+- 2：三项**各**应 ≥ 1（按出现次数，不是行数）
 - 3：≥ 1
 - 4：≥ 1
 - 5：≥ 1
 - 6：= 2
 - 7：≥ 1
 - 8：≥ 1
-- 9：= 2
+- 9：= 3（含新增 Inbox Index Schema）
 - 10：= 0 ← 这条是 Decision 第 2 条 apply 约束
 - 11：≥ 1 ← 这条是 Decision 第 1 条 apply 约束
 - 12：inbox/ ≥ 1，capture_policy.json ≥ 1
 - 13：`git diff --stat` 输出空
 - 14：无输出 / "(no other task files modified)"
 - 15：`OK: knowledge/ absent`
+- 16：≥ 1（Inbox Index Schema 派生层进 .gitignore）
+- 17：两个字段名各 ≥ 1（确认 Inbox Index Schema 字段表完整）
 
 ### Step 7：Commit 正本改动
 
 ```bash
-git add AGENTS.md wiki-design/01-architecture.md wiki-design/02-workflows.md wiki-design/04-agent-rules.md wiki-design/05-contracts-and-next-steps.md
+git add AGENTS.md wiki-design/01-architecture.md wiki-design/02-workflows.md wiki-design/04-agent-rules.md wiki-design/05-contracts-and-next-steps.md .gitignore
 
 git commit -m "$(cat <<'EOF'
 [apply rfc-003] capture mechanism + inbox buffer layer
@@ -504,7 +580,8 @@ git commit -m "$(cat <<'EOF'
 - 02-workflows.md：新增"被动 capture（建议 / 自动）"和"Inbox 晋升"两节
 - 04-agent-rules.md：读取列表加 inbox_index.json；写入规则段加 capture 例外
 - 05-contracts-and-next-steps.md：目标文件关系树和职责划分表更新；
-  新增 Capture Item Schema + Capture Policy Schema 两整段
+  新增 Capture Item Schema + Capture Policy Schema + Inbox Index Schema 三整段
+- .gitignore：追加 knowledge/.wiki/inbox_index.json（派生层，同 id_index.json）
 
 两条 apply-time 约束已落实（来自 Decision 段补充）：
 - exclude_patterns 默认正则显式标注"非完整 PII 检测"
@@ -549,10 +626,12 @@ git commit -m "[task] TASK-003 done by codex"
 - Step 4 04-agent-rules: done
   - 4a 读取列表加 inbox_index.json: done
   - 4b 写入规则加 capture 例外: done
-- Step 5 05-contracts: done
+- Step 5 05-contracts + .gitignore: done
   - 5a 目标文件关系树 + 职责划分表更新: done
   - 5b Capture Item Schema 新段: done
   - 5c Capture Policy Schema 新段: done
+  - 5d Inbox Index Schema 新段: done
+  - 5e .gitignore 追加 inbox_index.json: done
 - Step 6 验证: 输出见下
 
 ### 验证输出
