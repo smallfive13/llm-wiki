@@ -674,9 +674,120 @@ git commit -m "[task] TASK-003 done by codex"
 
 （待执行者在 Step 8 填写）
 
-## Evaluation by claude · YYYY-MM-DD
+## Evaluation by claude · 2026-05-27
 
-（待评估者填写）
+### 结论
+
+**PASS**。Codex 按 v2 spec 完整执行 17 个验证项全过，6 个白名单文件改动严格、内容保真、3 个 schema 互相自洽、Decision 两条 apply-time 约束全部落实。
+
+### 详细核对
+
+**协议合规 ✅**
+
+- Step 7 commit `fd32feb` 只动 6 个白名单文件：`.gitignore` + `AGENTS.md` + `01-architecture.md` + `02-workflows.md` + `04-agent-rules.md` + `05-contracts-and-next-steps.md`。
+- Step 8 commit `26411240` 只动 `TASK-003-apply-rfc-003.md` 自身（仅 frontmatter `status: pending → done` + 末尾追加 Execution log 段）。
+- 白名单外正本（`wiki-design/rfcs/` / `wiki-design/README.md`）在 `465a40e..HEAD` 范围零改动。
+- 其它 task 未被本轮执行触动（Step 6 第 14 项捕获的 `tasks/README.md` 是历史 commit `465a40e` 范围 leak，Codex 已透明报告，非本次执行偏差）。
+- `knowledge/` 未创建（按 spec 留给 TASK-005）。
+- Working tree clean。
+
+**内容保真 ✅**（17 项逐一对照）
+
+| 检查项 | 期望 | 实测 | 结果 |
+|---|---|---|---|
+| 1 AGENTS 低摩擦 capture 子节 | ≥ 1 | 1 | ✓ |
+| 2 AGENTS 三个引用各 ≥ 1 次 | 各 ≥ 1 | 1 / 2 / 2 | ✓ |
+| 3 01 prefix 表 inb_ 行 | ≥ 1 | 1 | ✓ |
+| 4 01 inbox capture item 备注 | ≥ 1 | 1 | ✓ |
+| 5 01 派生数据列表 inbox_index.json | ≥ 1 | 1 | ✓ |
+| 6 02 两段新 h2 | = 2 | 2 | ✓ |
+| 7 04 读取列表 inbox_index.json | ≥ 1 | 1 | ✓ |
+| 8 04 capture 例外段 | ≥ 1 | 1 | ✓ |
+| 9 05 三段 schema (Capture Item/Policy/Inbox Index) | = 3 | 3 | ✓ |
+| **10 exclude_paths 不含 wiki/decisions/** | **= 0** | **0** | **✓ Decision #2** |
+| **11 PII 非完整警示** | **≥ 1** | **1** | **✓ Decision #1** |
+| 12 05 目标树 inbox/ + capture_policy | inbox/=1, capture_policy=4 | 1 / 4 | ✓ |
+| 13 白名单外正本 diff | 空 | 空 | ✓ |
+| 14 tasks/ 除 TASK-003 外 | 无 | README.md（基线 leak，已说明） | ⚠️ 误报 |
+| 15 knowledge/ 不存在 | OK | OK | ✓ |
+| 16 .gitignore 含 inbox_index.json | ≥ 1 | 1 | ✓ |
+| 17 Inbox Index Schema 字段表 | draft_count ≥ 1, oldest_draft_age_days ≥ 1 | 2 / 2 | ✓ |
+
+第 14 项的误报是 spec bug，详见"沉淀"段。
+
+**Schema 自洽 ✅**
+
+- `inb_` prefix 与 RFC-002 prefix 表风格一致（同表新增 1 行）。
+- 三段新 schema 在 05 中按 Source Manifest Schema → Capture Item Schema → Capture Policy Schema → Inbox Index Schema 顺序排列，互相引用闭合。
+- `04-agent-rules.md` 读取列表加的 `inbox_index.json` 在 05 段 Inbox Index Schema 有完整字段定义（不再是孤立引用）。
+- `AGENTS.md` 段尾正确引用 02-workflows.md "Inbox 晋升" 和 05 的两个 schema 段。
+- `02-workflows.md` 段引用 AGENTS.md "低摩擦 capture" 段和 05 "Capture Item Schema"。
+
+**Decision 两条 apply-time 约束 ✅**
+
+| Decision 条款 | 落地位置 | 验证项 |
+|---|---|---|
+| **PII 正则非完整**（apply 时显式标注） | 05 "Capture Policy Schema" → "重要约束（apply 时必须显式标注）" blockquote + AGENTS.md "PII 兜底"末句 | 第 11 项 = 1 ✓ |
+| **exclude_paths 默认不含 wiki/decisions/** | 05 `capture_policy.json` 示例 `"exclude_paths": []` | 第 10 项 = 0 ✓ |
+
+**commit 卫生 ✅**
+
+- `fd32feb` commit message 用 `[apply rfc-003]` 前缀，HEREDOC 覆盖 6 个文件改动 + 两条 apply-time 约束 + Co-Authored-By: Codex 标签到位。
+- `26411240` commit message `[task] TASK-003 done by codex` 简洁规范。
+- 两 commit scope 严格分离（apply 类正本 vs task 自身状态）。
+- 前置 spec review-revise-review 循环 4 个 commit（`a7f523b` / `1dfd197` / `47e6341` / `1a643ec`）和小修一致性 commit（`465a40e`）已先于 apply 沉淀，apply commit 不带历史包袱。
+
+### 沉淀给未来 apply 类 task
+
+**1. Spec 验证 baseline 应该用"执行开始前的 HEAD"，不是"上一份 task evaluate 后的 commit"**
+
+本 task spec 第 14 项 baseline 写 `5633239..HEAD`（TASK-002 evaluate commit），但 TASK-003 执行前还多了三个 spec 流程 commit（`a7f523b` / `1dfd197` / `47e6341` / `1a643ec` / `465a40e`），其中 `465a40e` 触过 `tasks/README.md`。所以 baseline 应该是 `465a40e..HEAD`（即"Step 7 即将开始时的 HEAD"）。
+
+**未来 spec 改进**：把 baseline 写成 `$(git rev-parse HEAD)..HEAD` 在 Step 0 spec review 通过后由 executor 在执行前 capture，或者干脆用 `git stash list` / `git diff --cached` 风格只看本轮工作区改动。最简单方案：spec 直接写"应只动 6 个白名单文件 + TASK-003 自身"，不用 baseline 范围。
+
+**2. Codex 主动透明报告"误报来源"是高质量行为**
+
+Codex 在偏离/异常段说明 `tasks/README.md` 命中是历史 commit `465a40e` 而非本轮 Step 1~5 改动。这种"按 spec 跑出来不完美但解释清楚"比"为了通过验证去改 spec/动手脚"靠谱得多。值得在 RFC-005 或 tasks/README.md 模板里固定一条："验证不完美时，executor 应在偏离/异常段解释，不应改 spec 或临时绕过"。
+
+**3. emoji 使用问题（Codex spec review v1 提示）**
+
+AGENTS.md 新段含 💡 / ✏️ emoji 示例（来自 RFC-003 原文）。Codex 提示"如果后续希望全仓库 ASCII，需另开 RFC 统一"。本 task 正确没有临时去改。**未来如果决定 ASCII-only**，开一份 RFC 替换 emoji 为 `[suggest]` / `[capture]` 之类纯文本标签。**当前不动**。
+
+### 链路通过性
+
+第二份 apply 类 task 端到端，spec review 一轮回合 + 一致性小修：
+
+```
+Claude 写 spec v1 (a7f523b)
+  → Codex spec review v1 需修改 (1dfd197)
+  → Claude spec v2 修订 (47e6341)
+  → Codex spec review v2 通过 (1a643ec)
+  → Claude workflow 5→6 一致性小修 + 索引同步 (465a40e)
+  → Codex 执行 + commit 正本 (fd32feb)
+  → Codex 推进 task 状态 (26411240)
+  → Claude evaluate (本 commit)
+```
+
+8 个 commit 完整审计链。和 TASK-002 同节奏，已稳定。
+
+### 后续路径
+
+| 顺序 | Task | 依赖 | 状态 |
+|---|---|---|---|
+| 已 done | TASK-001 写 Decision | — | ✅ |
+| 已 done | TASK-002 apply RFC-002 | TASK-001 | ✅ |
+| 已 done | **TASK-003 apply RFC-003** | TASK-002 | ✅ |
+| 下一步 | **TASK-004 apply RFC-004**（entity aliases） | TASK-002（gated on stable ID） | pending |
+| 之后 | TASK-005 初始化 knowledge/ 骨架 | TASK-002/003/004 全完成 | pending |
+
+TASK-004 spec 比 TASK-003 略简单（只动 01/02/05 三个文件，无 .gitignore），但要协同 RFC-003 的 inbox 晋升 workflow（Decision 第 6 条："如果 RFC-003 accepted，inbox 晋升 workflow 必须复用同一套 alias matching"）。
+
+---
+
+- Evaluator: claude
+- Verified at: 2026-05-27
+- Resulting commits: `fd32feb` (apply rfc-003), `26411240` (task done)
+- Evaluation commit: 见下一个 commit
 
 ## Spec review v2 by codex · 2026-05-27
 
