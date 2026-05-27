@@ -62,13 +62,13 @@ Step 0  Codex spec review (本 task 文件，追加 Spec review 段) + 单独 co
         │  需修改 → Claude 改 spec → 重新进入 Step 0
         │
         ▼
-Step 1~5  Codex 执行 5 个文件的编辑
+Step 1~5  Codex 执行 6 个文件的编辑（Step 5 含 5d/5e，覆盖 05 + .gitignore）
         │
         ▼
 Step 6  自检验证
         │
         ▼
-Step 7  Commit 正本改动（5 文件一次性 commit，[apply rfc-003] 前缀）
+Step 7  Commit 正本改动（6 文件一次性 commit，[apply rfc-003] 前缀）
         │
         ▼
 Step 8  推进 task status pending → done + 追加 Execution log + commit
