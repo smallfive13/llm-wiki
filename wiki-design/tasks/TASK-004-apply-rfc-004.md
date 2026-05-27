@@ -3,7 +3,7 @@ id: task_20260526_004
 title: Apply RFC-004 — entity aliases / canonical_id / status:redirect / normalized_alias_index
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-05-27
 updated: 2026-05-27  # v3 after codex spec review v2
@@ -654,3 +654,80 @@ git commit -m "[task] TASK-004 done by codex"
 
 ### 结论
 - 通过。可以进入 Step 1~7。
+
+## Execution log by codex · 2026-05-27
+
+### 步骤完成情况
+- Step 0 Spec review: 通过
+- Step 1 01-architecture: done
+  - 1a 字段表加 aliases/canonical_id + status 扩枚举: done
+  - 1b 稳定 ID 规则段加 entity 别名薄页备注: done
+  - 1c 派生数据列表加 normalized_alias_index.json: done
+  - 1d Cross-ref 表加 canonical_id: done
+- Step 2 02-workflows: done
+  - 2a 摄入资料 Triage 加 entity alias matching: done
+  - 2b Inbox 晋升段 alias matching 复用 + 跨 RFC 协同备注: done
+- Step 3 05-contracts: done
+  - 3a 目标文件关系树 + 职责划分表加 normalized_alias_index.json: done
+  - 3b 字段表加 aliases/canonical_id + status 扩枚举: done
+  - 3c Entity 模板加 aliases/canonical_id + 备注: done
+  - 3d 答案引用格式段加别名引用规则: done
+  - 3e Normalized Alias Index Schema 新段: done
+- Step 4 .gitignore: done
+- Step 5 验证: 输出见下
+
+### 验证输出
+```
+=== 0. 白名单文件检查（应只看到这 4 个）===
+diff exit: 0 (0 = OK)
+=== 1. 01 字段表含 aliases / canonical_id 两行（应各 ≥ 1）===
+aliases 行: 1
+canonical_id 行: 1
+=== 2. 01 status 行含 redirect 枚举（应 ≥ 1）===
+命中: 1
+=== 3. 01 派生数据列表含 normalized_alias_index.json（应 ≥ 1）===
+命中: 2
+=== 4. 01 entity 别名薄页备注存在（应 ≥ 1）===
+命中: 3
+=== 5. 02 摄入资料 Triage 含 entity alias matching（应 ≥ 1）===
+命中: 2
+=== 6. 02 Inbox 晋升段含 alias matching 复用说明（应 ≥ 1）===
+命中: 1
+=== 7. 05 字段表 aliases / canonical_id 两行（应各 ≥ 1）===
+aliases 行: 1
+canonical_id 行: 1
+=== 8. 05 status 行含 redirect 枚举（应 ≥ 1）===
+命中: 1
+=== 9. 05 Entity 模板 frontmatter 含 aliases / canonical_id（应各 ≥ 1）===
+aliases: 1
+canonical_id: 1
+=== 10. 05 答案引用规则含别名引用纠正示例（应 ≥ 1）===
+命中: 2
+=== 11. 05 含 Normalized Alias Index Schema 段（应 = 1）===
+命中: 1
+=== 12. 05 Normalized Alias Index Schema 字段完整（应各 ≥ 1）===
+entries: 1
+canonical_id 字段: 12
+matched_form: 5
+=== 13. .gitignore 含 normalized_alias_index.json（应 ≥ 1）===
+命中: 1
+=== 14. lint 规则修正（应有 redirect / canonical 不链式 / alias 冲突写 duplicate 三条）===
+redirect 约束: 1
+不允许链式: 1
+duplicate 写入: 2
+=== 15. knowledge/ 不应存在 ===
+OK: knowledge/ absent
+=== 16. AGENTS.md / 04 / README / rfcs 不应被本轮改动 ===
+  (none)
+=== 17. 05 内 normalized_alias_index.json 分位置检查（三处必须各 ≥ 1）===
+  17a 目标文件树（4 空格缩进的纯文件名行，应 ≥ 1）: 1
+  17b 职责划分表行（应 ≥ 1）: 1
+  17c Schema 段路径声明（应 ≥ 1）: 1
+```
+
+### Commit
+- Step 6 commit sha: 4453fb8e9915a33daf760872f32350973e989b17
+- Step 7 commit sha: 本 commit（实际 sha 由提交后回复报告）
+
+### 偏离 / 异常
+无。
