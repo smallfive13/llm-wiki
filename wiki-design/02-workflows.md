@@ -74,6 +74,11 @@ knowledge/log.md
    - 识别来源类型
    - 计算 hash
    - 生成来源摘要
+   - **entity alias matching**：对每个识别到的实体名，依次：
+     1. 在所有 entity 页的 `id` / H1 标题 / `aliases` 中查找完全匹配，或在 `knowledge/.wiki/normalized_alias_index.json` 中查规范化匹配
+     2. 命中 → 复用现有页面（更新 `last_verified`，必要时补充 alias 到正名页）
+     3. 未命中但与已有实体 title/alias 编辑距离 < 阈值 → 写入 `review_queue.json type: duplicate`，由人确认
+     4. 完全未命中 → 新建 entity 页（默认 `canonical_id: null`，仅当确需薄重定向时建别名页并 `status: redirect`）
    - 判断新增页面、更新页面、冲突点、开放问题
    - 写入 review queue 或展示计划
 
@@ -130,7 +135,7 @@ Triage 如果需要异步人工处理，应写入 `knowledge/.wiki/review_queue.
 -> 按主题分组（Agent 建议）
 -> 对每组提议：
    - 晋升为 wiki/topics/、wiki/entities/、wiki/decisions/ 等新页面
-   - 合并到已有页面（按标题/alias 匹配找候选）
+   - 合并到已有页面（按 **alias matching** 找候选，详见"摄入资料" Triage 的 entity alias matching 子流程；entity 类晋升 / 合并必须先跑 alias matching，不等到下一次 ingest）
    - 丢弃（确认无价值）
 -> 用户决策每一项
 -> apply：
@@ -139,6 +144,8 @@ Triage 如果需要异步人工处理，应写入 `knowledge/.wiki/review_queue.
    - 合并：内容并入目标页；原 inbox 文件移到 archive/promoted/，可在目标页 supersedes 中记 inbox id
    - 丢弃：原 inbox 文件移到 archive/dropped/<filename>，frontmatter 改 status: dropped
 ```
+
+> **跨 RFC 协同**：alias matching 逻辑与"摄入资料" Triage 共享同一实现（同一份 `normalized_alias_index.json` 派生索引）。晋升 entity 类 inbox 时禁止跳过 alias matching，否则 inbox 晋升会绕开 entity 消歧机制，导致 wiki 出现重复 entity 页。
 
 定期触发：建议每周一次，或 `knowledge/inbox/*.md` 文件数超过 `capture_policy.max_inbox_files`（默认 100）时主动提醒。
 

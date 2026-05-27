@@ -55,6 +55,7 @@ knowledge/
     review_queue.json
     capture_policy.json
     inbox_index.json
+    normalized_alias_index.json
     cache.json
     search_index/
     lightrag/
@@ -76,6 +77,7 @@ knowledge/
 | `knowledge/inbox/archive/{promoted,dropped}/` | 归档；不计入健康度告警阈值 | 是 |
 | `knowledge/.wiki/capture_policy.json` | capture 控制策略，团队级共享 | 是 |
 | `knowledge/.wiki/inbox_index.json` | inbox 索引，由 lint 生成，可重建 | 否 |
+| `knowledge/.wiki/normalized_alias_index.json` | entity 别名规范化倒排索引，由 lint 生成，可重建 | 否 |
 
 ## Review Queue Schema
 
@@ -378,6 +380,86 @@ suggested_target_title: "Attention 复杂度讨论"
 - draft 正文（保持索引高密度，正文按需另读）
 - `archive/promoted/` 或 `archive/dropped/` 的文件
 
+## Normalized Alias Index Schema
+
+路径：`knowledge/.wiki/normalized_alias_index.json`
+
+用途：把所有 entity 页的 `aliases`（以及 H1 标题、别名薄页 `id`）规范化后建立倒排索引，供摄入 Triage 和 Inbox 晋升做 entity 消歧。
+
+**派生层**（由 `wiki-lint` 扫描 `knowledge/wiki/entities/*.md` 生成；可重建；进 `.gitignore`，不作为知识正本）。
+
+### 顶层格式
+
+```json
+{
+  "version": 1,
+  "updated_at": "2026-05-27T10:00:00+08:00",
+  "entries": {
+    "attention": {
+      "canonical_id": "ent_20260526_attention",
+      "matched_form": "Attention",
+      "source": "title"
+    },
+    "self-attention": {
+      "canonical_id": "ent_20260526_attention",
+      "matched_form": "self-attention",
+      "source": "alias"
+    },
+    "自注意力": {
+      "canonical_id": "ent_20260526_attention",
+      "matched_form": "自注意力",
+      "source": "alias"
+    },
+    "sdpa": {
+      "canonical_id": "ent_20260526_attention",
+      "matched_form": "SDPA",
+      "source": "alias"
+    }
+  }
+}
+```
+
+### 字段约束
+
+| 字段 | 含义 |
+| --- | --- |
+| `version` | schema 版本，当前 `1` |
+| `updated_at` | 索引重建时刻，ISO 8601 |
+| `entries` | normalized key → entity 信息映射 |
+| `entries[k]` | 规范化字符串作为 key |
+| `entries[k].canonical_id` | 指向正名页 `id`（不指向薄重定向页 `id`，链式跳转在 lint 阶段平展） |
+| `entries[k].matched_form` | 原始未规范化字符串 |
+| `entries[k].source` | `title` / `alias` / `redirect`（来源是 H1 标题 / aliases 字段 / 薄重定向页） |
+
+### 规范化规则
+
+至少覆盖：
+
+- 大小写折叠（`Attention` ↔ `attention`）
+- 首尾空白与连续空白合并
+- 连字符 / 下划线 / 空格 互换（`self-attention` ↔ `self attention` ↔ `self_attention`）
+- 中文全角 / 半角统一（`，` ↔ `,`、`（` ↔ `(`）
+- 英文复数尾 `s` / `es`（可选；歧义较大时不规范化）
+
+规范化算法本身的具体实现留给 `wiki-lint`；本 schema 只规定**结果格式**。
+
+### lint 校验（Decision #2 替代版）
+
+- 所有 `canonical_id` 指向必须存在
+- 若某页 `canonical_id != null`：该页必须是薄重定向页，`aliases` 应为空或只含本页标题严格同义写法，且 `status` 必须是 `redirect`
+- `canonical_id` 必须指向 `canonical_id: null` 的正名页（不允许链式：A → B → C）
+- 同一规范化 alias key 不能映射到两个不同 `canonical_id`；冲突时 lint 写入 `review_queue.json type: duplicate`
+
+### 生成时机
+
+- `wiki-lint` 每次扫描重新生成
+- 新 entity 创建 / aliases 字段变化后建议触发重建
+
+### 不包含
+
+- 非 entity 类型页面
+- inbox draft（inbox 晋升时若涉及 entity，先做 alias matching 再决定晋升路径）
+
 ## Frontmatter 生命周期字段
 
 所有 `wiki/**/*.md` 页面尽量使用同一组字段。字段少一点可以，但字段名不要变体膨胀。
@@ -412,7 +494,7 @@ evidence_count: 1
 | --- | --- |
 | `id` | 稳定主键 `<prefix>_YYYYMMDD_<slug>`；prefix 与 type 一致；永不随标题/slug/路径变化；详见 [01-architecture.md](01-architecture.md) "稳定 ID 规则" 段 |
 | `type` | `source`、`entity`、`topic`、`comparison`、`synthesis`、`decision`、`query`、`open-question` |
-| `status` | `draft`、`active`、`stale`、`archived` |
+| `status` | `draft`、`active`、`stale`、`archived`、`redirect`（`redirect` 仅 entity 别名薄页） |
 | `confidence` | `low`、`medium`、`high` |
 | `created` | 首次创建日期 |
 | `updated` | 最近内容更新日期 |
@@ -424,6 +506,8 @@ evidence_count: 1
 | `related` | 可选显示层，Obsidian wikilink |
 | `supersedes` | 本页面替代的旧页面 ID 数组 |
 | `superseded_by` | 替代本页面的新页面 ID 数组 |
+| `aliases` | （仅 entity）已知别名字符串数组；规范化匹配走派生 `normalized_alias_index.json` |
+| `canonical_id` | （仅 entity）`null` = 正名页；指向某 `id` = 薄重定向页，必须配 `status: redirect` |
 | `evidence_count` | 主要结论背后的证据数量 |
 
 ## 最小页面模板
@@ -495,6 +579,8 @@ last_verified: {{DATE}}
 review: false
 source_ids: []
 related_ids: []
+aliases: []                                # entity 已知别名字符串数组（人类写法）；正名页可有，薄重定向页应为空
+canonical_id: null                         # null = 正名页；指向某 ent_id = 薄重定向页（须 status: redirect）
 sources: []
 related: []
 supersedes: []
@@ -514,6 +600,15 @@ evidence_count: 0
 
 ## 相关页面
 ```
+
+> **别名管理**：99% 的别名应只放在正名页的 `aliases` 列表里。仅在外部已有 wikilink 散布到某别名时，才建薄重定向页（`canonical_id` 指向正名页 + `status: redirect`，正文留一行"重定向到 [[正名]]" 即可）。
+>
+> **alias 来源**（可选，不强制）：alias 字符串可在正文里附上 source 引用，例如：
+> ```
+> ## 别名来源
+> - "SDPA" → [[src_xxx_attention-paper]]
+> ```
+> 未来如需结构化此关系，另开 RFC。本期不引入新 frontmatter 字段。
 
 ### Topic
 
@@ -654,6 +749,13 @@ evidence_count: 0
 ## 答案引用格式
 
 > 引用边界：正文中 `## 引用` 列表里的 `wiki/.../X.md` 路径是**显示用**，不是 canonical。canonical 引用走页面 `id`（见 [01-architecture.md](01-architecture.md) "Cross-ref 字段说明"）。如果同时保留 `id` 和 path，path 仅作为可读注释。
+
+**别名引用规则**：如果用户原话用了某 entity 的别名（如 "self-attention"），Agent 回答时应保留用户原写法并附正名 wikilink，**不要把别名包成 wikilink**：
+
+- 正确：`self-attention（正名 [[Attention]]）`
+- 错误：`[[self-attention]]（正名 [[Attention]]）`（除非别名薄页确实存在）
+
+后续段落引用统一用正名 `[[Attention]]`。
 
 查询回答不要只说“根据 Wiki”。固定使用：
 

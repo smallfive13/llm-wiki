@@ -57,6 +57,7 @@ knowledge/.wiki/search_index/
 knowledge/.wiki/lightrag/
 knowledge/.wiki/id_index.json
 knowledge/.wiki/inbox_index.json
+knowledge/.wiki/normalized_alias_index.json
 ```
 
 原则：
@@ -116,7 +117,7 @@ evidence_count: 1
 | --- | --- |
 | `id` | 稳定主键，格式 `<prefix>_YYYYMMDD_<slug>`；**永不随标题、slug、路径变化**；prefix 见下方"稳定 ID 规则" |
 | `type` | 页面类型 |
-| `status` | `draft`、`active`、`stale`、`archived` |
+| `status` | `draft`、`active`、`stale`、`archived`、`redirect`（`redirect` 仅用于 entity 别名薄页，不参与主图谱节点） |
 | `confidence` | `low`、`medium`、`high` |
 | `created` | 页面创建日期 |
 | `updated` | 最近维护日期 |
@@ -128,6 +129,8 @@ evidence_count: 1
 | `review` | 是否需要人工审核 |
 | `supersedes` | 本页面替代的旧页面 ID 列表 |
 | `superseded_by` | 替代本页面的新页面 ID 列表 |
+| `aliases` | （仅 entity）已知别名字符串数组，保留人类写法；规范化匹配由派生 `normalized_alias_index.json` 维护 |
+| `canonical_id` | （仅 entity）若为 `null` 则本页是正名页；若指向某 `id` 则本页是薄重定向页，必须 `status: redirect` |
 | `evidence_count` | 支撑核心结论的来源或证据数量 |
 
 更完整的字段约定、`review_queue.json` 和 `source_manifest.json` 契约见
@@ -159,6 +162,8 @@ evidence_count: 1
 
 **slug 不是当前标题镜像**：slug 是页面**创建时**的可读提示。页面 H1 改名后 slug 不变。
 
+**entity 别名薄页**：极少数情况下，别名以独立页面形式存在（外部已有 wikilink 散布、不便迁移），该页 frontmatter 用 `canonical_id` 指向正名页 `id`，`status: redirect`，不参与主图谱节点 / 综合 / 引用来源。99% 的别名应只放在正名页的 `aliases` 列表里，不建薄页。详见 [05-contracts-and-next-steps.md](05-contracts-and-next-steps.md) "Normalized Alias Index Schema" 段和 entity 模板。
+
 ### 拆分与合并语义
 
 页面被拆分时：
@@ -178,7 +183,7 @@ evidence_count: 1
 
 | 位置 | 字段 |
 | --- | --- |
-| 页面 frontmatter | `id`、`source_ids`、`related_ids`、`supersedes`、`superseded_by` |
+| 页面 frontmatter | `id`、`source_ids`、`related_ids`、`supersedes`、`superseded_by`、`canonical_id`（entity 别名薄页指向） |
 | `review_queue.json` 单条 item | `affected_page_ids`、`evidence.page_id` |
 | `source_manifest.json` 单条 source | `summary_page_id` |
 | 未来 `maps/graph-data.json` 节点 key | 页面 `id` |

@@ -15,3 +15,4 @@ knowledge/.wiki/lightrag/
 knowledge/maps/graph-data.json
 knowledge/.wiki/id_index.json
 knowledge/.wiki/inbox_index.json
+knowledge/.wiki/normalized_alias_index.json
