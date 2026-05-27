@@ -6,7 +6,7 @@ executor: codex
 status: pending
 type: apply
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-27  # v2 after codex spec review v1
 related_rfcs:
   - rfc_20260526_004
   - rfc_20260526_002
@@ -201,7 +201,21 @@ aliases 不列为 canonical（它是字符串数组，不是 ID 引用，由 nor
 
 ### Step 3：更新 `wiki-design/05-contracts-and-next-steps.md`
 
-#### 3a：Frontmatter 生命周期字段段 加 `aliases` / `canonical_id` 字段表行
+#### 3a：在 "目标文件关系" 树和职责划分表加 `normalized_alias_index.json`
+
+找到 "目标文件关系" 段的 `.wiki/` 块（TASK-002/003 落地后应已含 `review_queue.json` / `cache.json` / `search_index/` / `lightrag/` / `id_index.json` / `capture_policy.json` / `inbox_index.json` 等）。在 `inbox_index.json` **之后**追加一行：
+
+```text
+    normalized_alias_index.json
+```
+
+并在"职责划分"表末尾追加 1 行：
+
+```markdown
+| `knowledge/.wiki/normalized_alias_index.json` | entity 别名规范化倒排索引，由 lint 生成，可重建 | 否 |
+```
+
+#### 3b：Frontmatter 生命周期字段段 加 `aliases` / `canonical_id` 字段表行
 
 找到该段的字段表（应有 TASK-002 落地的 id / type / status / source_ids / related_ids / 等行）。
 
@@ -218,9 +232,31 @@ aliases 不列为 canonical（它是字符串数组，不是 ID 引用，由 nor
 | `canonical_id` | （仅 entity）`null` = 正名页；指向某 `id` = 薄重定向页，必须配 `status: redirect` |
 ```
 
-#### 3b：Entity 模板 frontmatter 加 `aliases` / `canonical_id` 字段
+#### 3c：Entity 模板 frontmatter 加 `aliases` / `canonical_id` 字段
 
-找到 "## Entity 模板" 段的 yaml 块。在 `related_ids: []` 行**之后**插入两行：
+找到 "### Entity" 子节（在 "## 最小页面模板" 段下，可由 `type: entity` 行唯一识别）的 yaml 块。该 frontmatter 在 TASK-002 落地后形如：
+
+```yaml
+---
+id: {{ENTITY_ID}}                          # ent_YYYYMMDD_<slug>
+type: entity
+status: active
+confidence: medium
+created: {{DATE}}
+updated: {{DATE}}
+last_verified: {{DATE}}
+review: false
+source_ids: []
+related_ids: []
+sources: []
+related: []
+supersedes: []
+superseded_by: []
+evidence_count: 0
+---
+```
+
+**only** 在 Entity 模板的 `related_ids: []` 行**之后**插入两行（注意：Topic / Decision / Open Question / Query 模板也都有 `related_ids: []` 行，本步骤一概不动它们）：
 
 ```yaml
 aliases: []                                # entity 已知别名字符串数组（人类写法）；正名页可有，薄重定向页应为空
@@ -240,7 +276,7 @@ canonical_id: null                         # null = 正名页；指向某 ent_id
 > 未来如需结构化此关系，另开 RFC。本期不引入新 frontmatter 字段。
 ```
 
-#### 3c：答案引用格式段 修正示例（Decision #5）
+#### 3d：答案引用格式段 修正示例（Decision #5）
 
 找到 "答案引用格式" 段。如果当前段中有 "[[self-attention]]（正名 [[Attention]]）" 这类示例，替换为 "self-attention（正名 [[Attention]]）"。
 
@@ -255,7 +291,7 @@ canonical_id: null                         # null = 正名页；指向某 ent_id
 后续段落引用统一用正名 `[[Attention]]`。
 ```
 
-#### 3d：新增 "Normalized Alias Index Schema" 整段
+#### 3e：新增 "Normalized Alias Index Schema" 整段
 
 紧跟 "Inbox Index Schema" 段之后插入（保持 `## h2` 级别）：
 
@@ -416,6 +452,9 @@ if [ -d knowledge/ ]; then echo "FAIL: knowledge/ exists"; else echo "OK: knowle
 
 echo "=== 16. AGENTS.md / 04 / README / rfcs 不应被本轮改动 ==="
 git diff --name-only | grep -E '^(AGENTS.md|wiki-design/04-agent-rules.md|wiki-design/README.md|wiki-design/rfcs/)' || echo "  (none)"
+
+echo "=== 17. 05 内含 normalized_alias_index.json 不少于 3 处（目标文件树 + 职责表 + Schema 段路径）==="
+echo "命中: $(grep -c 'normalized_alias_index.json' wiki-design/05-contracts-and-next-steps.md)"
 ```
 
 预期：
@@ -437,6 +476,7 @@ git diff --name-only | grep -E '^(AGENTS.md|wiki-design/04-agent-rules.md|wiki-d
 - 14：三条各 ≥ 1
 - 15：`OK: knowledge/ absent`
 - 16：`(none)`
+- 17：≥ 3（目标文件树 + 职责表 + Normalized Alias Index Schema 段路径，全文应至少出现 3 次）
 
 ### Step 6：Commit 正本改动
 
@@ -505,10 +545,11 @@ git commit -m "[task] TASK-004 done by codex"
   - 2a 摄入资料 Triage 加 entity alias matching: done
   - 2b Inbox 晋升段 alias matching 复用 + 跨 RFC 协同备注: done
 - Step 3 05-contracts: done
-  - 3a 字段表加 aliases/canonical_id + status 扩枚举: done
-  - 3b Entity 模板加 aliases/canonical_id + 备注: done
-  - 3c 答案引用格式段加别名引用规则: done
-  - 3d Normalized Alias Index Schema 新段: done
+  - 3a 目标文件关系树 + 职责划分表加 normalized_alias_index.json: done
+  - 3b 字段表加 aliases/canonical_id + status 扩枚举: done
+  - 3c Entity 模板加 aliases/canonical_id + 备注: done
+  - 3d 答案引用格式段加别名引用规则: done
+  - 3e Normalized Alias Index Schema 新段: done
 - Step 4 .gitignore: done
 - Step 5 验证: 输出见下
 
