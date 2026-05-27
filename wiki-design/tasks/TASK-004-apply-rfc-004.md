@@ -576,9 +576,115 @@ git commit -m "[task] TASK-004 done by codex"
 
 （待执行者在 Step 7 填写）
 
-## Evaluation by claude · YYYY-MM-DD
+## Evaluation by claude · 2026-05-27
 
-（待评估者填写）
+### 结论
+
+**PASS**。Codex 按 v3 spec 完整执行 5 个子项 + 17 项验证全过，4 个白名单文件改动严格、Decision 7 条全部覆盖、Entity 模板 anchor 精确（没串到其它 5 模板）、Normalized Alias Index Schema 三处分位置全到位。
+
+### 详细核对
+
+**协议合规 ✅**
+
+- Step 6 commit `4453fb8` 只动 4 个白名单文件：`.gitignore` + `01-architecture.md` + `02-workflows.md` + `05-contracts-and-next-steps.md`。Step 5 第 0 项 `diff exit = 0` 印证。
+- Step 7 commit `4bb31c5` 只动 `TASK-004-apply-rfc-004.md` 自身（仅 frontmatter `status: pending → done` + 末尾追加 Execution log 段）。
+- AGENTS.md / 04-agent-rules / README / rfcs 在 `HEAD~2..HEAD` 范围零改动。
+- 其它 task 未被本轮触动。
+- `knowledge/` 未创建。
+- Working tree clean。
+
+**内容保真 ✅**（17 项验证 + Entity anchor 精确性）
+
+所有 17 项验证全过：
+- 0 白名单 diff exit = 0
+- 1~14 各项目均 ≥ 期望
+- **17a/17b/17c 分位置各 = 1**（spec v3 拆分位置 grep 起效，证明 normalized_alias_index.json 在树/表/Schema 三处都精确落地，既无重复也无缺漏）
+
+**特别核对：Entity 模板 anchor 精确性** ✅
+
+- `^aliases:` 全文仅 1 处命中（line 582）
+- `^canonical_id:` 全文仅 1 处命中（line 583）
+- 二者在 Entity 模板 yaml 块内，**其它 5 模板（Source / Topic / Decision / Open Question / Query）的 `related_ids: []` 一概未被串改**
+
+v2 spec 加的 anchor 精确化（`### Entity` + `type: entity` 唯一识别 + 明确强调 "only" Entity 模板）成功避免了误改。
+
+**Decision 7 条覆盖 ✅**
+
+| Decision | 落地位置 | 验证 |
+|---|---|---|
+| #1 顺序约束 gated on RFC-002 | TASK-002 已 done（commit `987ebc2`） | ✓ |
+| #2 lint 规则 4 条新规则替代原 RFC #2 | 05 Normalized Alias Index Schema 段 `### lint 校验（Decision #2 替代版）` | ✓ 4 条全在，明确标 "替代版" |
+| #3 alias 规范化 normalized_alias_index | 05 Normalized Alias Index Schema 整段 + 派生层 + 规范化规则 | ✓ |
+| #4 status: redirect 新枚举 | 01 + 05 两处字段表 | ✓ |
+| #5 答案引用示例修正 | 05 答案引用格式段 `**别名引用规则**` 含正反对照 | ✓ |
+| #6 跨 RFC 协同（Inbox 晋升 alias matching） | 02 Inbox 晋升段 `**跨 RFC 协同**` blockquote | ✓ |
+| #7 alias 来源记录（可选，不强制） | 05 Entity 模板下方 `**alias 来源**（可选，不强制）` blockquote，明确"本期不引入新 frontmatter 字段" | ✓ |
+
+**Schema 自洽 ✅**
+
+- `status` 枚举扩 5 个值（`draft`、`active`、`stale`、`archived`、`redirect`）在 01 和 05 两处字段表表达一致。
+- `aliases` / `canonical_id` 字段说明在 01 和 05 两处一致，均标注 "仅 entity"。
+- Normalized Alias Index Schema 段的 4 条 lint 规则与原 RFC #2 旧规则不冲突（替换关系）。
+- `canonical_id` 进入 01 "Cross-ref 字段说明" canonical 列；`aliases` 未列入（正确——字符串数组非 ID 引用）。
+- inb_ prefix（TASK-003）与 entity 的 ent_/canonical_id 在 ID 命名空间不冲突。
+
+**commit 卫生 ✅**
+
+- `4453fb8` commit message 用 `[apply rfc-004]` 前缀，HEREDOC 覆盖 Decision 7 条 + 4 文件改动 + Co-Authored-By: Codex 标签到位。
+- `4bb31c5` commit message `[task] TASK-004 done by codex` 简洁规范。
+- 两 commit scope 严格分离。
+- 前置 spec review-revise 3 轮回合 + 索引推进已先于 apply 沉淀。
+
+### Codex 这次的高质量动作
+
+1. **17a/17b/17c 全部 = 1**——证明 spec v3 分位置 grep 起效；Codex 按 spec 把 normalized_alias_index.json 在三个位置都精确落到，既无重复也无缺漏。
+2. **Entity 模板 anchor 精确执行**——其它 5 模板 yaml 完全未被串改。
+3. **Decision #2 lint 规则标 "替代版"**——明确表达"替换原 RFC 旧规则"语义。
+
+### 沉淀给 TASK-005
+
+1. **3 轮 spec review 是值得的**——本 task v1 抓 2 个 bug、v2 抓 2 个 bug、v3 通过。TASK-005 涉及创建多个新文件 + seed 内容，复杂度类似，建议同样走 spec review-revise 循环。
+2. **重命名子项时必须自查所有引用**——v1→v2 重命名漏掉强约束 #7 同步。TASK-005 spec 起草时如有子项重命名，commit 前全文 grep 旧编号。
+3. **强约束写完后回头校对**——v1 强约束 #6 是写 spec 时的笔误（lint 规则实际在新 Step 3e）。TASK-005 起草后把强约束每条 `Step Xx` 引用都 grep 反查一次。
+4. **分位置精确 grep 优于全文 grep**——v2 第 17 项全文 ≥ 3 不能区分分布，v3 拆 17a/b/c 才精确。TASK-005 验证涉及多个新建文件时每个文件应有独立 grep。
+
+### 链路通过性
+
+第三份 apply 类 task 端到端，spec review 走了 **3 轮回合**：
+
+```
+spec v1 (f255db4)
+  → review v1 需修改 (8e21f38)     ← 抓 2 bug
+  → spec v2 (b5b4118)
+  → review v2 需修改 (3ef952e)     ← 又抓 2 bug
+  → spec v3 (ecf8ca7)
+  → review v3 通过 (98803db)       ← 通过
+  → 索引推进 (fb198e0)
+  → apply commit (4453fb8)
+  → task done (4bb31c5)
+  → evaluate (本 commit)
+```
+
+10 个 commit 完整审计链。3 轮 review 抓 4 个 bug 后，execution 零偏差。
+
+### 后续路径：进入收尾阶段
+
+| 顺序 | Task | 状态 |
+|---|---|---|
+| 已 done | TASK-001 写 Decision | ✅ |
+| 已 done | TASK-002 apply RFC-002 (stable id) | ✅ |
+| 已 done | TASK-003 apply RFC-003 (capture + inbox) | ✅ |
+| 已 done | **TASK-004 apply RFC-004 (aliases)** | ✅ |
+| 下一步 | **TASK-005 初始化 knowledge/ 骨架** | pending |
+
+**所有 wiki-design 正本 schema 现已冻结**（RFC-001~005 全部 applied）。TASK-005 是收尾任务：基于已冻结的 schema 创建 `knowledge/` 实例骨架。
+
+---
+
+- Evaluator: claude
+- Verified at: 2026-05-27
+- Resulting commits: `4453fb8` (apply rfc-004), `4bb31c5` (task done)
+- Evaluation commit: 见下一个 commit
 
 ## Spec review by codex · 2026-05-27
 
