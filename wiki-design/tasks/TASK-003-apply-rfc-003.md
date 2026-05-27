@@ -3,7 +3,7 @@ id: task_20260526_003
 title: Apply RFC-003 — 把 capture 机制和 inbox 缓冲层落到 AGENTS / 01 / 02 / 04 / 05
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-05-27
 updated: 2026-05-27  # v2 after codex spec review v1
@@ -700,3 +700,74 @@ git commit -m "[task] TASK-003 done by codex"
 
 ### 结论
 - 通过。可以进入 Step 1~8。
+
+## Execution log by codex · 2026-05-27
+
+### 步骤完成情况
+- Step 0 Spec review: 通过
+- Step 1 AGENTS.md: done
+- Step 2 01-architecture: done
+  - 2a prefix 表加 inb_ 行: done
+  - 2b inbox capture item 备注: done
+  - 2c 正本/派生层列表追加: done
+- Step 3 02-workflows: done
+  - 3a 被动 capture 新段: done
+  - 3b Inbox 晋升 新段: done
+- Step 4 04-agent-rules: done
+  - 4a 读取列表加 inbox_index.json: done
+  - 4b 写入规则加 capture 例外: done
+- Step 5 05-contracts + .gitignore: done
+  - 5a 目标文件关系树 + 职责划分表更新: done
+  - 5b Capture Item Schema 新段: done
+  - 5c Capture Policy Schema 新段: done
+  - 5d Inbox Index Schema 新段: done
+  - 5e .gitignore 追加 inbox_index.json: done
+- Step 6 验证: 输出见下
+
+### 验证输出
+```
+=== 1. AGENTS.md 含'低摩擦 capture'子节（应 ≥ 1）===
+命中: 1
+=== 2. AGENTS.md 引用 RFC-003 + 02-workflows + 05-contracts（每项应 ≥ 1 次命中）===
+  RFC-003-inbox-capture-layer 命中次数:        1
+  02-workflows.md 命中次数:        2
+  05-contracts-and-next-steps.md 命中次数:        2
+=== 3. 01-architecture.md prefix 表含 inb_ 行（应 ≥ 1）===
+命中: 1
+=== 4. 01-architecture.md inbox capture item 备注存在（应 ≥ 1）===
+命中: 1
+=== 5. 01-architecture.md 派生数据列表含 inbox_index.json（应 ≥ 1）===
+命中: 1
+=== 6. 02-workflows.md 含两段新 h2（应 = 2）===
+命中: 2
+=== 7. 04-agent-rules.md 读取列表含 inbox_index.json（应 ≥ 1）===
+命中: 1
+=== 8. 04-agent-rules.md 写入规则段含 'capture 例外'（应 ≥ 1）===
+命中: 1
+=== 9. 05 含 Capture Item / Capture Policy / Inbox Index 三段（应 = 3）===
+命中: 3
+=== 10. 05 capture_policy.json 默认 exclude_paths 不含 wiki/decisions/**（应 = 0）===
+命中: 0
+=== 11. 05 含 PII 非完整警示（应 ≥ 1）===
+命中: 1
+=== 12. 05 目标文件关系树含 inbox/ 和 capture_policy.json（应各 ≥ 1）===
+inbox/: 1
+capture_policy.json: 4
+=== 13. 白名单外文件不应被动（应输出空 stat） ===
+=== 14. tasks/ 除 TASK-003 外其它 task 应未动 ===
+wiki-design/tasks/README.md
+=== 15. knowledge/ 不应存在 ===
+OK: knowledge/ absent
+=== 16. .gitignore 含 inbox_index.json（应 ≥ 1）===
+命中: 1
+=== 17. 05 含 Inbox Index Schema 字段表（应 ≥ 1，验证 5d 内容完整）===
+命中 'draft_count' 字段: 2
+命中 'oldest_draft_age_days' 字段: 2
+```
+
+### Commit
+- Step 7 commit sha: fd32feb61a8b29e7ebb730b759d21612135b26aa
+- Step 8 commit sha: 本 commit（实际 sha 由提交后回复报告）
+
+### 偏离 / 异常
+- Step 6 第 14 项使用 `5633239..HEAD` 范围，命中了本轮开始前已有的 `465a40e` 对 `wiki-design/tasks/README.md` 的 task 索引改动；当前 Step 1~5 工作区改动只包含 6 个白名单文件，未改其它 task 文件。
