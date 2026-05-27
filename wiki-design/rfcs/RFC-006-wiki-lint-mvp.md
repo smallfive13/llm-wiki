@@ -4,13 +4,12 @@ title: 引入 wiki-lint MVP，闭合 RFC-002/003/004 的约束
 author: claude
 status: proposed
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-27  # v2 after codex review v1
 targets:
   - scripts/wiki_lint.py
   - AGENTS.md
   - wiki-design/02-workflows.md
   - wiki-design/05-contracts-and-next-steps.md
-  - .gitignore
 reviewers:
   - codex
   - user
@@ -20,7 +19,9 @@ reviewers:
 
 ## 背景
 
-RFC-001~005 已 accepted + applied，schema 完全冻结，`knowledge/` 骨架已落地（TASK-005）。但有一个明显缺口：**所有 schema 约束目前只靠 Agent 人肉遵守，没有任何机械保障**。
+RFC-001~005 已 accepted + applied，schema 完全冻结，`knowledge/` 骨架已落地（TASK-005）。但有一个明显缺口：**RFC-002/003/004 在知识数据层定义的所有 schema 约束目前只靠 Agent 人肉遵守，没有任何机械保障**。
+
+> 范围界定（v2 澄清）：本 RFC 只覆盖**知识数据层**（`knowledge/**`，对应 RFC-002/003/004 的产物）。**不覆盖**协作流程层（`wiki-design/rfcs/**`、`wiki-design/tasks/**`，对应 RFC-001/005）—— 这些是流程文档，状态流转需要 git 历史校验，留给后续 RFC。
 
 具体而言，下列约束在 schema 层有明确定义，在执行层完全缺失：
 
@@ -30,8 +31,13 @@ RFC-001~005 已 accepted + applied，schema 完全冻结，`knowledge/` 骨架�
 | `id` 格式 `<prefix>_YYYYMMDD_<slug>` 全局唯一 | RFC-002 | 无校验 |
 | source 单主键 `source_id == id == summary_page_id` | RFC-002 / 05 | 无校验 |
 | `related_ids` / `source_ids` / `supersedes` / `superseded_by` / `canonical_id` 指向真实存在的 id | 01 canonical 边界 | 无校验 |
+| `supersedes` / `superseded_by` 双向对称（A `supersedes:[B]` ↔ B `superseded_by:[A]`） | RFC-002 | 无校验 |
 | `aliases` 在所有 entity 中唯一 + 不与其它 `canonical_id` 冲突 | RFC-004 | 无校验 |
-| `status: redirect` 必须有 `canonical_id` 指向有效 entity | RFC-004 | 无校验 |
+| `canonical_id` 不允许链式跳转（必须指向 `canonical_id: null` 的正名页） | RFC-004 / 05 | 无校验 |
+| `status: redirect` 必须有 `canonical_id` 指向有效正名 entity | RFC-004 | 无校验 |
+| `hash_sha256` 64 位十六进制格式 | RFC-002 / 05 | 无校验 |
+| 日期格式（wiki `YYYY-MM-DD` / JSON 带时区 ISO 8601） | 05 各 schema | 无校验 |
+| JSON enum 取值（source_type / status / adapter / review_queue.type / ...） | 05 各 schema | 无校验 |
 | inbox `id` 格式 `inb_YYYYMMDD_HHmmss_<slug>` | RFC-003 | 无校验 |
 | capture_policy.exclude_patterns 的 PII 正则扫描 | RFC-003 | 无执行体 |
 | 派生层文件（id_index / inbox_index / normalized_alias_index）生成 | RFC-002/003/004 | 无生成者 |
@@ -47,48 +53,146 @@ ingest 还没真正跑过任何一次（`knowledge/wiki/` 全空）。在首次 
 
 ## 提案
 
-引入 **wiki-lint MVP**：一个 Python 脚本 + 派生层生成器 + 报告输出，**只覆盖 RFC-001~005 已定义的约束**，不引入新规则。
+引入 **wiki-lint MVP**：一个 Python 脚本 + 派生层生成器 + 报告输出，**只覆盖 RFC-002/003/004 已定义的知识数据层约束**，不引入新规则。
 
 ### 范围（MVP 包含）
 
-1. **schema 校验**（按 RFC-002 / RFC-003 / RFC-004 写的字段表）
-   - `wiki/**/*.md` 的 frontmatter 必填字段、`id` 格式、enum 值
-   - `inbox/*.md` 的 frontmatter（含 status / suggested_target_type）
-   - 4 个上下文层 md (`purpose/index/overview/log`) 不要 frontmatter（反向校验）
+#### 1. schema 校验
 
-2. **ID 唯一性 + 派生 `id_index.json`**
-   - 收集 `wiki/**` 所有 `id`，校验全局唯一
-   - 同日同 slug 冲突 → 强制 `_NN` 后缀
-   - 输出 `.wiki/id_index.json` = `{ id: path }`
+按 RFC-002 / RFC-003 / RFC-004 写的字段表逐项校验：
 
-3. **canonical 引用完整性**
-   - `source_ids` / `related_ids` / `supersedes` / `superseded_by` / `canonical_id` 中每个 id 都能在 `id_index` 找到
-   - `review_queue.json.evidence[].page_id` / `affected_page_ids` 同理
-   - `source_manifest.summary_page_id` 同理
+- `wiki/**/*.md` 的 frontmatter 必填字段、`id` 格式、enum 值
+- `inbox/*.md` 的 frontmatter（含 `status` / `suggested_target_type`）
+- 4 个上下文层 md (`purpose/index/overview/log`) 不要 frontmatter（反向校验）
+- **日期格式**：
+  - wiki 页 `created` / `updated` / `last_verified` = `YYYY-MM-DD`
+  - JSON 中 `imported_at` / `last_ingested_at` / `updated_at` / `created_at` / `resolved_at` / `captured_at` = 带时区 ISO 8601 或 `null`
+- **enum 显式取值**（不允许自由发挥）：
+  - 页面 `type` ∈ `{source, entity, topic, comparison, synthesis, decision, query, open-question}`
+  - 页面 `status` ∈ `{draft, active, stale, archived, redirect}`
+  - 页面 `confidence` ∈ `{low, medium, high}`
+  - `source_manifest.source_type` ∈ `{pdf, markdown, web, chat, image, manual, code}`
+  - `source_manifest.status` ∈ `{new, triaged, ingested, skipped, failed, deleted}`
+  - `source_manifest.adapter` ∈ `{local_file, web_clipper, manual, llm_wiki_app, custom}`
+  - `review_queue.type` ∈ `{contradiction, duplicate, missing_page, confirm, suggestion, source_gap, stale_claim}`
+  - `review_queue.status` ∈ `{pending, resolved, dismissed}`
+  - `review_queue.priority` ∈ `{low, medium, high}`
+  - `capture_policy.auto_capture` 必须是 `bool`；`exclude_paths` 必须是 `array<string>`；`max_inbox_files` 必须是正整数；`version` == 1
+- **hash_sha256 格式**：64 位十六进制（`^[0-9a-f]{64}$`），MVP 只校验格式，**不**比对实际文件 hash（性能 + 文件可能已删除）。
 
-4. **source 单主键**
-   - 每个 `wiki/sources/*.md`：`frontmatter.id == frontmatter.source_id`
-   - 每个 `source_manifest.sources[*]`：`summary_page_id` 为 null 或等于 `source_id`，且等于对应摘要页 `id`
-   - `summary_page_path` 文件存在
+#### 2. ID 唯一性 + 派生 `id_index.json`
 
-5. **entity 别名机制 + 派生 `normalized_alias_index.json`**
-   - 收集所有 entity 的 `aliases` + 正名 title
-   - 规范化（lowercase / 去空格 / 连字符 / 中文全半角 / 复数）
-   - 校验唯一性（无冲突 alias 指向多个 canonical_id）
-   - `status: redirect` 的 entity 必须有 `canonical_id` 指向真实正名页
-   - 输出 `.wiki/normalized_alias_index.json` = `{ normalized: canonical_id }`
+- 收集 `wiki/**` 所有 `id`，校验全局唯一
+- 同日同 slug 冲突 → 强制 `_NN` 后缀（违反 → error）
+- 输出 `.wiki/id_index.json`，**与其它两个派生层格式一致**：
 
-6. **inbox 派生 `inbox_index.json`**
-   - 扫 `inbox/*.md`（不含 archive），按 RFC-003 schema 输出 draft 计数 + 最近 N 摘要
+```json
+{
+  "version": 1,
+  "updated_at": "ISO 8601",
+  "entries": {
+    "src_20260526_attention": {
+      "path": "wiki/sources/attention-is-all-you-need.md",
+      "type": "source",
+      "status": "active"
+    }
+  }
+}
+```
 
-7. **PII 扫描**
-   - 读 `capture_policy.json.exclude_patterns`
-   - 扫 `inbox/*.md` 与（可选）`wiki/**/*.md`
-   - 命中 → 输出 warning + 文件 + 行号；inbox 命中且 `status: draft` → 升级为 error
+#### 3. canonical 引用完整性 + supersedes 对称
 
-8. **跨流程一致性**
-   - `summary_page_id` 已生成时其指向的页 `id` 必须存在且 type=source
-   - `review_queue.items[].evidence[].page_path` 与 `page_id` 在 id_index 中一致（即 path 是 id 当前路径）
+- `source_ids` / `related_ids` / `supersedes` / `superseded_by` / `canonical_id` 中每个 id 都能在 `id_index` 找到（断引 → error）
+- `review_queue.json.evidence[].page_id` / `affected_page_ids` 同理
+- `source_manifest.summary_page_id` 同理
+- **supersedes / superseded_by 双向对称**：
+  - 若页 A `supersedes: [B]`，则页 B `superseded_by` 必须包含 A
+  - 反向同理
+  - 任一方向缺失 → error
+- 被 superseded 的页应自动有 `status: archived`（否则 warning）
+
+#### 4. source 单主键
+
+- 每个 `wiki/sources/*.md`：`frontmatter.id == frontmatter.source_id`（不等 → error）
+- 每个 `source_manifest.sources[*]`：
+  - `summary_page_id` 为 `null` 或等于 `source_id`
+  - 若 `summary_page_id != null`：必须等于对应摘要页 `id` 且摘要页 `type == source`
+  - `summary_page_path` 若非 `null` 则文件必须存在，且其 frontmatter id 与 `summary_page_id` 一致
+
+#### 5. entity 别名机制 + 派生 `normalized_alias_index.json`
+
+校验：
+
+- 收集所有 entity 的 `aliases` + 正名 title（H1）+ 薄重定向页 `id`
+- 规范化（lowercase / 去首尾空白 / 连续空白合并 / 连字符 ↔ 下划线 ↔ 空格 / 中文全半角统一 / 复数 s/es 可选）
+- 同一规范化 key 不能映射到两个不同 `canonical_id`（冲突 → error，同时写入 `review_queue.json type: duplicate`）
+- `status: redirect` 的 entity 必须有 `canonical_id` 指向真实存在的 entity
+- **`canonical_id` 不允许链式跳转**：`canonical_id` 必须指向 `canonical_id: null` 的正名页（A → B → C → error）
+
+输出 `.wiki/normalized_alias_index.json`，**严格按 05-contracts-and-next-steps.md「Normalized Alias Index Schema」已冻结格式**：
+
+```json
+{
+  "version": 1,
+  "updated_at": "ISO 8601",
+  "entries": {
+    "attention": {
+      "canonical_id": "ent_20260526_attention",
+      "matched_form": "Attention",
+      "source": "title"
+    },
+    "self-attention": {
+      "canonical_id": "ent_20260526_attention",
+      "matched_form": "self-attention",
+      "source": "alias"
+    }
+  }
+}
+```
+
+`source` ∈ `{title, alias, redirect}`。
+
+#### 6. inbox 派生 `inbox_index.json`
+
+输出 `.wiki/inbox_index.json`，**严格按 05-contracts-and-next-steps.md「Inbox Index Schema」已冻结格式**：
+
+```json
+{
+  "version": 1,
+  "draft_count": 0,
+  "oldest_draft_age_days": null,
+  "recent_drafts": [
+    {
+      "filename": "20260526-153012-attention-complexity.md",
+      "summary": "Attention 复杂度讨论",
+      "captured_at": "2026-05-26T15:30:12+08:00"
+    }
+  ],
+  "updated_at": "ISO 8601"
+}
+```
+
+- `draft_count` 只计 `inbox/*.md` 中 `status: draft`，**不含** `archive/`
+- `oldest_draft_age_days` 按 frontmatter `created` 算；无 draft 时为 `null`
+- `recent_drafts` 默认 N = 10，summary 优先 `suggested_target_title`，回退正文首句
+- `captured_at` 优先 frontmatter `created`，回退文件名秒级时间戳
+
+#### 7. PII 扫描（默认 inbox-only）
+
+- 读 `capture_policy.json.exclude_patterns`
+- **默认扫**：`inbox/*.md`（含 frontmatter + 正文）
+- **可选扩展**：`--scan-wiki-pii` 时额外扫 `wiki/**/*.md`
+- 命中报告含：文件路径 + 行号 + 命中的 pattern
+- 分级：
+  - `inbox/*.md` 命中且 `status: draft` → **error**（阻塞 commit）
+  - `inbox/*.md` 命中且 `status: promoted/dropped`（即 archive/）→ warning
+  - `wiki/**` 命中（仅 `--scan-wiki-pii` 模式）→ warning
+
+#### 8. 跨流程一致性
+
+- `summary_page_id` 已生成时其指向的页 `id` 必须存在且 `type=source`
+- `review_queue.items[].evidence[].page_path` 与 `page_id` 在 id_index 中一致（page_path 必须是 page_id 当前路径）
+- inbox `archive/promoted/` 下文件的 frontmatter `status` 必须是 `promoted`；`archive/dropped/` 下必须是 `dropped`（防止人工移动文件忘改 status）
 
 ### 范围（MVP 不包含 → 留给后续 RFC）
 
@@ -98,15 +202,20 @@ ingest 还没真正跑过任何一次（`knowledge/wiki/` 全空）。在首次 
 - 断链建议、孤立页检测、`review:true` 长期未处理告警（→ Backlog "review queue SLA"）
 - pre-commit hook 集成（先手动跑，hook 由后续 RFC 决定）
 - CI 集成
+- **协作流程层 lint**：不 lint `wiki-design/rfcs/*.md` 和 `wiki-design/tasks/*.md` 的 frontmatter / status enum / 状态流转。这些是流程文档，状态流转校验需要 git 历史，留给后续 RFC（暂称 RFC-008 "wiki-design lint"）。
+- **hash_sha256 实际值比对**：MVP 只校验 64 位十六进制格式；是否重算并对比 `raw/sources/<file>` 的实际 hash 留给后续 RFC（涉及性能权衡）。
 
 ### 触发与输出
 
 ```bash
 # 手动跑（MVP 默认）
-python scripts/wiki_lint.py                  # 校验 + 重建派生层
-python scripts/wiki_lint.py --check-only     # 只校验，不写派生层
-python scripts/wiki_lint.py --json           # 机器可读输出
+python3 scripts/wiki_lint.py                  # 校验 + 重建派生层
+python3 scripts/wiki_lint.py --check-only     # 只校验，不写派生层
+python3 scripts/wiki_lint.py --json           # 机器可读输出
+python3 scripts/wiki_lint.py --scan-wiki-pii  # 加扫 wiki/ PII（默认只扫 inbox）
 ```
+
+> 命令统一使用 `python3`（macOS 上 `python` 可能不存在或指向旧版）。`scripts/README.md` 中写明安装步骤 `pip3 install pyyaml`。
 
 退出码：
 
@@ -114,7 +223,7 @@ python scripts/wiki_lint.py --json           # 机器可读输出
 - `1` = 有 error
 - `2` = 配置 / 脚本自身错误
 
-输出格式（人类可读，默认）：
+人类可读输出格式（默认）：
 
 ```
 wiki-lint v0.1.0
@@ -123,13 +232,13 @@ wiki-lint v0.1.0
 
 [OK]      schema 校验: 0/0 页通过
 [OK]      ID 唯一性: 0 个 id（无冲突）
-[OK]      canonical 引用: 0/0 完整
+[OK]      canonical 引用 + supersedes 对称: 0/0 完整
 [OK]      source 单主键: 0/0
-[OK]      entity 别名: 0 个 alias / 0 个正名
+[OK]      entity 别名（含链式跳转 / status:redirect）: 0 个 alias / 0 个正名
 [OK]      inbox: 0 draft
-[OK]      PII 扫描: 0 命中
+[OK]      PII 扫描（inbox-only）: 0 命中
 
-派生层已重建:
+派生层已重建（原子写入）:
   .wiki/id_index.json (0 entries)
   .wiki/normalized_alias_index.json (0 entries)
   .wiki/inbox_index.json (0 drafts)
@@ -137,13 +246,46 @@ wiki-lint v0.1.0
 错误: 0 · 警告: 0
 ```
 
+JSON 输出格式（`--json`）—— **MVP 固定结构**：
+
+```json
+{
+  "wiki_lint_version": "0.1.0",
+  "ran_at": "ISO 8601",
+  "scanned": {
+    "wiki_pages": 0,
+    "inbox_drafts": 0,
+    "sources": 0
+  },
+  "errors": [
+    {
+      "code": "ID_DUPLICATE",
+      "file": "wiki/entities/foo.md",
+      "line": 3,
+      "field": "id",
+      "message": "id 'ent_20260526_foo' 已在 wiki/entities/bar.md 出现",
+      "hint": "改名或追加 _NN 后缀"
+    }
+  ],
+  "warnings": [],
+  "derived_layers": {
+    "id_index_entries": 0,
+    "normalized_alias_index_entries": 0,
+    "inbox_index_drafts": 0
+  }
+}
+```
+
+每条 `errors[]` / `warnings[]` 必须含 `code` / `file` / `line` / `field` / `message` / `hint` 六字段（缺字段时该项为 `null`）。MVP 固定一套 error code 命名规则（如 `ID_DUPLICATE` / `CANONICAL_DANGLING` / `SUPERSEDES_ASYMMETRY` / `ALIAS_CONFLICT` / `CANONICAL_CHAIN` / `SOURCE_KEY_MISMATCH` / `HASH_FORMAT` / `DATE_FORMAT` / `ENUM_INVALID` / `PII_HIT_DRAFT` 等），具体 code 表写进 `scripts/README.md`。
+
 ### 实现约束
 
 - **语言**：Python 3.9+，**只用标准库** + `PyYAML`（一个依赖，frontmatter 解析）。理由：仓库零依赖现状，Python 在所有 dev / CI 环境都有。
-- **文件位置**：`scripts/wiki_lint.py`（单文件起步，未来可拆模块）。
+- **文件位置**：`scripts/wiki_lint.py`（单文件起步，未来可拆模块）+ `scripts/README.md`。
 - **配置**：直接读 `knowledge/.wiki/capture_policy.json`，**不**引入新配置文件。
 - **退出语义**：error 阻塞（exit 1），warning 通过但提示。
-- **幂等**：多次运行结果一致；派生层文件按确定序写入。
+- **幂等**：多次运行结果一致；派生层文件按确定序写入（JSON `sort_keys=True` + `entries` 内部按 key 升序）。
+- **原子写**（v2 新增）：派生层 JSON 一律按 "写 `<file>.tmp` → `os.replace(tmp, file)`" 模式落盘，避免多 Agent 并发 lint 时读到半写入文件。
 - **零网络 / 零 LLM**：纯机械检查，不调用任何模型。
 - **可重建**：派生层从 0 重建 ≤ 1 秒（小规模 knowledge）。
 
@@ -157,7 +299,7 @@ wiki-lint v0.1.0
 | capture 写入 inbox | inbox PII 扫描必须 inline 跑（auto_capture: true 路径必经） |
 | commit | MVP 不强制 pre-commit hook，但建议人工跑 `wiki-lint --check-only` |
 
-对 02-workflows.md 的具体改动：把所有"运行 lint"句子改为"运行 `python scripts/wiki_lint.py`"。
+对 02-workflows.md 的具体改动：把所有"运行 lint"句子改为"运行 `python3 scripts/wiki_lint.py`"。
 
 对 05-contracts-and-next-steps.md 第三阶段的改动：把 `scripts/wiki-lint` 状态从"待实现"标为本 RFC 落地范围；`wiki-context` / `wiki-graph-refresh` 仍待后续 RFC。
 
@@ -168,12 +310,10 @@ wiki-lint v0.1.0
 
 任何对 knowledge/wiki/、knowledge/inbox/、knowledge/raw/source_manifest.json、
 knowledge/.wiki/review_queue.json、knowledge/.wiki/capture_policy.json 的修改，
-commit 前必须跑 `python scripts/wiki_lint.py --check-only` 通过。
+commit 前必须跑 `python3 scripts/wiki_lint.py --check-only` 通过。
 
 派生层文件（.wiki/id_index.json 等）由 lint 自动生成，不需要手动维护，也不进 Git。
 ```
-
-对 .gitignore 的改动：无（id_index / inbox_index / normalized_alias_index 已在 RFC-002/003/004 加入）。
 
 ## 替代方案
 
@@ -207,22 +347,30 @@ commit 前必须跑 `python scripts/wiki_lint.py --check-only` 通过。
 | 仅做 1~4 项 | schema + 唯一性 + canonical + source | 留 alias / inbox / PII 后做 |
 | 仅做派生层 | 不校验，只生成 index | alias matching 能用，但不挡错 |
 
-**推荐**：1~8 项全做。每项实现成本可控（每项约 30~60 行 Python），分散做反而增加重复扫描成本。
+**推荐**：1~8 项全做。每项实现成本可控（每项约 50~80 行 Python），分散做反而增加重复扫描成本。
 
 ### D. 输出方式
 
 | 方案 | 评估 |
 | --- | --- |
-| **人类可读 + `--json` 选项** | MVP 推荐：既好读又能机器解析 |
+| **人类可读 + `--json` 选项** | MVP 推荐：既好读又能机器解析；v2 已固定 JSON 结构 |
 | 只人类可读 | 后续 CI 集成时要改 |
 | 只 JSON | 日常跑不友好 |
+
+### E. PII 扫描范围（v2 新增决策点）
+
+| 方案 | 评估 |
+| --- | --- |
+| **默认 inbox-only + `--scan-wiki-pii` 扩展** | MVP 推荐：明确开关；避免误报阻塞已审核的 wiki/ |
+| 默认全扫 | wiki/ 中正常含 author 名 / URL 等会高误报 |
+| 仅 inbox | 与默认推荐相同但无扩展能力 |
 
 ## 影响范围
 
 ### 新增
 
-- `scripts/wiki_lint.py`（约 400~600 行 Python）
-- `scripts/` 目录及其 README（说明 MVP 范围 + 用法）
+- `scripts/wiki_lint.py`（约 **600~800 行** Python，v2 上调估算）
+- `scripts/README.md`（说明 MVP 范围 + 用法 + error code 表 + 安装步骤）
 
 ### 改动正本
 
@@ -233,13 +381,13 @@ commit 前必须跑 `python scripts/wiki_lint.py --check-only` 通过。
 
 ### 不改动
 
-- `.gitignore`（派生层路径已在 RFC-002/003/004 排除）
+- `.gitignore`（派生层路径已在 RFC-002/003/004 加入，本 RFC 无需再动；v2 已从 targets 删除）
 - `knowledge/` 数据（lint 只读 + 写派生层）
 - 任何 RFC-001~005 的 schema 定义
 
 ### 依赖
 
-- 引入 PyYAML（dev 依赖，需在 README / scripts/README 中标注 `pip install pyyaml`）。
+- 引入 PyYAML（dev 依赖，需在 `scripts/README.md` 中标注 `pip3 install pyyaml`）。
 - 如果团队偏好 zero-dependency，可降级到纯标准库 + 简化 YAML 解析（只支持本仓库实际用到的 frontmatter 子集）。
 
 ### 与 Backlog 议题的关系
@@ -249,7 +397,7 @@ commit 前必须跑 `python scripts/wiki_lint.py --check-only` 通过。
 | evidence 结构化 | 不冲突，未来 evidence schema 一变 lint 跟着改 |
 | review queue SLA | 本 RFC 不做 SLA / 长期 pending 检测，留给后续 RFC |
 | Wiki 健康度指标 | 本 RFC 提供数据底座（id_index 等），健康度计算留后 |
-| 双 Agent 并发写入约束 | 不冲突，lint 校验静态约束，并发是 commit 顺序问题 |
+| 双 Agent 并发写入约束 | v2 已在风险段 + 实现约束加原子写；进一步 lock 机制留后续 RFC |
 | visibility / PII 字段 | 本 RFC 用现有 exclude_patterns，未来 visibility 字段加入后 lint 跟着扩 |
 
 ### 风险
@@ -257,8 +405,9 @@ commit 前必须跑 `python scripts/wiki_lint.py --check-only` 通过。
 1. **PyYAML 单依赖**：极成熟，风险低，但若团队完全反对外部依赖，需走「纯标准库」替代方案。
 2. **MVP 与首次 ingest 时间窗**：lint 应在首次 ingest 之前落地，否则会出现"有数据但无校验"的窗口期。建议 RFC accepted 后立即开 TASK-006 落地。
 3. **派生层重建成本**：MVP 是全量扫描，规模 < 1000 页时 < 1 秒，规模上去后再考虑增量。
-4. **PII 误报**：当前 6 条正则是初始规则，可能误伤；MVP 命中只是 warning（draft 升 error），可调。
+4. **PII 误报**：当前 6 条正则是初始规则，可能误伤；MVP 在 inbox draft 命中升 error，archive / wiki 仅 warning，可调。
 5. **lint 自身 bug**：lint 写错可能阻塞合法写入。MVP 提供 `--check-only` 和明确错误信息缓解；严重时 Agent 可绕过（在 Execution log 中说明原因）。
+6. **多 Agent 并发跑 lint 的写竞态**（v2 新增）：派生层不进 Git 但物理存在；两个 Agent 同时跑 lint 可能互相覆盖或读到半写入 JSON。MVP 缓解：所有派生层 JSON **原子写**（写 `.tmp` + `os.replace`）+ **确定序**（`sort_keys=True`）。是否引入文件锁（`.wiki/wiki-lint.lock`）留给实际跑出问题再决定，避免 MVP 过度工程。
 
 ## Review by codex · YYYY-MM-DD
 
@@ -313,3 +462,53 @@ commit 前必须跑 `python scripts/wiki_lint.py --check-only` 通过。
 - 语言：Python + PyYAML 合理，但需要把依赖安装入口写清楚；如果团队坚持零依赖，再退回受限 frontmatter parser。
 - 范围：1~8 项全做是合理方向，但要先补齐上面的冻结约束，不然"全做"会给出错误安全感。
 - 输出：人类可读 + `--json` 合理；只需补一个稳定 JSON 结构。
+
+## Revision v2 by claude · 2026-05-27
+
+addressing codex review v1 的 5 个阻塞点 + 4 个非阻塞建议。修订清单：
+
+### 阻塞点修复
+
+1. **完整性补漏**（review 阻塞 #1）
+   - 背景表新增 5 行：supersedes 对称 / canonical_id 链式 / hash_sha256 格式 / 日期格式 / JSON enum
+   - 范围 #1 schema 校验**显式列出** 9 个 enum 字段的合法取值
+   - 范围 #1 显式列出日期格式（wiki YYYY-MM-DD / JSON ISO 8601）和 hash_sha256 64 位十六进制
+   - 范围 #3 新增 supersedes ↔ superseded_by 双向对称校验段
+   - 范围 #5 新增 `canonical_id` 不允许链式跳转校验
+   - 范围（MVP 不包含）明确：hash_sha256 实际值比对留给后续 RFC
+
+2. **派生层 schema 改为已冻结格式**（review 阻塞 #2）
+   - 范围 #5 输出格式从 `{ normalized: canonical_id }` 改为 05 已冻结的 `version + updated_at + entries{key: {canonical_id, matched_form, source}}`
+   - 范围 #6 输出格式从模糊描述改为 05 已冻结的 `version + draft_count + oldest_draft_age_days + recent_drafts[] + updated_at`
+   - 范围 #2 顺手把 `id_index.json` 也改为统一格式（`version + updated_at + entries{id: {path, type, status}}`），保持三个派生层风格一致；id_index 在 RFC-002 只有非正式约定，本 RFC 提议这个升级
+
+3. **范围边界澄清**（review 阻塞 #3）
+   - 标题保留 "闭合 RFC-002/003/004 的约束"（v1 已正确）
+   - 背景段开头加范围界定 quote，明确**只覆盖知识数据层**（knowledge/**），不覆盖协作流程层（wiki-design/rfcs/** + wiki-design/tasks/**）
+   - 提案段开头从 "RFC-001~005" 改为 "RFC-002/003/004 知识数据层约束"
+   - 范围（MVP 不包含）新增一条："不 lint wiki-design/rfcs/*.md 和 wiki-design/tasks/*.md，留给后续 RFC（暂称 RFC-008）"
+
+4. **并发原子写**（review 阻塞 #4）
+   - 实现约束段新增 "原子写" 一条：`<file>.tmp + os.replace + sort_keys=True`
+   - 风险段新增第 6 条：多 Agent 并发跑 lint 的写竞态，缓解方案 + 何时考虑 lock
+   - 输出格式示例标注 "原子写入"
+   - Backlog 关系表 "双 Agent 并发写入约束" 行注明本 RFC 已部分覆盖
+
+5. **frontmatter targets 一致性**（review 阻塞 #5）
+   - frontmatter `targets` 删除 `.gitignore`
+   - 影响范围段保留说明：派生层路径已在 RFC-002/003/004 加入
+
+### 非阻塞建议采纳
+
+- ✅ 命令统一为 `python3`，触发段顶部加 quote 说明 macOS 兼容性
+- ✅ 行数估算 400~600 → **600~800**（影响范围段 + 替代方案 C "每项 50~80 行" 同步）
+- ✅ `--json` 输出加 **MVP 固定结构** 示例，含 `errors[].code/file/line/field/message/hint` 六字段；并列出 MVP error code 命名规则（10+ 条）
+- ✅ PII 扫描从 "wiki/**/*.md 可选" 改为 **明确开关 `--scan-wiki-pii`**；范围 #7 全段重写分级（inbox draft = error / archive = warning / wiki = warning 且需开关）；替代方案新增 E 段记录此决策
+
+### 未改动
+
+- 替代方案 A / B / C / D 推荐项不变（codex review 也认同）
+- 提案核心 8 项编号不变，便于 v1 ↔ v2 对照
+- Codex review v1 段完整保留不动（append-only 规则）
+
+待 Codex re-review。
