@@ -714,9 +714,93 @@ git commit -m "[task] TASK-002 done by codex"
 
 （待执行者在 Step 6 填写）
 
-## Evaluation by claude · YYYY-MM-DD
+## Evaluation by claude · 2026-05-27
 
-（待评估者填写）
+### 结论
+
+**PASS**。Codex 严格按 v2 spec 执行 17 个子项，机械检查全过、内容保真、commit 卫生、schema 自洽。这是第一份 apply 类 task 端到端跑通。
+
+### 详细核对
+
+**协议合规 ✅**
+
+- Step 6 commit `a793882` 只动 3 个白名单文件：`.gitignore` / `01-architecture.md` / `05-contracts-and-next-steps.md`。`git diff --stat 1636f1b..HEAD` 印证。
+- Step 7 commit `987ebc2` 只动 `TASK-002-apply-rfc-002.md` 自身（仅 frontmatter `status: pending → done` + 末尾追加 Execution log 段）。
+- 白名单外正本（02-workflows / 04-agent-rules / README / AGENTS / rfcs/）在 `1636f1b..HEAD` 范围内零改动。
+- 其它 task 文件未被动。
+- `knowledge/` 未创建（按 spec 留给 TASK-005）。
+- Working tree clean。
+
+**内容保真 ✅**（17 个子项逐一对照）
+
+| 子项 | 检查点 | 结果 |
+|---|---|---|
+| 1a | 派生数据列表末尾加 `knowledge/.wiki/id_index.json` | ✓ |
+| 1b | Frontmatter YAML 含 `id` / `source_ids` / `related_ids` / `sources` / `related` / `supersedes` 注释 | ✓ |
+| 1c | 字段表 16 行（id 在最上，新增 source_ids/related_ids，sources/related 标注显示层） | ✓ |
+| 1d | 三个新子节 `稳定 ID 规则` / `拆分与合并语义` / `Cross-ref 字段说明` 齐全，prefix 表 8 行 | ✓ |
+| 2a | 目标文件关系 `.wiki/` 块末加 `id_index.json` + 职责划分表追加 1 行 | ✓ |
+| 2b | Frontmatter YAML 替换，新字段全部包含 | ✓ |
+| 2c | 字段表替换，含 `id` + `source_ids` + `related_ids` + canonical/显示层注解 | ✓ |
+| 2d | `affected_pages` → `affected_page_ids`（1 行替换）+ 新增 `evidence[].page_id` 和 `evidence[].page_path`（2 行）。约束表共 11 行字段，全部到位 | ✓ |
+| 2e | JSON 例子用 `summary_page_id` + `summary_page_path`；约束表 `summary_page_id` 条件化语言"未生成时为 null；已生成时必须等于 source_id" 体现；`source_id` 行也补"摘要页已生成时…" | ✓ |
+| 2f | 六个页面模板 frontmatter 都有 `id: {{...}}`，prefix 与 type 一致（src/ent/top/dec/oq/que） | ✓ |
+| 2g | "答案引用格式" 段开头加 `引用边界` blockquote | ✓ |
+| Step 3 | `.gitignore` 末尾加 `knowledge/.wiki/id_index.json`，紧贴其它派生层条目 | ✓ |
+
+**Schema 自洽 ✅**
+
+- 8 种页面类型的 prefix 与 type 一一对应。
+- source 单主键约束（id == source_id）在 01 子节 + 05 source 模板注释 + source_manifest 约束表三处一致表达。
+- canonical 字段（`source_ids` / `related_ids` / `affected_page_ids` / `summary_page_id` / `evidence.page_id`）与显示字段（`sources` / `related` / `summary_page_path` / `evidence.page_path`）边界清晰。
+- summary_page_id 条件化语义自洽：未生成时为 null（不破坏 id == source_id 不变式，因为 source_id 仍存在）。
+
+**commit 卫生 ✅**
+
+- `a793882` commit message 用 `[apply rfc-002]` 前缀，HEREDOC 覆盖 Decision 8 条要点 + Co-Authored-By: Codex 标签到位。
+- `987ebc2` commit message 简洁规范。
+- 两个 commit scope 严格分离（正本改动 vs task 状态推进）。
+- 中间 spec review-revise-review 三个 commit（`e0e3f9a` / `3c56f1b` / `5d60532`）已先于 apply 完成沉淀，apply 不携带历史包袱。
+
+### 沉淀给未来 apply 类 task
+
+1. **Step 6 sha 自引限制仍在**：Codex 在 Execution log 把 Step 6 sha 写成"本 commit；实际 sha 由提交后最终回复报告"，和 TASK-001 同样的 trade-off。这次评估通过用户口头报告确认（`987ebc2`），未来若要消除，可在 task spec 增加 amend 步骤或让 evaluator 在 Evaluation 段登记。
+2. **spec review 一轮回合证明有效**：v1 review 抓出的 4 个阻塞点（自相矛盾 / 双重约束 / 数字不一致 / grep 退出码）在 spec v2 全部修掉，v2 直接 "通过"。Spec review 是 apply 类 task 性价比最高的环节，未来 apply 类 task 应固定走这道。
+3. **set +e + grep -c 验证模式可复用**：Codex 跑出来的验证输出（Execution log "验证输出" 段）一眼能看清每条 "应为 X / 命中 N"，明显比 TASK-001 的"raw grep 输出"可读。建议沉淀到 tasks/README.md 或 RFC-005 的"完成后报告格式"建议中。
+
+### 链路通过性
+
+第一份 apply 类 task 端到端：
+
+```
+Claude 写 spec (7a18a28)
+  → Codex spec review v1 需修改 (e0e3f9a)
+  → Claude spec v2 修订 (3c56f1b)
+  → Codex spec review v2 通过 (5d60532)
+  → 索引同步 (1636f1b)
+  → Codex 执行 + commit 正本 (a793882)
+  → Codex 推进 task 状态 (987ebc2)
+  → Claude evaluate (本 commit)
+```
+
+8 个 commit 串成完整审计链。整条流程通过 git + 文件传递，无 chat-paste 转述。
+
+### 后续路径
+
+| 顺序 | Task | 依赖 |
+|---|---|---|
+| 下一步 | **TASK-003** apply RFC-003（capture 机制 + inbox） | 独立，但和 TASK-004 共享 01/02/05 改动面，**串行** |
+| 之后 | **TASK-004** apply RFC-004（entity aliases）| 依赖 RFC-002 已完成（本 task）+ 不与 TASK-003 并行 |
+| 之后 | **TASK-005** 初始化 knowledge/ 骨架 | 必须等 TASK-002/003/004 全部完成 |
+
+建议下一步开 **TASK-003** spec。
+
+---
+
+- Evaluator: claude
+- Verified at: 2026-05-27
+- Resulting commits: `a793882` (apply rfc-002), `987ebc2` (task done)
+- Evaluation commit: 见下一个 commit
 
 ## Spec review v2 by codex · 2026-05-26
 
