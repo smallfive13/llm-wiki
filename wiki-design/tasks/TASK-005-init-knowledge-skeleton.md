@@ -785,3 +785,28 @@ git commit -m "[task] TASK-005 done by codex"
 ## Evaluation by claude · YYYY-MM-DD
 
 （待评估者填写）
+
+## Spec review by codex · 2026-05-27
+
+### 完整性
+- [x] 22 个文件清单完整：14 个 `.gitkeep`、4 个上下文层 Markdown、1 个 `.wiki-schema.md`、3 个 JSON 契约，覆盖 RFC-001~005 落地后的知识库入口、canonical JSON、capture/inbox、alias 派生索引说明与 task/RFC 协作留痕。
+- [x] `.wiki-schema.md` 是高密度但够用的 Agent 起点：覆盖目录结构、页面类型与 ID prefix、wiki frontmatter、inbox frontmatter、JSON 契约、派生层、Cross-ref 边界、答案引用、写入规则、拆分合并、entity 别名、Inbox 晋升。Step 5 只验证其中 10 个关键 H2；模板实际还包含"目录结构"和"拆分与合并语义"，这不是缺口。
+- [x] 3 个 JSON 默认值符合 RFC-003 Decision：`source_manifest.json` / `review_queue.json` 初始空数组；`capture_policy.json` 为 `auto_capture: false`、`exclude_paths: []`、`max_inbox_files: 100`，且默认 `exclude_paths` 不含 `wiki/decisions/**`。
+
+### 边界
+- [x] 强约束 #1 / #2 的边界清晰：执行阶段只新建 `knowledge/**`，task 文件本身只在 Step 0 / 7 允许追加 review / log 和推进 status。
+- [x] 强约束 #4 清楚说明 `purpose.md` / `index.md` / `overview.md` / `log.md` 无 frontmatter，且不走 RFC-002 ID 规范。
+- [x] 强约束 #9 清楚禁止真实 wiki 页面；Step 1 只在 `wiki/*/` 下放 `.gitkeep`，Step 5 第 11 项也会检查非 `.gitkeep` 文件数。
+
+### 可执行性
+- [x] Step 1~4 的文件路径和内容模板足够明确，JSON 内容本身合法；Step 5 的 `python3 -m json.tool` 和后续 `python3 -c` 字段检查可机械执行。
+- [x] Step 5 第 2 项 `find knowledge -name .gitkeep -type f | wc -l` 能捕获 14 个 `.gitkeep` 的数量要求。
+- [ ] Step 5 第 13 项的命令与预期不一致：`git status --porcelain | grep '^??' | head -30` 在全新未跟踪目录下通常只显示 `?? knowledge/`，不会列出 22 个新文件；但预期写成"应为 14 + 4 + 1 + 3 = 22 个新文件"。建议改为 `git status --porcelain --untracked-files=all | grep '^?? knowledge/'` 或直接 `find knowledge -type f | sort`，并显式校验文件数 `22`。
+- [ ] Step 5 第 12 项只用 `git diff --name-only`，无法捕获未跟踪的白名单外文件；如果误创建了 `tmp.md`，该项仍会输出 `(none)`。建议用 `git status --porcelain --untracked-files=all` 做白名单过滤，例如只允许 `?? knowledge/` 和已有 tracked diff 为空。
+
+### 风险
+- `.gitkeep` 要求为空文件，但 Step 5 只检查数量，不检查 0 字节。建议可选增加 `find knowledge -name .gitkeep -type f ! -size 0c`，输出应为空。
+- Step 6 commit message 里 `raw/source_manifest.json (空 items)` 与实际 JSON key `sources` 不一致；建议顺手改成"空 sources"，避免历史信息小歧义。
+
+### 结论
+- 需修改。主体文件清单、schema 内容和 JSON 默认值都可以进入执行，但 Step 5 第 12 / 13 项需要先修到能准确验证"只创建 knowledge/**"和"22 个新文件"后，再执行 Step 1~7。
