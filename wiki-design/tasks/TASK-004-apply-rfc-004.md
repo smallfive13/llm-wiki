@@ -611,3 +611,27 @@ git commit -m "[task] TASK-004 done by codex"
 
 ### 结论
 - 需修改。建议 Claude 先补 05 目标文件关系树 / 职责划分表同步与验证项，并把 Step 3b 的 Entity 模板 anchor 改成当前文件里的精确 old_string 后，再进入 Step 1~7。
+
+## Spec review v2 by codex · 2026-05-27
+
+### v1 阻塞点复核
+- [x] 新增 Step 3a 已覆盖 05 顶部"目标文件关系"树和"职责划分"表。anchor 指向 `.wiki/` 块中 `inbox_index.json` 之后，以及职责划分表末尾；内容分别补 `normalized_alias_index.json` 文件树节点和 `knowledge/.wiki/normalized_alias_index.json` 职责行，语义完整。
+- [x] Step 3c 的 Entity 模板 anchor 已修正为当前真实结构：`### Entity` 子节 + `type: entity` 唯一识别，并提供完整 frontmatter 形状。它还明确 only 插入 Entity 模板的 `related_ids: []` 后，不动 Topic / Decision / Open Question / Query 等模板，可避免误改其它重复 `related_ids: []`。
+
+### v2 新检查
+- [ ] Step 5 第 17 项仍不够精确。当前验证是全文 `grep -c 'normalized_alias_index.json'` 且预期 `>= 3`，但 Step 3b 的字段表行也会出现一次 `normalized_alias_index.json`。因此如果 Step 3a 只落了"目标文件树"或只落了"职责表"其中之一，全文计数仍可能达到 3（3b 字段表 + 3e Schema 路径 + 半个 3a），从而误判通过。建议把第 17 项拆成三条精确验证：
+  - 目标文件树行：``grep -cE '^    normalized_alias_index\\.json$' wiki-design/05-contracts-and-next-steps.md``，应 `>= 1`
+  - 职责表行：``grep -cE '^\\| `knowledge/\\.wiki/normalized_alias_index\\.json`' wiki-design/05-contracts-and-next-steps.md``，应 `>= 1`
+  - Schema 路径：``grep -c '^路径：`knowledge/.wiki/normalized_alias_index.json`' wiki-design/05-contracts-and-next-steps.md``，应 `= 1`
+- [ ] 子项重命名后还有两处引用断裂：强约束 #6 仍写 "Step 1d 写 lint 规则"，实际 lint 规则在 Step 3e；强约束 #7 仍写 "Step 3c 写答案引用示例"，实际答案引用示例已重命名为 Step 3d。建议同步为 Step 3e / Step 3d，避免执行者按错误子项定位。
+- [x] Step 1 / Step 2 / Step 4 的正文步骤未发现新的引用断裂；Step 2b 仍与 TASK-003 现状精确匹配，Step 4 与 `.gitignore` 现状兼容。
+- [x] 完成后报告格式已同步为 Step 3a~3e，覆盖新增的目标文件关系树 + 职责划分表；这里没有断裂。
+
+### 兼容性
+- [x] 与 TASK-002 兼容：`canonical_id` 仍按稳定 ID 使用，并进入 canonical cross-ref；`aliases` 仍是字符串数组，不与 ID 引用混淆。
+- [x] 与 TASK-003 兼容：不改 Capture Item / Capture Policy / Inbox Index Schema 结构；只在 Inbox 晋升段增加 alias matching 复用。
+- [x] `status: redirect` 只扩展 wiki 页面 status 枚举，不影响 inbox 的 `draft/promoted/dropped` 状态。
+- [x] `normalized_alias_index.json` 被定位为派生层，并计划进入 `.gitignore`，与 `id_index.json` / `inbox_index.json` 的处理方式一致。
+
+### 结论
+- 需修改。v1 两个阻塞点的主体已经解决，但 Step 5 第 17 项需要拆成精确验证，且强约束 #6/#7 的 Step 引用需要随 3a~3e 重命名同步后，再进入 Step 1~7。
