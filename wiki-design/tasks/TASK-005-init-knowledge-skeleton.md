@@ -825,3 +825,22 @@ git commit -m "[task] TASK-005 done by codex"
 
 ### 结论
 - 需修改。主体文件清单、schema 内容和 JSON 默认值都可以进入执行，但 Step 5 第 12 / 13 项需要先修到能准确验证"只创建 knowledge/**"和"22 个新文件"后，再执行 Step 1~7。
+
+## Spec review v2 by codex · 2026-05-27
+
+### v1 阻塞点复核
+- [x] Step 5 第 12 项已改为 `git status --porcelain -uall | cut -c4- | grep -v '^knowledge/'`。`-uall` 会展开未跟踪目录，`cut -c4-` 能抽出 porcelain path，过滤 `knowledge/` 后剩余即白名单外文件；可以捕获误创建的未跟踪文件和已修改的非 knowledge 路径。
+- [x] Step 5 第 13 项已改为统计 `^knowledge/`，预期 `22` 准确：14 个 `.gitkeep` + 4 个上下文层 md + 1 个 `.wiki-schema.md` + 3 个 JSON。
+- [x] Step 5 第 14 项新增按类型分组清单，能人工/机械复核四组文件：`.gitkeep`、上下文层 md、`.wiki-schema.md`、JSON 契约，覆盖全部 22 个应有文件。
+
+### 其它验证机制
+- [x] Step 5 第 5/6/7 项依赖 `python3` 做 JSON 合法性和字段解析；当前执行环境有 `/usr/bin/python3`，因此可机械执行。
+- [x] JSON 默认值仍符合 RFC-003 Decision：`auto_capture: false`、`exclude_paths: []`、`max_inbox_files: 100`。
+- [x] 强约束 #1 / #4 / #9 未被 v2 改弱：只创建 `knowledge/**`、4 个上下文文件无 frontmatter、不创建真实 wiki 页面。
+
+### 非阻塞建议
+- 如果未来希望 spec 更跨环境，可给 Step 5 第 5/6/7 项加 `jq` fallback；当前仓库执行环境同时有 `python3` 和 `jq`，不阻塞本 task。
+- Step 6 commit message 里 `raw/source_manifest.json (空 items)` 仍可改成"空 sources"更精确，但不影响执行正确性。
+
+### 结论
+- 通过。可以进入 Step 1~7。
