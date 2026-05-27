@@ -568,9 +568,28 @@ git commit -m "[task] TASK-003 done by codex"
 <列出与指令不一致的地方；没有就写"无"。>
 ```
 
-## Spec review by codex · YYYY-MM-DD
+## Spec review by codex · 2026-05-27
 
-（待 Codex 在 Step 0 填写）
+### 完整性
+- [x] Revision v2 的主路径基本覆盖：默认建议 capture、auto_capture opt-in、可见报告、PII 降级、秒级文件名、`type: inbox` 不进 wiki 页面类型、`inb_` prefix、只读 `inbox_index.json`、archive promoted/dropped、Markdown inbox 进 Git，都已经映射到 Step 1~5。
+- [x] Decision 两条 apply-time 约束已嵌入 spec：`exclude_patterns` 明确标注"不代表完整 PII 检测"；`exclude_paths` 示例为 `[]`，没有默认 `"wiki/decisions/**"`。
+- [ ] Revision v2 第 6 条只读 `inbox_index.json` 的**索引结构**没有落成 schema。Step 4 只让 `04-agent-rules.md` 读取 `knowledge/.wiki/inbox_index.json`，Step 5 只把它列入职责划分表，但没有定义 `draft_count`、`oldest_draft_age_days`、`recent_drafts`、`updated_at` 等结构。建议在 05 增加一个短的 `Inbox Index Schema` 小节，或在 Capture Item Schema 的 lint/健康度部分明确该派生 JSON 的字段。
+- [x] 新内容边界基本清楚，未混入 RFC-004 的 aliases / canonical_id / redirect；`inb_` 是对 TASK-002 稳定 ID prefix 表的明确扩展，兼容 RFC-002。
+
+### 可执行性
+- [x] 5 个目标文件的修改顺序合理：先 AGENTS 行为规则，再 01 架构边界，再 02 workflow，再 04 agent 草案同步，最后 05 schema 契约。
+- [x] 大部分编辑 anchor 清晰：01 的 prefix 表 / 正本派生列表、02 的结晶化前插入点、04 的读取/写入规则、05 的 Source Manifest 后插入点都存在。
+- [ ] Step 6 第 2 项验证会误判：命令是 `grep -cE 'RFC-003-inbox-capture-layer|02-workflows.md|05-contracts-and-next-steps.md' AGENTS.md`，`grep -c` 统计的是**匹配行数**，不是匹配次数。按 Step 1 给出的 AGENTS 文案，RFC-003 在一行，02 和 05 很可能同在最后一个长段落里，因此实际命中可能是 2 行，但预期写成 `≥ 3`。建议二选一：把 Step 1 最后一段拆成两行/两个 bullet，确保 02 和 05 分别占一行；或把验证改为 `grep -oE ... | wc -l` 按出现次数统计。
+- [x] Step 6 第 10 / 11 项能捕获 Decision 两条约束：第 10 项检查 `wiki/decisions/**` 不残留，第 11 项检查 "不代表完整 PII 检测"。
+- [x] Step 6 采用 `set +e`、`grep -c` 和显式"应为 X"输出，整体可机械执行。
+
+### 风险
+- 如果不补 `Inbox Index Schema`，后续 Agent 会知道"读 inbox_index.json"，但不知道该文件的稳定字段，容易各自生成不同结构。
+- 如果不修 Step 6 第 2 项，后续 apply 即使内容正确也可能验证失败，或者执行者被迫临场改格式来满足计数。
+- AGENTS.md 中包含 emoji 示例，符合 RFC-003 原文，但如果后续希望全仓库 ASCII，需要另开 RFC 统一；本 task 不应临时改。
+
+### 结论
+- 需修改。建议先补齐 `inbox_index.json` 派生索引结构，并修正 Step 6 第 2 项的行数/次数验证歧义后，再进入 Step 1~8。
 
 ## Execution log by codex · YYYY-MM-DD
 
