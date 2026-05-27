@@ -11,7 +11,7 @@ Task 回答"怎么做、谁来做"，与 RFC 回答"要不要这么改"互补。
 | [task_20260526_001](TASK-001-write-rfc-decisions.md) | 把 RFC-002/003/004 的 Decision 落到文件并 commit | done | claude | codex | RFC-002, RFC-003, RFC-004 |
 | [task_20260526_002](TASK-002-apply-rfc-002.md) | Apply RFC-002 — 把稳定 ID 机制落到 01/05/.gitignore | done | claude | codex | RFC-002 |
 | [task_20260526_003](TASK-003-apply-rfc-003.md) | Apply RFC-003 — capture 机制 + inbox 缓冲层落到 AGENTS / 01 / 02 / 04 / 05 / .gitignore | done | claude | codex | RFC-003 |
-| [task_20260526_004](TASK-004-apply-rfc-004.md) | Apply RFC-004 — entity aliases / canonical_id / status:redirect / normalized index | pending (awaiting spec review) | claude | codex | RFC-004 |
+| [task_20260526_004](TASK-004-apply-rfc-004.md) | Apply RFC-004 — entity aliases / canonical_id / status:redirect / normalized index | pending (spec v3 approved, ready to execute) | claude | codex | RFC-004 |
 
 ## 状态机
 
