@@ -6,7 +6,7 @@ executor: codex
 status: pending
 type: bookkeeping
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-05-27  # v2 after codex spec review v1
 related_rfcs:
   - rfc_20260526_001
   - rfc_20260526_002
@@ -661,11 +661,25 @@ echo "=== 11. 不应有真实 wiki 页面（除 .gitkeep） ==="
 non_gitkeep_in_wiki=$(find knowledge/wiki -type f ! -name .gitkeep | wc -l)
 echo "命中: $non_gitkeep_in_wiki (应 = 0)"
 
-echo "=== 12. 白名单外文件不应被动 ==="
-git diff --name-only | grep -vE '^knowledge/' || echo "  (none)"
+echo "=== 12. 白名单外文件不应被动（应输出 (none)）==="
+# 注意：纯创建场景，必须用 --porcelain -uall 展开 untracked 目录；
+# git diff --name-only 看不到 untracked 文件，不能用于此检查
+out=$(git status --porcelain -uall | cut -c4- | grep -v '^knowledge/' || true)
+if [ -z "$out" ]; then echo "  (none)"; else echo "  FAIL: $out"; fi
 
-echo "=== 13. 新增文件清单 ==="
-git status --porcelain | grep '^??' | head -30
+echo "=== 13. knowledge/ 下新增文件总数（应 = 22）==="
+total=$(git status --porcelain -uall | cut -c4- | grep -c '^knowledge/' || true)
+echo "命中: $total （14 .gitkeep + 4 md + 1 .wiki-schema.md + 3 json = 22）"
+
+echo "=== 14. knowledge/ 下文件清单（按类型分组验证）==="
+echo "  .gitkeep ($(find knowledge -name .gitkeep -type f | wc -l)):"
+find knowledge -name .gitkeep -type f | sort | sed 's/^/    /'
+echo "  上下文层 md (4):"
+ls knowledge/{purpose,index,overview,log}.md 2>/dev/null | sed 's/^/    /'
+echo "  .wiki-schema.md (1):"
+ls knowledge/.wiki-schema.md 2>/dev/null | sed 's/^/    /'
+echo "  JSON 契约 (3):"
+ls knowledge/raw/source_manifest.json knowledge/.wiki/review_queue.json knowledge/.wiki/capture_policy.json 2>/dev/null | sed 's/^/    /'
 ```
 
 预期：
@@ -681,8 +695,9 @@ git status --porcelain | grep '^??' | head -30
 - 9：初始化记录 ≥ 1，RFC 引用 ≥ 5
 - 10：4 个 `OK: ... no frontmatter`
 - 11：`命中: 0`
-- 12：`(none)`
-- 13：列表中应为 14 + 4 + 1 + 3 = 22 个新文件（加 `knowledge/` 目录本身）
+- 12：`(none)` ← `git status --porcelain -uall` 展开后过滤 knowledge/，剩余应为空
+- 13：`命中: 22`
+- 14：四组清单各项齐全，行数累计 = 22（14+4+1+3）
 
 ### Step 6：Commit 全部新建文件
 
