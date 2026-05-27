@@ -797,9 +797,58 @@ git commit -m "[task] TASK-005 done by codex"
 
 （待执行者在 Step 7 填写）
 
-## Evaluation by claude · YYYY-MM-DD
+## Evaluation by claude · 2026-05-27
 
-（待评估者填写）
+### 1. 协议合规（white list 严格）— PASS
+
+- Step 6 commit `846e8e8` 改动文件 22 个，**全部**在 `knowledge/**` 下；未触及 AGENTS.md、wiki-design/、.gitignore 等正本。
+- Step 7 commit `e877551` 仅改动 `wiki-design/tasks/TASK-005-init-knowledge-skeleton.md` 本身，符合 task 文件追加 Execution log 的 white list。
+- Step 5 第 12 项验证输出 `(none)`，独立印证白名单外无改动。
+- working tree clean，无残留。
+
+### 2. 内容保真（22 个文件按类型清单逐一验证）— PASS
+
+| 类型 | 应有 | 实际 | 备注 |
+| --- | --- | --- | --- |
+| `.gitkeep` | 14 | 14 | 14 个目录全部覆盖（`.wiki / inbox / inbox/archive/{promoted,dropped} / maps / raw/sources / wiki/{sources,entities,topics,comparisons,synthesis,decisions,queries,open-questions}`） |
+| 上下文层 md | 4 | 4 | `purpose.md / index.md / overview.md / log.md` |
+| 高密度契约镜像 | 1 | 1 | `.wiki-schema.md` |
+| JSON 契约 | 3 | 3 | `raw/source_manifest.json / .wiki/review_queue.json / .wiki/capture_policy.json` |
+| **总计** | **22** | **22** | ✓ |
+
+- 4 个上下文层文件均无 frontmatter（Step 5 第 10 项确认）。
+- `wiki/` 下非 `.gitkeep` 文件 = 0（Step 5 第 11 项确认），未越界创建真实 wiki 页面。
+- `log.md` 含 `2026-05-27 · Initialized` 段，引用 RFC-001~005 apply commit sha（`a7b5c40` / `a793882` / `fd32feb` / `4453fb8`）正确。
+
+### 3. `.wiki-schema.md` 完整性 — PASS
+
+- 文件 268 行，10 个关键 H2 段（Step 5 第 8 项）全部命中 = 1：页面类型与 ID prefix / 标准 frontmatter / inbox capture item frontmatter / JSON 契约 / 派生层 / Cross-ref canonical 边界 / 答案引用格式 / 写入规则 / entity 别名机制 / Inbox 晋升 workflow。
+- 另含目录结构 / 拆分与合并语义两段（非阻塞验证项），与 spec 模板一致。
+- 关键内容核对：8 + 1 个 prefix（含 `inb_`）齐全；status 含 `redirect`；frontmatter 含 `aliases / canonical_id / supersedes / superseded_by / source_ids / related_ids` 等 RFC-002/003/004 字段；canonical / 显示层边界表完整；PII 兜底警示在位。
+
+### 4. 可执行性（JSON 合法 + RFC-003 默认值）— PASS
+
+- 3 个 JSON 全部通过 `python3 -m json.tool` 解析（Step 5 第 5 项 + 我本地复核 ✓）。
+- `capture_policy.json` 默认值严格符合 RFC-003 Decision：
+  - `auto_capture: false` ✓
+  - `exclude_paths: []`（空数组，**不**含 `wiki/decisions/**`）✓
+  - `max_inbox_files: 100` ✓
+  - `exclude_patterns` 含 6 条内置 PII 正则 ✓
+- `source_manifest.json.sources = []`、`review_queue.json.items = []`（初始空）✓
+
+### 5. commit 卫生 — PASS
+
+- Step 6 commit `846e8e8` 前缀 `[init knowledge/]`，message 按类型分组列出 4+1+3+14 个文件清单 + Setup commit 范围 + 下一步指引，Co-Authored-By Codex。
+- Step 7 commit `e877551` 前缀 `[task]`，仅 1 个文件 diff（+104 -1 行 = 追加 Spec review v2 + Execution log + 推 status done）。
+- 两 commit 分工清晰：脚手架 vs task 留痕，符合 spec 的 commit 拆分要求。
+
+### 小瑕疵（不阻塞，可后续修）
+
+- Step 6 commit message 第 3 段写 "raw/source_manifest.json (空 items)"，但该 JSON 的 key 实际是 `sources` 不是 `items`。Codex 在 Spec review v1 / v2 中两次主动指出此 cosmetic 不一致并建议改成"空 sources"，但执行阶段未顺手修（spec 模板本身也是 "空 items"，未修）。**不影响功能、不阻塞 PASS**，仅是历史留痕轻微歧义。
+
+### 结论
+
+**PASS**。TASK-005 圆满收尾。`knowledge/` 骨架已落地，RFC-001~005 全链路冻结落实到知识库实例，可进入下一阶段（用户首次 ingest / capture / promotion / 决策时追加 log 段）。
 
 ## Spec review by codex · 2026-05-27
 
