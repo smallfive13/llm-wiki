@@ -6,7 +6,7 @@ executor: codex
 status: pending
 type: apply
 created: 2026-05-27
-updated: 2026-05-27  # v2 after codex spec review v1
+updated: 2026-05-27  # v3 after codex spec review v2
 related_rfcs:
   - rfc_20260526_004
   - rfc_20260526_002
@@ -56,8 +56,8 @@ related_rfcs:
    - 本 TASK-004 文件本身按 Step 0 / 6 / 7 允许编辑（追加 Spec review、推进 status、追加 Execution log）。
 4. **保留** 4 个正本中所有不被本 task 覆盖的章节段落。**特别**：TASK-003 刚加的 "被动 capture" 段、Capture Item / Policy / Inbox Index Schema 三段不允许结构性改动（只允许 Inbox 晋升段做 alias matching 增量）。
 5. **必须先经 Codex spec review（Step 0）**：在 Step 0 通过前 status 保持 pending，不可执行 Step 1~6。
-6. **lint 规则替换**：Step 1d 写 lint 规则时，按 Decision #2 的新规则，**不**采用原 RFC 提案 "3. lint 校验" 第二条（"一个 id 不能既出现在某页 canonical_id 又自己有非空 aliases"——这条已被 Codex review 判定为误伤正常用法）。
-7. **答案引用示例修正**：Step 3c 写答案引用示例时按 Decision #5，`self-attention（正名 [[Attention]]）` 而非 `[[self-attention]]（正名 [[Attention]]）`。
+6. **lint 规则替换**：Step 3e 写 Normalized Alias Index Schema 段的 lint 规则时，按 Decision #2 的新规则，**不**采用原 RFC 提案 "3. lint 校验" 第二条（"一个 id 不能既出现在某页 canonical_id 又自己有非空 aliases"——这条已被 Codex review 判定为误伤正常用法）。
+7. **答案引用示例修正**：Step 3d 写答案引用示例时按 Decision #5，`self-attention（正名 [[Attention]]）` 而非 `[[self-attention]]（正名 [[Attention]]）`。
 8. **alias 来源记录**（Decision #7）不强制写入字段，仅在 entity 模板下方加一句"可选：alias 来源记录"备注。不新增结构化字段。
 9. **schema 一致性**：所有新增字段 / JSON 示例与 TASK-002/003 落地后的 schema 一致（含 `id` 格式、`status` 枚举扩展为 5 个值、与 inb_ / capture_policy 不冲突）。
 10. 三个 commit 分别：Step 0 Spec review（codex 写时自行 commit）/ Step 6 正本改动 / Step 7 task status 推进。
@@ -453,8 +453,10 @@ if [ -d knowledge/ ]; then echo "FAIL: knowledge/ exists"; else echo "OK: knowle
 echo "=== 16. AGENTS.md / 04 / README / rfcs 不应被本轮改动 ==="
 git diff --name-only | grep -E '^(AGENTS.md|wiki-design/04-agent-rules.md|wiki-design/README.md|wiki-design/rfcs/)' || echo "  (none)"
 
-echo "=== 17. 05 内含 normalized_alias_index.json 不少于 3 处（目标文件树 + 职责表 + Schema 段路径）==="
-echo "命中: $(grep -c 'normalized_alias_index.json' wiki-design/05-contracts-and-next-steps.md)"
+echo "=== 17. 05 内 normalized_alias_index.json 分位置检查（三处必须各 ≥ 1）==="
+echo "  17a 目标文件树（4 空格缩进的纯文件名行，应 ≥ 1）: $(grep -cE '^    normalized_alias_index\.json$' wiki-design/05-contracts-and-next-steps.md)"
+echo "  17b 职责划分表行（应 ≥ 1）: $(grep -c 'knowledge/.wiki/normalized_alias_index.json\` |' wiki-design/05-contracts-and-next-steps.md)"
+echo "  17c Schema 段路径声明（应 ≥ 1）: $(grep -cE '^路径：.*normalized_alias_index' wiki-design/05-contracts-and-next-steps.md)"
 ```
 
 预期：
@@ -476,7 +478,7 @@ echo "命中: $(grep -c 'normalized_alias_index.json' wiki-design/05-contracts-a
 - 14：三条各 ≥ 1
 - 15：`OK: knowledge/ absent`
 - 16：`(none)`
-- 17：≥ 3（目标文件树 + 职责表 + Normalized Alias Index Schema 段路径，全文应至少出现 3 次）
+- 17：三个分位置检查（17a / 17b / 17c）必须**各 ≥ 1**；任一为 0 即视为某一处漏落
 
 ### Step 6：Commit 正本改动
 
