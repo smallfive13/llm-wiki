@@ -267,3 +267,49 @@ commit 前必须跑 `python scripts/wiki_lint.py --check-only` 通过。
 ## Decision
 
 （待用户填写或授权 Agent 代写）
+
+## Review by codex · 2026-05-27
+
+### 总体结论
+
+- 结论：需修改。
+- 我同意核心方向：在首次 ingest 前补上 `wiki-lint` 是对的，MVP 先做手动触发、单文件 Python、人类可读输出加 `--json`，也符合当前仓库规模和多 Agent 协作成本。
+- 但这版 RFC 现在有几处阻塞点：它声称闭合 RFC-001~005 已冻结约束，实际范围更接近 RFC-002/003/004 的知识数据层；且部分已落地 schema 的机械规则没有写进 lint 范围，后续 TASK 如果照此实现会漏校验或生成不兼容派生层。
+
+### 阻塞问题
+
+1. 完整性还没覆盖若干已冻结约束。当前 1~8 项覆盖了 frontmatter、ID、canonical 引用、source 主键、alias、inbox、PII、部分跨流程一致性，但没有明确校验：
+   - `supersedes` / `superseded_by` 的双向对称关系。只校验引用存在不够，应要求 A `supersedes: [B]` 时 B `superseded_by` 包含 A，反向同理。
+   - `hash_sha256` 格式。至少应校验 64 位十六进制；如果 `original_path` 指向本地文件且文件存在，可考虑校验实际 hash 是否一致，或明确 MVP 只做格式校验。
+   - ISO 8601 / 日期格式。wiki 页面的 `created/updated/last_verified` 应是 `YYYY-MM-DD`；JSON 中 `imported_at/last_ingested_at/updated_at/created_at/resolved_at` 等应是带时区的 ISO 8601 或 `null`。
+   - JSON enum 与类型：`source_manifest.source_type/status/adapter`、`review_queue.type/status/priority/resolved_action`、`capture_policy.version/auto_capture/exclude_paths/max_inbox_files` 等需要在 schema 校验范围中显式列出。
+   - `canonical_id` 不允许链式跳转。RFC-004 落地后的规则要求 redirect 页的 `canonical_id` 指向 `canonical_id: null` 的正名页，不能 A -> B -> C；当前只写了"指向真实正名页"的倾向，但建议作为 error 明确。
+
+2. `normalized_alias_index.json` 的输出格式和已落地 schema 不兼容。RFC-006 写的是 `{ normalized: canonical_id }`，但 `05-contracts-and-next-steps.md` / `knowledge/.wiki-schema.md` 已冻结为：
+   - 顶层 `version`
+   - `updated_at`
+   - `entries`
+   - `entries[k].canonical_id`
+   - `entries[k].matched_form`
+   - `entries[k].source`
+   如果 TASK 按 RFC-006 的简化写法实现，会直接破坏 RFC-004/TASK-005 的契约。这里必须改成已冻结格式。
+
+3. RFC-001 / RFC-005 的状态流转边界需要澄清。若本 RFC 真的宣称覆盖 RFC-001~005，应说明是否 lint `wiki-design/rfcs/*.md` 和 `wiki-design/tasks/*.md` 的 frontmatter、status enum 与状态机。状态"流转"严格来说需要 git 历史或基线才能验证；MVP 可以选择不做，但需要在"范围不包含"中明确排除，避免把知识数据 lint 和协作流程 lint 混成一个承诺。
+
+4. 并发写派生层的风险漏了。多 Agent 同时跑 lint 时，即使派生层不进 Git，也可能出现半写入文件、互相覆盖、一个进程读到另一个进程写了一半的 JSON。MVP 至少应要求确定序 JSON + 写临时文件 + `os.replace` 原子替换；是否加 `.wiki/wiki-lint.lock` 可以作为可选方案，但风险段需要显式写出来。
+
+5. frontmatter targets 与正文有不一致：frontmatter targets 包含 `.gitignore`，但提案和影响范围都说 `.gitignore` 无需改动。建议删掉 targets 里的 `.gitignore`，或解释为什么仍列为 target。
+
+### 非阻塞建议
+
+- 命令建议统一成 `python3 scripts/wiki_lint.py`，或在 README 中说明 `python` / `python3` 的兼容写法；macOS 上 `python` 仍可能不存在或指向旧环境。
+- 400~600 行估算偏乐观。若包含 Markdown frontmatter、JSON schema、alias normalizer、PII 行号、三类派生层、`--json`，600~800 行更现实；仍可保持单文件，但建议用清晰的函数分区和稳定 error code。
+- `--json` 输出最好在 RFC 中给一个最小结构，例如 `errors[] / warnings[]` 每项含 `code`、`file`、`line`、`field`、`message`、`hint`，否则后续 CI 或 Agent 解析会再二次约定。
+- PII 扫描里 "`wiki/**/*.md` 可选" 建议改成明确模式：默认扫 inbox；`--scan-wiki-pii` 或配置项再扫 wiki。否则不同 Agent 对"可选"理解不同。
+
+### 替代方案判断
+
+- 触发方式：MVP 手动跑合理，pre-commit / CI 放后续 RFC 是稳妥取舍。
+- 语言：Python + PyYAML 合理，但需要把依赖安装入口写清楚；如果团队坚持零依赖，再退回受限 frontmatter parser。
+- 范围：1~8 项全做是合理方向，但要先补齐上面的冻结约束，不然"全做"会给出错误安全感。
+- 输出：人类可读 + `--json` 合理；只需补一个稳定 JSON 结构。
