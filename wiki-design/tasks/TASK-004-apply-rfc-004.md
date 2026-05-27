@@ -637,3 +637,20 @@ git commit -m "[task] TASK-004 done by codex"
 
 ### 结论
 - 需修改。v1 两个阻塞点的主体已经解决，但 Step 5 第 17 项需要拆成精确验证，且强约束 #6/#7 的 Step 引用需要随 3a~3e 重命名同步后，再进入 Step 1~7。
+
+## Spec review v3 by codex · 2026-05-27
+
+### v2 阻塞点复核
+- [x] Step 5 第 17 项已拆成 17a / 17b / 17c，能分别捕获 05 的三个落点：
+  - 17a 使用 `^    normalized_alias_index\.json$`，只匹配目标文件关系树中 4 空格缩进的纯文件名行。
+  - 17b 匹配 `knowledge/.wiki/normalized_alias_index.json` 后紧跟表格分隔的职责划分表行；已用模拟职责表行验证该 grep 写法可命中。
+  - 17c 使用 `^路径：.*normalized_alias_index`，匹配 Normalized Alias Index Schema 段的路径声明。
+- [x] 强约束 #6 已改为 Step 3e，和 Normalized Alias Index Schema 段里的 lint 规则落点一致。
+- [x] 强约束 #7 已改为 Step 3d，和答案引用示例修正落点一致。
+
+### 残留编号检查
+- [x] 活跃 spec 中未发现新的 Step 编号不一致：Step 1 / Step 2 / Step 4 未改动且引用仍然成立；Step 3a~3e 与 Step 5 验证、Step 6 commit 范围、完成后报告格式一致。
+- [x] 文件末尾 v1 / v2 review 段仍保留历史旧编号描述，这是 review 历史记录，不属于当前 v3 spec 的可执行指令。
+
+### 结论
+- 通过。可以进入 Step 1~7。
