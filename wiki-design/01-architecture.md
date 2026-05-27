@@ -44,6 +44,8 @@ knowledge/log.md
 knowledge/raw/source_manifest.json
 knowledge/wiki/**
 knowledge/.wiki/review_queue.json
+knowledge/inbox/**
+knowledge/.wiki/capture_policy.json
 ```
 
 派生数据：
@@ -54,6 +56,7 @@ knowledge/.wiki/cache.json
 knowledge/.wiki/search_index/
 knowledge/.wiki/lightrag/
 knowledge/.wiki/id_index.json
+knowledge/.wiki/inbox_index.json
 ```
 
 原则：
@@ -146,8 +149,11 @@ evidence_count: 1
 | decision | `dec_` | `dec_20260526_use-lightrag` |
 | query | `que_` | `que_20260526_what-is-rag` |
 | open-question | `oq_` | `oq_20260526_consistency-vs-availability` |
+| inbox（capture item，非 wiki 页面类型） | `inb_` | `inb_20260526_153012_attention-complexity` |
 
 **source 单主键约束**：source 类型页面 `id` 必须等于该 source 在 `knowledge/raw/source_manifest.json` 中的 `source_id`。其它页面类型的 `id` 与业务 ID 无关。
+
+**inbox capture item**：`inb_` prefix 的文件不属于 `knowledge/wiki/`，独立放在 `knowledge/inbox/`，schema 见 [05-contracts-and-next-steps.md](05-contracts-and-next-steps.md) "Capture Item Schema" 段。capture item 不参与主图谱、不作引用来源、不进 wiki 页面 lint。
 
 **同日冲突**：同 prefix 同日同 slug 重名时，追加 `_NN` 短序号，例如 `ent_20260526_attention_002`。由 lint 强制全局唯一。
 

@@ -68,3 +68,23 @@
 - 普通问答默认只读。
 - 强结论应尽量标注来源；不确定内容进入 `knowledge/wiki/open-questions/` 或 review queue。
 - 一次重要知识库更新后，应更新 `knowledge/log.md`。
+
+### 低摩擦 capture（capture 缓冲层）
+
+机制定义见 [RFC-003](wiki-design/rfcs/RFC-003-inbox-capture-layer.md) Revision v2。
+
+- **默认**：Agent 识别到值得 capture 的内容时，只在回答末尾**建议** capture，格式：
+  ```
+  💡 建议 capture：<一句话摘要> · 类型 suggested: <topic|entity|decision|...>
+     回复 "存" 或 "capture" 即写入 inbox/。
+  ```
+- **自动 capture（opt-in）**：仅当项目根目录存在 `knowledge/.wiki/capture_policy.json` 且其中 `auto_capture: true` 时，Agent 才可直接写 `knowledge/inbox/`。
+- **自动 capture 也必须可见**：即使开启 auto，每次写入必须在回答末尾输出：
+  ```
+  ✏️ 已 capture：inbox/<filename> · <一句话摘要>
+  ```
+  禁止"无声写入"。
+- **PII 兜底**：内容包含密钥、token、客户姓名、身份证号、邮箱、电话、明确标记的内部业务信息时，**无论 auto_capture 开关**，一律降级为"建议 capture"模式，不自动写入。规则化的 PII pattern 由 lint 维护，**注意：内置正则只是初始规则，不代表完整 PII 检测**。
+- **严禁绕过 inbox 直接写 `knowledge/wiki/`**。
+
+inbox 写入不算"长期沉淀"，仅是 capture 缓冲层。promotion workflow 见 [wiki-design/02-workflows.md](wiki-design/02-workflows.md) "Inbox 晋升" 段。Capture Item / Capture Policy schema 见 [wiki-design/05-contracts-and-next-steps.md](wiki-design/05-contracts-and-next-steps.md) "Capture Item Schema" / "Capture Policy Schema" 段。

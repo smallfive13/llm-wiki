@@ -31,6 +31,10 @@ knowledge/
   index.md
   overview.md
   log.md
+  inbox/
+    archive/
+      promoted/
+      dropped/
   raw/
     source_manifest.json
     sources/
@@ -49,6 +53,8 @@ knowledge/
     graph-data.json
   .wiki/
     review_queue.json
+    capture_policy.json
+    inbox_index.json
     cache.json
     search_index/
     lightrag/
@@ -66,6 +72,10 @@ knowledge/
 | `knowledge/.wiki/cache.json` | hash 缓存，可重建 | 否 |
 | `knowledge/maps/graph-data.json` | 图谱派生数据，可重建 | 否 |
 | `knowledge/.wiki/id_index.json` | ID → 当前 path 索引，可重建 | 否 |
+| `knowledge/inbox/` | capture 缓冲层；draft 文件等待 promotion | 是 |
+| `knowledge/inbox/archive/{promoted,dropped}/` | 归档；不计入健康度告警阈值 | 是 |
+| `knowledge/.wiki/capture_policy.json` | capture 控制策略，团队级共享 | 是 |
+| `knowledge/.wiki/inbox_index.json` | inbox 索引，由 lint 生成，可重建 | 否 |
 
 ## Review Queue Schema
 
@@ -194,6 +204,179 @@ knowledge/
 | `summary_page_id` | source 摘要页 frontmatter 的 `id` 字段。**未生成摘要页时为 `null`；已生成时必须等于 `source_id`**。 |
 | `summary_page_path` | 可选显示层；对应 source 页面当前路径，未生成时为 `null` |
 | `adapter` | `local_file`、`web_clipper`、`manual`、`llm_wiki_app`、`custom` |
+
+## Capture Item Schema
+
+Inbox 文件不算 `wiki/**/*.md` 页面，独立为 **capture item**，schema 不混入"页面类型"表。
+
+### 位置
+
+`knowledge/inbox/`，平级于 `wiki/`、`raw/`、`maps/`、`.wiki/`。
+
+进 Git 知识正本，但**不计入主图谱**、**不参与综合**、**不作为引用来源**。
+
+### 文件命名
+
+`YYYYMMDD-HHmmss-<slug>.md`，时间戳到秒级。同秒冲突时追加 `-NN` 短序号。
+
+### 归档目录
+
+promoted / dropped 文件移动到 `knowledge/inbox/archive/<status>/<filename>`：
+
+```text
+knowledge/inbox/
+├── 20260526-153012-attention-complexity.md     # status: draft
+├── 20260526-160045-rag-vs-graphrag.md          # status: draft
+└── archive/
+    ├── promoted/
+    │   └── 20260520-091200-tx-isolation.md     # status: promoted
+    └── dropped/
+        └── 20260518-143300-misc.md             # status: dropped
+```
+
+健康度统计**只计 `knowledge/inbox/*.md`**（即 draft 状态），archive 不计入告警阈值。
+
+### Frontmatter 字段
+
+```yaml
+---
+id: inb_20260526_153012_attention-complexity     # inb_ prefix，slug 紧跟秒级时间戳
+type: inbox                                       # 不进入 wiki 页面类型枚举
+status: draft                                     # draft | promoted | dropped
+created: 2026-05-26
+captured_from: "chat-20260526-1530"               # 来源会话/上下文标识，可选
+confidence: low
+review: true
+suggested_target_type: topic                      # Agent 建议晋升后的类型
+suggested_target_title: "Attention 复杂度讨论"
+---
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `id` | `inb_YYYYMMDD_HHmmss_<slug>`；inb_ 是 [01-architecture.md](01-architecture.md) "稳定 ID 规则" prefix 表的扩展 |
+| `type` | 固定为 `inbox`；**不参与 wiki 页面 lint**（不校验 sources / related 完整性） |
+| `status` | `draft` / `promoted` / `dropped` |
+| `created` | 创建日期 |
+| `captured_from` | 来源会话或上下文标识，可选 |
+| `confidence` | `low` / `medium` / `high`，默认 `low` |
+| `review` | 默认 `true` |
+| `suggested_target_type` | Agent 建议晋升时的目标页面类型（`topic` / `entity` / `decision` / ...） |
+| `suggested_target_title` | Agent 建议晋升时的标题 |
+
+正文：不超过 30 行。可带 `[[wikilink]]`，但不强制。
+
+### Capture item 不参与的 lint
+
+- sources / related 完整性
+- canonical cross-ref 校验
+- 主图谱节点统计
+- evidence_count 一致性
+
+参与的 lint：
+
+- `knowledge/inbox/*.md` 文件数（仅 draft 状态）
+- 最老 draft 年龄
+- 超过阈值（默认 30 天）未处理 draft 告警
+- `capture_policy.json` schema 校验
+
+## Capture Policy Schema
+
+路径：`knowledge/.wiki/capture_policy.json`
+
+用途：控制 Agent 是否被允许直接写入 `knowledge/inbox/`，以及哪些内容/路径默认不自动 capture。属于知识正本（进 Git，团队级可共享）。
+
+### 顶层格式
+
+```json
+{
+  "version": 1,
+  "auto_capture": false,
+  "exclude_patterns": [
+    "密钥", "token", "API[_ ]?key",
+    "客户(姓名|名单|信息)",
+    "@[a-z]+\\.com",
+    "1[3-9]\\d{9}"
+  ],
+  "exclude_paths": [],
+  "max_inbox_files": 100,
+  "updated_at": "2026-05-26T15:00:00+08:00"
+}
+```
+
+### 字段约束
+
+| 字段 | 含义 |
+| --- | --- |
+| `version` | schema 版本，当前 `1` |
+| `auto_capture` | 是否允许 Agent 直接写 `knowledge/inbox/`，**默认 `false`**（必须用户主动 opt-in） |
+| `exclude_patterns` | 正则数组，命中任一就降级为"建议 capture"模式，不自动写入 |
+| `exclude_paths` | glob 数组，Agent 在涉及这些路径的对话中不自动 capture。**默认空数组**——决策类讨论是 capture 的高价值场景，不应被默认排除 |
+| `max_inbox_files` | inbox/ 文件超过此数时停止自动 capture，强制 promotion；默认 100 |
+| `updated_at` | ISO 8601 时间戳 |
+
+### 重要约束（apply 时必须显式标注）
+
+> **`exclude_patterns` 中的默认正则仅是初始规则，不代表完整 PII 检测**。生产用法必须由 lint 规则、人工 review 规则和组织安全规范共同保障。Agent 不得把这套正则当作唯一 PII 兜底。
+
+### PII 降级流程
+
+```text
+对话内容 → 命中 exclude_patterns 任一正则？
+  ├── 是 → 强制降级为"建议 capture"模式（无论 auto_capture 开关）
+  └── 否 → 检查 exclude_paths
+        ├── 命中 → 强制降级为"建议 capture"
+        └── 未命中 → 按 auto_capture 开关决定写入或建议
+```
+
+## Inbox Index Schema
+
+路径：`knowledge/.wiki/inbox_index.json`
+
+用途：Agent 会话开始读取的 inbox 高密度索引；提供 draft 数量、最老 draft 年龄和最近 N 条 draft 轻摘要，避免 Agent 把全部 draft 正文拉进上下文。
+
+**派生层**（由 `wiki-lint` 扫描 `knowledge/inbox/*.md` 生成；可重建；进 `.gitignore`，不作为知识正本）。
+
+### 顶层格式
+
+```json
+{
+  "version": 1,
+  "draft_count": 12,
+  "oldest_draft_age_days": 8,
+  "recent_drafts": [
+    {
+      "filename": "20260526-153012-attention-complexity.md",
+      "summary": "Attention 复杂度讨论",
+      "captured_at": "2026-05-26T15:30:12+08:00"
+    }
+  ],
+  "updated_at": "2026-05-26T16:00:00+08:00"
+}
+```
+
+### 字段约束
+
+| 字段 | 含义 |
+| --- | --- |
+| `version` | schema 版本，当前 `1` |
+| `draft_count` | `knowledge/inbox/*.md` 中 `status: draft` 的文件数；**不含** `archive/` |
+| `oldest_draft_age_days` | 最老 draft 距今天数，按 frontmatter `created` 计算 |
+| `recent_drafts[]` | 最近 N 条 draft 的轻摘要数组，默认 `N = 10` |
+| `recent_drafts[].filename` | inbox 文件名（不含路径） |
+| `recent_drafts[].summary` | 摘要文本，优先来自 frontmatter `suggested_target_title`，回退到正文首句 |
+| `recent_drafts[].captured_at` | ISO 8601 时间戳，优先 frontmatter `created`，回退到文件名解析的秒级时间戳 |
+| `updated_at` | 索引重建时刻，ISO 8601 |
+
+### 生成时机
+
+- `wiki-lint` 每次扫描时重新生成
+- 新 capture 写入 / promotion / drop 后建议触发重建
+
+### 不包含
+
+- draft 正文（保持索引高密度，正文按需另读）
+- `archive/promoted/` 或 `archive/dropped/` 的文件
 
 ## Frontmatter 生命周期字段
 

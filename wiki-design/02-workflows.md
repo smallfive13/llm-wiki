@@ -88,6 +88,62 @@ knowledge/log.md
 Triage 如果需要异步人工处理，应写入 `knowledge/.wiki/review_queue.json`，字段见
 [05-contracts-and-next-steps.md](05-contracts-and-next-steps.md)。不要让 Agent 自由发挥 review 字段名。
 
+## 被动 capture（建议 / 自动）
+
+触发：普通对话中 Agent 识别到值得长期保留的片段（设计取舍 / 排查结论 / 明确事实 / 用户决策性发言）。机制定义见 [RFC-003](rfcs/RFC-003-inbox-capture-layer.md) Revision v2 + AGENTS.md "低摩擦 capture" 段。
+
+流程：
+
+```text
+检查 knowledge/.wiki/capture_policy.json 是否存在 + auto_capture 开关
+  ├── 不存在 / auto_capture: false → 默认"建议 capture"模式
+  │     └── 在回答末尾输出：💡 建议 capture：<摘要> · 类型 suggested: <type>
+  │           用户回复"存"/"capture" → 写 knowledge/inbox/YYYYMMDD-HHmmss-<slug>.md
+  │
+  └── auto_capture: true → 检查 exclude_patterns / exclude_paths
+        ├── 命中任一 PII 正则 / 排除路径 → 强制降级为"建议 capture"
+        └── 未命中 → 直接写 inbox/
+              └── 在回答末尾输出：✏️ 已 capture：inbox/<filename> · <摘要>
+```
+
+约束：
+
+- 写入路径只能是 `knowledge/inbox/`，**严禁绕过 inbox 直接写 `knowledge/wiki/`**
+- 文件命名：`YYYYMMDD-HHmmss-<slug>.md`，秒级时间戳；同秒冲突追加 `-NN`
+- 不允许"无声写入"，必须在回答末尾可见报告
+- frontmatter 必须含 `id: inb_<ts>_<slug>` / `type: inbox` / `status: draft` 等字段（详见 [05-contracts-and-next-steps.md](05-contracts-and-next-steps.md) "Capture Item Schema"）
+
+## Inbox 晋升
+
+触发语义：
+
+```text
+消化 inbox
+整理一下 inbox
+把 inbox 里的东西梳理进 wiki
+```
+
+流程：
+
+```text
+列出所有 status: draft 的 inbox 文件（读 knowledge/inbox/*.md）
+-> 按主题分组（Agent 建议）
+-> 对每组提议：
+   - 晋升为 wiki/topics/、wiki/entities/、wiki/decisions/ 等新页面
+   - 合并到已有页面（按标题/alias 匹配找候选）
+   - 丢弃（确认无价值）
+-> 用户决策每一项
+-> apply：
+   - 晋升：移动内容到 wiki/<type>/，新建页面带完整 frontmatter（含 RFC-002 stable id）；
+     原 inbox 文件移动到 knowledge/inbox/archive/promoted/<filename>，frontmatter 改 status: promoted
+   - 合并：内容并入目标页；原 inbox 文件移到 archive/promoted/，可在目标页 supersedes 中记 inbox id
+   - 丢弃：原 inbox 文件移到 archive/dropped/<filename>，frontmatter 改 status: dropped
+```
+
+定期触发：建议每周一次，或 `knowledge/inbox/*.md` 文件数超过 `capture_policy.max_inbox_files`（默认 100）时主动提醒。
+
+健康度统计**只计 `knowledge/inbox/*.md`**（即 draft 状态），archive 不计入告警阈值。
+
 ## 结晶化
 
 触发语义：

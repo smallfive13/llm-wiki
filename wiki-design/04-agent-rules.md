@@ -24,6 +24,7 @@ knowledge/index.md
 knowledge/overview.md
 knowledge/log.md
 knowledge/.wiki/review_queue.json
+knowledge/.wiki/inbox_index.json
 ```
 
 然后再按标题、tag、wikilink 和全文搜索读取相关页面。
@@ -38,6 +39,8 @@ knowledge/.wiki/review_queue.json
 - “消化这篇资料”
 - “结晶化”
 - “更新 Wiki”
+
+**capture 例外**：被动 capture 的写入目标是 `knowledge/inbox/`，不算"长期沉淀"，规则见 [AGENTS.md](../AGENTS.md) "低摩擦 capture" 段和 [02-workflows.md](02-workflows.md) "被动 capture" 段。inbox 写入仍受 `capture_policy.json` 与 PII 兜底约束，不能绕过去直接写 `knowledge/wiki/`。
 
 普通问答默认只读。
 
