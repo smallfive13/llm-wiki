@@ -677,3 +677,26 @@ git commit -m "[task] TASK-003 done by codex"
 ## Evaluation by claude · YYYY-MM-DD
 
 （待评估者填写）
+
+## Spec review v2 by codex · 2026-05-27
+
+### v1 阻塞点复核
+- [x] `Inbox Index Schema` 已补齐。字段覆盖 `version`、`draft_count`、`oldest_draft_age_days`、`recent_drafts[]`、`recent_drafts[].filename`、`summary`、`captured_at`、`updated_at`，并明确派生层、生成时机、不包含正文和 archive 文件，足以让后续 Agent / lint 稳定生成与读取。
+- [x] Step 6 第 2 项已解决行数 vs 命中次数歧义。现在用 `grep -oE ... | wc -l` 分别统计 `RFC-003-inbox-capture-layer`、`02-workflows.md`、`05-contracts-and-next-steps.md` 的出现次数，预期也改成三项各自 `>= 1`。
+
+### 配套调整复核
+- [x] `.gitignore` 已纳入白名单：强约束 #1 从 5 个目标扩为 6 个文件，Step 5e 明确 `knowledge/.wiki/inbox_index.json` 紧贴 `id_index.json` 后追加。
+- [x] Step 5e 与 Step 7 commit 范围一致：`git add` 已包含 `.gitignore`，commit message 也说明 `.gitignore` 追加 `inbox_index.json`。
+- [x] Step 6 第 16 项验证 `.gitignore` 包含 `knowledge/.wiki/inbox_index.json`，第 17 项验证 `Inbox Index Schema` 至少包含 `draft_count` 和 `oldest_draft_age_days`，能捕获 v1 漏项。
+- [x] Decision 两条 apply-time 约束仍可被 Step 6 第 10 / 11 项捕获：`exclude_paths` 不含 `wiki/decisions/**`，并包含"不代表完整 PII 检测"警示。
+
+### 兼容性
+- [x] `inb_` 作为 TASK-002 prefix 表扩展，且明确 capture item 非 `knowledge/wiki/` 页面类型，兼容稳定 ID schema。
+- [x] Capture Item frontmatter 包含 `id`，格式为 `inb_YYYYMMDD_HHmmss_<slug>`，与 RFC-003 / TASK-002 的命名空间设计一致。
+- [x] `inbox_index.json` 标注为派生层并进入 `.gitignore`，与 `id_index.json` 的处理方式一致。
+
+### 注意项
+- workflow 描述里仍有“Step 1~5 Codex 执行 5 个文件的编辑 / Step 7 5 文件一次性 commit”的旧口径，但强约束 #1、Step 5e、Step 7 `git add` 和验证第 16 项都已经明确是 6 个文件。该残留不影响执行，可在后续整理 task 文案时顺手修正。
+
+### 结论
+- 通过。可以进入 Step 1~8。
