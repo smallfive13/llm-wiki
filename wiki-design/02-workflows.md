@@ -87,7 +87,7 @@ knowledge/log.md
    - 更新 entities/topics/synthesis/decisions
    - 更新 index/overview/log
    - 刷新图谱和搜索索引
-   - 运行 lint
+   - 运行 `python3 scripts/wiki_lint.py`
 ```
 
 Triage 如果需要异步人工处理，应写入 `knowledge/.wiki/review_queue.json`，字段见

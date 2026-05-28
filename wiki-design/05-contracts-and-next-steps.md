@@ -814,6 +814,8 @@ evidence_count: 0
 
 ### 第三阶段：补最小脚本
 
+> **状态（2026-05-28）**：`scripts/wiki-lint` 已由 RFC-006 + TASK-006 落地为 `scripts/wiki_lint.py`，覆盖 frontmatter / 断链 / source manifest / review queue / entity alias / inbox / PII 八类校验，并生成 `id_index.json` / `normalized_alias_index.json` / `inbox_index.json` 三类派生层。`wiki-context` / `wiki-graph-refresh` 仍待后续 RFC。
+
 交付物：
 
 - `scripts/wiki-lint`：检查 frontmatter、断链、source manifest、review queue。

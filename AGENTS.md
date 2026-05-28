@@ -56,18 +56,34 @@
 
 当前 RFC 索引见 `wiki-design/rfcs/README.md`，当前 Task 索引见 `wiki-design/tasks/README.md`。
 
-## Commit 规则
-
-- 如果需要提交，commit message 使用清晰 prefix，例如 `[codex]`、`[claude]`、`[rfc-001]`、`[apply rfc-001]`。
-- 一个 commit 尽量只覆盖一个 RFC 或一类小修。
-- commit message 要能说明动了哪些正本，以及是否对应某个 RFC。
-
 ## 知识库写入规则
 
 - 只有在用户明确表达“存下来”“沉淀”“整理进知识库”“消化这篇资料”“结晶化”“更新 Wiki”等意图时，才写入长期 Wiki。
 - 普通问答默认只读。
 - 强结论应尽量标注来源；不确定内容进入 `knowledge/wiki/open-questions/` 或 review queue。
 - 一次重要知识库更新后，应更新 `knowledge/log.md`。
+
+## lint 触发约束
+
+机制定义见 [RFC-006](wiki-design/rfcs/RFC-006-wiki-lint-mvp.md)。
+
+任何对以下路径的修改，commit 前必须跑 `python3 scripts/wiki_lint.py --check-only` 通过：
+
+- `knowledge/wiki/**`
+- `knowledge/inbox/**`
+- `knowledge/raw/source_manifest.json`
+- `knowledge/.wiki/review_queue.json`
+- `knowledge/.wiki/capture_policy.json`
+
+派生层文件（`knowledge/.wiki/id_index.json` / `normalized_alias_index.json` / `inbox_index.json`）由 lint 自动生成，不需要手动维护，也不进 Git。
+
+lint 输出 error 时，应优先修复源数据；确实需要绕过时，必须在 commit message 或 Execution log 段写明绕过原因。
+
+## Commit 规则
+
+- 如果需要提交，commit message 使用清晰 prefix，例如 `[codex]`、`[claude]`、`[rfc-001]`、`[apply rfc-001]`。
+- 一个 commit 尽量只覆盖一个 RFC 或一类小修。
+- commit message 要能说明动了哪些正本，以及是否对应某个 RFC。
 
 ### 低摩擦 capture（capture 缓冲层）
 
