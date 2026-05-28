@@ -2,9 +2,9 @@
 id: rfc_20260528_009
 title: wikilink 约定标准化（slug-based + 管道显示别名，Obsidian/wiki_graph 双解析）
 author: claude
-status: proposed
+status: accepted
 created: 2026-05-28
-updated: 2026-05-28  # v2 after codex review v1
+updated: 2026-05-28  # accepted; decision by claude (Path A)
 targets:
   - scripts/wiki_graph.py
   - scripts/README.md
@@ -150,9 +150,35 @@ slug = 文件名，跨类型可能重名（`topics/foo.md` 与 `sources/foo.md`�
 
 （待 Codex 追加）
 
-## Decision
+## Decision by claude · 2026-05-28（用户授权 Path A 代写）
 
-（待用户填写或授权 Agent 代写）
+**Accepted**。RFC-009 经 2 轮 review 收敛（v1 4 阻塞 → v2 通过），用户选定方案 A（slug + 管道显示别名）。本 Decision 锁定实现约束，移交 TASK-009。
+
+### 关键决策点
+
+| 决策点 | 选择 |
+| --- | --- |
+| wikilink 形式 | **`[[slug\|显示文本]]`**（slug = 文件名；Obsidian 文件名解析 + wiki_graph slug→id） |
+| 替代方案 | 拒绝纯 `[[slug]]`（可读性差）/ 文件名改标题（破坏稳定 slug）/ Obsidian aliases（与 RFC-004 冲突） |
+
+### 锁定的实现约束（移交 TASK-009 spec）
+
+1. **wiki_graph lookup alias 优先**：保留现有管道/heading 剥离；改 `build_wikilink_lookup` 保证 `normalized_alias_index` key **不被** slug/title 覆盖（两阶段 lookup，或 add_lookup 不覆盖 alias key）。解析顺序：alias → slug/path。
+2. **slug 歧义机械规则**：target 含 `/` → 实例根相对路径去 `.md` 精确匹配（补登记路径 key）；不含 `/` → basename slug；basename 重复 → 不建边 + `ambiguous_wikilink`（**只进 graph-insights.md，不进 graph-data**）。
+3. **文档同步**：`03` 增 wikilink 约定段；`01`/`05`/`02`/`.wiki-schema.md` 的标题形 + entity alias 示例改 slug+display（`[[attention|Attention]]`），**保留 RFC-004「别名不包 wikilink」语义**；`README` 补管道/路径/ambiguous 说明。
+4. **迁移现有 4 页**：wikilink 改 `[[slug|标题]]`（`related:` 显示层同步，canonical `related_ids` 不变）。
+5. **验证**：重跑 RFC-007 fixture（content_hash）+ RFC-008 零回归（结构等价）+ **4 条 RFC-009 专项断言**（管道建边 / 重复 slug ambiguous / 路径消歧 / alias 优先于同名 slug）；迁移 4 页后 wiki_lint exit 0 + wiki_graph 0 dangling + related 边数不变。
+6. **运行环境**：conda py312。
+
+### Apply 触发
+
+- 立即开 **TASK-009: apply RFC-009 — wikilink 约定（wiki_graph lookup + 迁移 4 页 + 文档同步）**（type: apply，executor: codex）
+- 迁移完成后，Obsidian 里点击 wikilink 不再建空桩（已存在的 2 个空桩需手动删）
+- TASK-009 done 后回本 RFC 追加 `## Applied in <commit-sha>`
+
+## Applied in working tree · 2026-05-28 · claude
+
+RFC accepted，targets 待 TASK-009 落地。apply 真正完成后由 TASK-009 evaluator 追加 commit sha。
 
 ## Review by codex · 2026-05-28
 
