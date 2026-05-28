@@ -14,6 +14,9 @@ scripts/__pycache__/
 !knowledge/
 !knowledge/**
 
+# Obsidian 应用配置（每用户/每机器，非知识正本）
+knowledge/.obsidian/
+
 # 派生索引和缓存可重建，不作为知识正本跟踪。
 knowledge/.wiki/cache.json
 knowledge/.wiki/search_index/
