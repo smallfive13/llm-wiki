@@ -14,6 +14,7 @@ Task 回答"怎么做、谁来做"，与 RFC 回答"要不要这么改"互补。
 | [task_20260526_004](TASK-004-apply-rfc-004.md) | Apply RFC-004 — entity aliases / canonical_id / status:redirect / normalized index | done | claude | codex | RFC-004 |
 | [task_20260526_005](TASK-005-init-knowledge-skeleton.md) | 初始化 knowledge/ 骨架（基于 RFC-001~005 冻结 schema） | done | claude | codex | RFC-001~005 |
 | [task_20260528_006](TASK-006-apply-rfc-006.md) | Apply RFC-006 — 实现 wiki-lint MVP（scripts/wiki_lint.py + 文档同步） | done | claude | codex | RFC-006 |
+| [task_20260528_007](TASK-007-apply-rfc-007.md) | Apply RFC-007 — 实现 wiki-graph MVP（wiki_common + wiki_graph.py + 文档同步） | pending (待 codex spec review) | claude | codex | RFC-007 |
 
 ## 状态机
 
