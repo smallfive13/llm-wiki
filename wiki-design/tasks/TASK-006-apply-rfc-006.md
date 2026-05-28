@@ -6,7 +6,7 @@ executor: codex
 status: pending
 type: apply
 created: 2026-05-28
-updated: 2026-05-28
+updated: 2026-05-28  # v2 after codex spec review v1
 related_rfcs:
   - rfc_20260527_006
 ---
@@ -47,9 +47,11 @@ related_rfcs:
 5. **不动** 其它 RFC、其它 task、wiki-design 其它文档、`.gitignore`、`knowledge/.wiki-schema.md`。
 6. **必须先经 Codex spec review（Step 0）**：在 Step 0 通过前 status 保持 pending。
 7. `scripts/wiki_lint.py` 严格按本 spec 的 enum 列表 / 派生层 schema / error code 表实现，**不**自行扩展规则或字段。
-8. PyYAML 是允许的唯一外部依赖；其它一律标准库。
-9. lint 必须 **原子写**所有派生层 JSON（`<file>.<pid>.<uuid4_hex8>.tmp` + `os.replace`），且 JSON `sort_keys=True`。
-10. commit 拆三个：Step 7a apply 改动 / Step 7b RFC-006 Applied 段 / Step 8 task status 推进。
+8. PyYAML 是允许的唯一外部依赖；其它一律标准库。**Step 1 启动前必须 preflight**：`python3 -c "import yaml"` 退出 0；不通过则先 `pip3 install --user pyyaml`。preflight 失败时**不**得进入 Step 1。
+9. **Python 版本兼容**：固定为 Python 3.9+（不假设 3.11）。ISO 8601 带时区解析**自实现**（手动处理 `Z` 后缀和 `+HH:MM` / `+HHMM` 时区格式），不依赖 `datetime.fromisoformat` 在 Python 3.11+ 的扩展能力。
+10. **lint 只读 `knowledge/**` 源数据**：lint 命中 `ALIAS_CONFLICT` 等冲突时**只报告**，**不**修改 `review_queue.json` 或任何 `knowledge/**` 源数据；写 review_queue 由其它工作流（ingest Triage / 晋升）负责。lint 唯一允许写入的是派生层（`knowledge/.wiki/id_index.json` / `normalized_alias_index.json` / `inbox_index.json`，已 .gitignore）。
+11. lint 必须 **原子写**所有派生层 JSON（`<file>.<pid>.<uuid4_hex8>.tmp` + `os.replace`），且 JSON `sort_keys=True`。
+12. commit 拆三个：Step 7a apply 改动 / Step 7b RFC-006 Applied 段 / Step 8 task status 推进。
 
 ## 工作流
 
@@ -123,6 +125,16 @@ Codex 自行 commit 这次 Spec review 改动（commit message：`[task] TASK-00
 
 ### Step 1：实现 `scripts/wiki_lint.py`
 
+#### 1.0 Preflight（必跑）
+
+```bash
+python3 --version       # 必须 3.9+
+python3 -c "import yaml" || pip3 install --user pyyaml
+python3 -c "import yaml; print('PyYAML', yaml.__version__)"  # 必须打印版本
+```
+
+任一失败则**不**得继续 Step 1.1。
+
 #### 1.1 文件位置与基本约束
 
 - 路径：`scripts/wiki_lint.py`
@@ -165,6 +177,26 @@ python3 scripts/wiki_lint.py [--check-only] [--json] [--scan-wiki-pii]
 | `confidence` | `low` / `medium` / `high` |
 | `review` | `true` / `false`（bool 类型） |
 
+**id prefix 必须与 type 对应**（违反报 `ID_FORMAT`）：
+
+| type | 必须 prefix |
+| --- | --- |
+| `source` | `src_` |
+| `entity` | `ent_` |
+| `topic` | `top_` |
+| `comparison` | `cmp_` |
+| `synthesis` | `syn_` |
+| `decision` | `dec_` |
+| `query` | `que_` |
+| `open-question` | `oq_` |
+| `inbox` | `inb_` |
+
+**反向约束**（违反一律 error）：
+
+- `status: redirect` **只能用于 entity 页**；非 entity 页用 `status: redirect` → `ENUM_INVALID`
+- entity 页 `canonical_id != null` ⇒ 该页**必须** `status: redirect`（反向约束）；否则 → `REDIRECT_INVALID`
+- entity 页 `canonical_id != null` ⇒ 目标 entity 必须 `canonical_id: null`（不允许链式跳转）；违反 → `CANONICAL_CHAIN`
+
 **inbox frontmatter enum**（仅 `inbox/*.md`，不含 archive）：
 
 | 字段 | 合法取值 |
@@ -177,7 +209,7 @@ python3 scripts/wiki_lint.py [--check-only] [--json] [--scan-wiki-pii]
 
 > `inbox/archive/promoted/` 下文件 status 必须为 `promoted`；`archive/dropped/` 下必须为 `dropped`（跨流程一致性 #8）。
 
-**source_manifest.json**（顶层 `version == 1`，items 在 `sources[]`）：
+**source_manifest.json**（顶层 `version == 1`，items 在 `sources[]`；顶层 `updated_at` **可选**，存在时校验 ISO 8601 带时区）：
 
 | 字段 | 合法取值 |
 | --- | --- |
@@ -185,7 +217,7 @@ python3 scripts/wiki_lint.py [--check-only] [--json] [--scan-wiki-pii]
 | `status` | `new` / `triaged` / `ingested` / `skipped` / `failed` / `deleted` |
 | `adapter` | `local_file` / `web_clipper` / `manual` / `llm_wiki_app` / `custom` |
 
-**review_queue.json**（顶层 `version == 1`，items 在 `items[]`）：
+**review_queue.json**（顶层 `version == 1`，items 在 `items[]`；顶层 `updated_at` **可选**，存在时校验 ISO 8601 带时区）：
 
 | 字段 | 合法取值 |
 | --- | --- |
@@ -193,6 +225,8 @@ python3 scripts/wiki_lint.py [--check-only] [--json] [--scan-wiki-pii]
 | `status` | `pending` / `resolved` / `dismissed` |
 | `priority` | `low` / `medium` / `high` |
 | `resolved_action` | 必须来自同一 item 的 `options[].action` 集合，或为字面值 `manual_resolution`，或为 `null` |
+
+> 当前 TASK-005 初始化的 `source_manifest.json` / `review_queue.json` 顶层**没有** `updated_at`，是合法状态。lint **不要**因为缺这两个字段报错；只在字段存在时校验格式。`capture_policy.json` 已有 `updated_at`（必填）。
 
 **capture_policy.json**：
 
@@ -212,10 +246,27 @@ python3 scripts/wiki_lint.py [--check-only] [--json] [--scan-wiki-pii]
 | inbox `created` | `YYYY-MM-DD` |
 | 三个 JSON 中 `imported_at` / `last_ingested_at` / `updated_at` / `created_at` / `resolved_at` / `captured_at` | 带时区 ISO 8601 或 `null`（`null` 仅在字段允许时） |
 
-`YYYY-MM-DD` 正则：`^\d{4}-\d{2}-\d{2}$`（额外用 `datetime.strptime` 验证日期有效性）
-ISO 8601 带时区：解析后必须有 `tzinfo`（用 `datetime.fromisoformat` Python 3.11+；3.9~3.10 需自行处理或要求 Python 3.11）
+`YYYY-MM-DD` 正则：`^\d{4}-\d{2}-\d{2}$`（额外用 `datetime.strptime("%Y-%m-%d")` 验证日期有效性）。
 
-**hash_sha256 格式**：`^[0-9a-f]{64}$`
+**ISO 8601 带时区**（自实现解析器，Python 3.9 兼容）：
+
+- 允许格式：`YYYY-MM-DDTHH:MM:SS+HH:MM` / `YYYY-MM-DDTHH:MM:SS+HHMM` / `YYYY-MM-DDTHH:MM:SSZ`（`Z` 等价 `+00:00`）
+- 允许小数秒：`YYYY-MM-DDTHH:MM:SS.fff+HH:MM`
+- **不**允许：无时区（naive datetime）、空格分隔（`YYYY-MM-DD HH:MM:SS`）
+- 实现要求：手动正则解析 `Z` 与 `+HH:MM` / `+HHMM` 后再交给 `datetime.strptime` + `timezone(timedelta(...))` 构造，**不**依赖 `datetime.fromisoformat`（3.9 不支持 `Z`，3.11+ 才扩展）
+
+**PyYAML 日期对象归一化**（关键）：
+
+PyYAML 默认会把未加引号的 YAML 日期 / 时间戳解析成 Python `date` / `datetime` 对象（不是字符串）。`wiki/**/*.md` 和 `inbox/*.md` 的 frontmatter 大量出现裸日期。lint 在做格式校验前**必须**：
+
+1. 用 `yaml.safe_load` 后，递归遍历 frontmatter 树
+2. 对 `date` 实例：用 `obj.strftime("%Y-%m-%d")` 归一化回字符串
+3. 对 `datetime` 实例：保留为字符串前先确认有 tzinfo（无则报 `DATE_FORMAT`），有则用 `isoformat()` 归一化
+4. 再交给上述正则 / strptime 校验
+
+否则会出现"YAML 写的是 `2026-05-28`，PyYAML 给我 `date(2026,5,28)`，类型不是 str → 误报"。
+
+**hash_sha256 格式**：`^[0-9a-f]{64}$`（小写十六进制 64 位；大写或非 hex 字符 → `HASH_FORMAT`）
 
 #### 1.4 派生层 JSON 模板（严格按 05 冻结 schema）
 
@@ -257,7 +308,7 @@ ISO 8601 带时区：解析后必须有 `tzinfo`（用 `datetime.fromisoformat` 
 ```
 
 - 来源优先级：`title`（H1 标题）> `alias`（`aliases[]` 字段）> `redirect`（薄重定向页 `id`）
-- 同一规范化 key 命中多个 canonical_id 时报 `ALIAS_CONFLICT` 并写入 review_queue（见下文）；entries 保留**最先**命中的
+- 同一规范化 key 命中多个 canonical_id 时**只报告** `ALIAS_CONFLICT`（error），**不**写 `review_queue.json`（lint 只读 `knowledge/**` 源数据，写 review_queue 由其它工作流负责，见强约束 #10）；entries 保留**最先**命中的
 - 规范化算法：lowercase + 去首尾空白 + 连续空白→单空格 + `_`/`-`/空格互换为 `-` + 中文全角→半角（仅 `，。（）！？：；""''`）。**不**做复数归一（MVP 不引入歧义）。
 - 空时 `entries = {}`
 
@@ -283,7 +334,11 @@ ISO 8601 带时区：解析后必须有 `tzinfo`（用 `datetime.fromisoformat` 
 - `oldest_draft_age_days` = 最老 draft 距今天数（按 frontmatter `created`）；无 draft 时为 `null`
 - `recent_drafts` 默认 N = 10，按 `captured_at` 倒序
 - `summary` 优先 frontmatter `suggested_target_title`；回退正文首行非空文本（截断 80 字符）
-- `captured_at` 优先 frontmatter `created`，回退按文件名 `YYYYMMDD-HHmmss-...` 解析
+- `captured_at` 解析优先级：
+  1. 文件名 `YYYYMMDD-HHmmss-...` 解析出秒级时间戳（最精确），补本地时区 `+08:00` → ISO 8601
+  2. 回退 frontmatter `created`（`YYYY-MM-DD`）：补 `T00:00:00+08:00` 拼成 ISO 8601
+  3. 若两者都缺/不合法：跳过该 draft 进 `recent_drafts`（仍计入 `draft_count`），并报 `DATE_FORMAT` warning
+- 输出的 `captured_at` 字段**必须**是 ISO 8601 带时区字符串（不允许裸 `YYYY-MM-DD`）
 
 **原子写算法**（所有派生层强制）：
 
@@ -580,6 +635,10 @@ lint 输出 error 时，应优先修复源数据；确实需要绕过时，必�
 cd /Users/zhangjunwu/workspace/llm-wiki/llm-wiki
 
 set +e
+
+echo "=== Preflight: Python 3.9+ + PyYAML ==="
+python3 --version
+python3 -c "import yaml; print('PyYAML', yaml.__version__)" || { echo "FAIL: PyYAML 未安装"; exit 2; }
 
 echo "=== A. 基线：空 knowledge/ 跑 lint 应全 OK ==="
 python3 scripts/wiki_lint.py
@@ -880,7 +939,15 @@ inject_and_check "inbox draft 含 PII 手机号" "PII_HIT_DRAFT" "rm knowledge/i
 echo "=== F. 还原 + 重新 baseline ==="
 rm -f knowledge/.wiki/id_index.json knowledge/.wiki/normalized_alias_index.json knowledge/.wiki/inbox_index.json
 python3 scripts/wiki_lint.py > /dev/null
-git status --porcelain -uall | cut -c4- | grep -v '^scripts/\|^AGENTS.md\|^wiki-design/02\|^wiki-design/05\|^wiki-design/rfcs/RFC-006\|^wiki-design/tasks/TASK-006\|^wiki-design/rfcs/README.md\|^wiki-design/tasks/README.md' || echo "  OK: 白名单外文件未被动"
+# 白名单严格匹配强约束 #1（5 个 apply 路径）+ TASK-006 自身（Step 0/8）+ RFC-006（Step 7b）
+# 不放行 rfcs/README.md / tasks/README.md（索引推进由 evaluator 做，不是 executor）
+extra=$(git status --porcelain -uall | cut -c4- | grep -v '^scripts/\|^AGENTS.md$\|^wiki-design/02-workflows.md$\|^wiki-design/05-contracts-and-next-steps.md$\|^wiki-design/rfcs/RFC-006-wiki-lint-mvp.md$\|^wiki-design/tasks/TASK-006-apply-rfc-006.md$')
+if [ -z "$extra" ]; then
+  echo "  OK: 白名单外文件未被动"
+else
+  echo "  FAIL: 白名单外文件被动了："
+  echo "$extra" | sed 's/^/    /'
+fi
 
 echo "=== 全部验证结束 ==="
 ```
@@ -1052,3 +1119,63 @@ git commit -m "[task] TASK-006 done by codex"
 
 - 需修改。
 - 修完以上阻塞点后，核心设计可以进入 Step 1~8；不需要推翻 RFC-006 的方向。
+
+## Revision v2 by claude · 2026-05-28
+
+addressing codex spec review v1 的 5 个阻塞点 + 风险段 + 非阻塞建议。修订清单：
+
+### 阻塞点修复
+
+1. **ALIAS_CONFLICT 不写 review_queue.json**（review 阻塞 "可执行性 ALIAS_CONFLICT"）
+   - 新增**强约束 #10**：lint 只读 `knowledge/**` 源数据；命中 ALIAS_CONFLICT 等冲突时只报告，**不**修改 review_queue。
+   - 1.4 normalized_alias_index 段："同时写入 review_queue" → "**只报告** ALIAS_CONFLICT，**不**写 review_queue.json"。
+   - Step 6 E9 注入测试逻辑不变（lint --json 输出 errors[] 含 ALIAS_CONFLICT 即可），还原也不涉及 review_queue 修改。
+
+2. **Step 6 F 白名单收紧**（review 阻塞 "边界 F 白名单"）
+   - 移除 `^wiki-design/rfcs/README.md` 和 `^wiki-design/tasks/README.md`，索引推进留给 evaluator。
+   - 其余白名单严格匹配强约束 #1 的 5 个路径 + TASK-006 自身 + RFC-006（Step 7b 追加 Applied）。
+   - 用 `$extra` 变量精确输出违反路径列表，方便定位。
+
+3. **PyYAML preflight**（review 阻塞 "PyYAML 缺失"）
+   - 强约束 #8 加 preflight 要求：`python3 -c "import yaml"` 退出 0，不通过先 `pip3 install --user pyyaml`。
+   - 新增 **Step 1.0 Preflight** 子步：Python 版本 + PyYAML import + 版本打印。
+   - Step 6 验证开头加 "Preflight: Python 3.9+ + PyYAML" 段，失败 exit 2。
+
+4. **Python 3.9 兼容 + PyYAML 日期归一化**（review 阻塞 "Python 版本"、"PyYAML 日期对象"）
+   - 新增**强约束 #9**：固定 Python 3.9+，ISO 8601 解析自实现，不依赖 `datetime.fromisoformat` 3.11+ 扩展。
+   - 1.3 日期段重写：明确允许 / 不允许格式 + 实现要求（手动正则 + `strptime` + `timezone(timedelta)` 构造）。
+   - 1.3 新增 **PyYAML 日期对象归一化** 子段：`yaml.safe_load` 后必须 `date.strftime` / `datetime.isoformat` 归一化回字符串再校验。
+   - 1.3 hash_sha256 段补"小写 / 大写 → HASH_FORMAT"。
+
+5. **三个反向约束显式钉死**（review 阻塞 "完整性 id prefix / redirect / canonical_id"）
+   - 1.3 frontmatter enum 表后新增 **id prefix → type 对应表**（9 条映射 + 违反报 `ID_FORMAT`）。
+   - 1.3 新增 **反向约束** 段：
+     - `status: redirect` 只能用于 entity（违反 → `ENUM_INVALID`）
+     - entity `canonical_id != null` ⇒ 必须 `status: redirect`（违反 → `REDIRECT_INVALID`）
+     - 链式跳转 → `CANONICAL_CHAIN`
+   - error code 表无需新增（复用现有 `ID_FORMAT` / `ENUM_INVALID` / `REDIRECT_INVALID` / `CANONICAL_CHAIN`）。
+
+### 风险段建议采纳
+
+6. **JSON 顶层 updated_at 可选**（review 风险段 source_manifest / review_queue 缺 updated_at）
+   - 1.3 source_manifest / review_queue 段加注："顶层 `updated_at` **可选**，存在时校验 ISO 8601 带时区"。
+   - 加 quote 说明：TASK-005 初始化的两个 JSON 顶层没有 `updated_at`，是合法状态，lint **不要**因此报错；`capture_policy.json` 已有 `updated_at`（必填）。
+
+### 非阻塞建议采纳
+
+7. **inbox_index.json `captured_at` 回退转 ISO 8601**（review 非阻塞 "captured_at 优先级"）
+   - 1.4 inbox_index 段重写 `captured_at` 解析优先级（文件名秒级 → frontmatter `created` 补 `T00:00:00+08:00` → 跳过 + warning）。
+   - 明确输出字段**必须**是 ISO 8601 带时区字符串。
+
+### 编号变动
+
+强约束从 10 条扩为 12 条（新增 #9 Python 兼容、#10 lint 只读 + ALIAS_CONFLICT 不写 review_queue；原 #9 #10 后移为 #11 #12）。Step 6 验证项目编号未变（A / B / C / D / E1~E11 / F）。
+
+### 未改动
+
+- 提案核心 8 项 lint 范围编号不变。
+- 23 条 error code 表不变（reverse 约束复用现有 code）。
+- 7a/7b/8 commit 拆分不变。
+- Codex Spec review v1 段完整保留（append-only）。
+
+待 Codex re-review。
