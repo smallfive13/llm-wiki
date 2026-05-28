@@ -4,9 +4,10 @@ title: 自建 canonical wiki-graph（03 第二层增强图谱生成器）
 author: claude
 status: proposed
 created: 2026-05-28
-updated: 2026-05-28
+updated: 2026-05-28  # v2 after codex review v1
 targets:
   - scripts/wiki_graph.py
+  - scripts/wiki_common.py
   - scripts/wiki_lint.py
   - scripts/README.md
   - wiki-design/02-workflows.md
@@ -63,24 +64,42 @@ reviewers:
 | `related` | `related_ids[]` | canonical | 无向 |
 | `supersedes` | `supersedes[]` / `superseded_by[]` | canonical | 有向 |
 | `wikilink` | 正文 `[[...]]` 经 `normalized_alias_index` 解析 | wikilink | 有向 |
+| `co_source` | 两页 `source_ids` 有交集（**由显式字段计算的结构边，非语义推断**） | computed | 无向 |
 
-每条边带：`source` / `target` / `relation` / `source_kind`（`canonical` \| `wikilink`）/ `weight`（canonical=2，wikilink=1；同一对节点多关系取最大权重并合并 relation 列表）。
+**边不合并**（v2）：每条边是一条原子记录 `{source, target, relation, source_kind, weight}`，`relation` 与 `source_kind` 都是**单值**。同一对节点若有多种关系（如既 `related` 又 `wikilink`），就产出多条边，各自保留来源边界。下游渲染器若想合并由它自己决定。这样避免"数组 relation + 单值 source_kind"的表达力丢失。
 
-> **不引入 INFERRED / AMBIGUOUS**：我们的边都是显式写的。推断类边是第三层 graphify 的事（RFC-008）。本层只投影"已存在的边"。
+- `source_kind` 枚举（统一）：`canonical` | `wikilink` | `computed`
+- `weight`：`canonical`=2，`wikilink`=1，`co_source`=1
 
-> **第二层"计算关系"**（共享来源 / 共享 tag / 共同邻居 / 类型亲和）：03 列为增强项。MVP **只做共享来源**（两个页面 `source_ids` 有交集 → `co_source` 边，`source_kind: computed`，weight=1），其余计算关系（共享 tag / 共同邻居 / 类型亲和）留给后续迭代，避免 MVP 边爆炸。
+> **不引入 INFERRED / AMBIGUOUS**：我们的边都是显式写的或由显式字段计算的（co_source）。推断类边是第三层 graphify 的事（后续 graphify RFC）。本层只投影"已存在 / 可由显式字段确定"的边。
+
+> **第二层"计算关系"** 03 列了共享来源 / 共享 tag / 共同邻居 / 类型亲和 / 同 synthesis·decision 共现。**MVP 只做 `co_source`（共享来源）**；其余（tag / 共同邻居 / 类型亲和 / 共现）明确**留后续增强**，避免 MVP 边爆炸。因此本 RFC 不等于"03 第二层完整实现"，只是其 MVP 子集。
 
 #### 3. wikilink 解析（复用 RFC-004 派生层）
 
 - `[[X]]` → 先查 `normalized_alias_index.json`（命中正名 entity 的 canonical_id）
-- 未命中 alias index → 查 `id_index` 的 label / slug 匹配
+- 未命中 alias index → 查 **wiki_graph 在内存构建的 `title/slug → id` 查找表**（读 wiki docs 时即建，归一化同 alias index）。**不扩展 `id_index.json` schema**——它只有 `path/type/status`（RFC-006 产物），不含 label/slug，扩它等于改派生层契约，故由本脚本内存自建
 - 都未命中 → 记为 `dangling_wikilink`（进 insights 警示，不建边）
 
 #### 4. 社区检测（纯标准库）
 
-- MVP 用**确定性 label propagation**（固定节点遍历顺序 = id 字典序，固定迭代轮数上限，平局取最小 community id），保证多次运行结果一致
-- 不引入 networkx（保持 wiki-lint 零重依赖原则）
+- MVP 用**确定性 label propagation**，可复现实现约束（v2 钉死）：
+  - 在**无向投影图**上跑（有向边视为无向邻接）
+  - 节点与邻居遍历都按 `id` 字典序
+  - **同步更新**（每轮基于上一轮 label 快照，不在轮内边算边改）
+  - 平局（多个 label 频次相同）取**最小 label**
+  - 固定迭代轮数上限（如 20），到上限或收敛即停
+- 不引入 networkx（保持 wiki-lint 零重依赖原则）；networkx + Louvain 留作后续可选
 - 社区仅用于 insights 分组和可视化着色，不写回 canonical
+
+#### 4b. redirect 折叠规则（可执行粒度，v2 补）
+
+`status: redirect` 薄页不作为主图节点（RFC-004）。三类情况：
+
+- **边的 target 是 redirect 页**：target 重写为其 `canonical_id`（指向正名页）
+- **边的 source 是 redirect 页**：薄页自身不进图，该边**丢弃**；唯一例外是 wikilink 解析入口（`[[别名]]` 命中 redirect 页 → 直接解析到其 `canonical_id`，等价于 target 重写）
+- **折叠后产生 self-loop**（重写后 source == target）：**丢弃**，避免正名页指向自己
+- 折叠后重复边按 `(source, target, relation, source_kind)` 去重
 
 #### 5. Insights（`maps/graph-insights.md`）
 
@@ -112,13 +131,14 @@ MVP 计算（对齐 03「Graph Insights」段，取与 lint 不重叠的项）�
 {
   "version": 1,
   "generated_at": "<ISO 8601 with tz>",
+  "content_hash": "<sha256 of nodes+edges+communities, 确定性>",
   "stats": { "nodes": 0, "edges": 0, "communities": 0 },
   "nodes": [
     { "id": "ent_20260526_attention", "label": "Attention", "type": "entity",
       "status": "active", "degree": 0, "community": 0 }
   ],
   "edges": [
-    { "source": "top_x", "target": "src_y", "relation": ["source_ref"],
+    { "source": "top_x", "target": "src_y", "relation": "source_ref",
       "source_kind": "canonical", "weight": 2 }
   ],
   "communities": [
@@ -126,6 +146,13 @@ MVP 计算（对齐 03「Graph Insights」段，取与 lint 不重叠的项）�
   ]
 }
 ```
+
+**确定性边界（v2 钉死，解决 generated_at 冲突）**：
+
+- `generated_at` 是运行墙钟时间，**不参与确定性保证**（它每次都变）
+- `content_hash` = 对**排序后的 nodes + edges + communities**（不含 generated_at）算 sha256，**输入相同则 content_hash 相同**
+- 后续 TASK 验证用 `content_hash` 或结构比较，**不做整文件字节 diff**
+- `edges[].relation` 是**单值字符串**（不是数组），与"边不合并"一致
 
 ### 范围（MVP 不包含 → 留后续）
 
@@ -149,18 +176,20 @@ python3 scripts/wiki_graph.py --json     # graph-data 打到 stdout（不写文�
 
 退出码：`0` 正常；`2` 配置 / 脚本自身错误（knowledge/ 不存在、依赖缺失等）。
 
+**`--json` 全程只读**（v2 钉死）：缺索引时在**内存**复用 parser 构建 `title/slug→id` 和 alias 查找，**不落盘**任何文件（不写 `.wiki/*.json`，不写 `maps/*`）。普通模式才写 `knowledge/maps/*` 三个派生文件；两种模式都**绝不写** `knowledge/**` 源数据。
+
 - **语言**：Python 3.12（统一环境）+ PyYAML（与 wiki-lint 同款唯一依赖），其余标准库
-- **复用**：import `wiki_lint.py` 的 frontmatter 解析 / id 解析 helper，**不重复实现**；为此对 `wiki_lint.py` 做**轻量 refactor**，把解析函数抽成可 import（不改变 lint 对外行为和退出码）
-- **派生索引依赖**：运行前若 `id_index.json` / `normalized_alias_index.json` 不存在，先内部调用 lint 的构建逻辑生成（或提示先跑 `wiki_lint.py`）
-- **原子写**：与 wiki-lint 同款（`<file>.<pid>.<uuid>.tmp` + `os.replace` + 确定序）
-- **确定性**：同样输入多次运行产出字节一致（社区 label propagation 固定顺序，JSON sort_keys）
+- **共享代码**（v2 改）：新增 `scripts/wiki_common.py` 放 lint 与 graph 共用的纯 helper（`MarkdownDoc` / `load_markdown` / `normalize_alias` / `write_json_atomic` 等），两个脚本都 import 它。**避免直接 import `wiki_lint.py`** 触动其脚本式全局状态（`ROOT = find_root()` 在 import 时执行）。`wiki_lint.py` 改为也从 `wiki_common.py` 取这些 helper，但**不改 error code 集合、不改 `run_lint()` 返回语义、不改 CLI 退出码**
+- **派生索引依赖**：普通模式运行前若 `id_index.json` / `normalized_alias_index.json` 不存在，提示先跑 `wiki_lint.py`（或内部用 wiki_common 构建后落盘）；`--json` 模式只在内存构建不落盘
+- **原子写**：复用 `wiki_common.write_json_atomic`（`<file>.<pid>.<uuid>.tmp` + `os.replace`）
+- **确定性**：除 `generated_at` 外字节确定；`content_hash` 对相同输入恒定（社区 label propagation 固定顺序 + JSON sort_keys）
 - **零网络 / 零 LLM**：纯机械投影
 
 ### 与现有流程的衔接
 
 - `02-workflows.md`「图谱刷新」：把流程描述替换为 `python3 scripts/wiki_graph.py`
 - ingest Apply / inbox 晋升 / 结晶化 完成后建议刷新图谱（非强制）
-- `03-obsidian-graph.md`：第二层标注落地（RFC-007），第三层仍待 RFC-008
+- `03-obsidian-graph.md`：第二层标注 **MVP 落地**（canonical + wikilink + co_source），其余计算关系（tag / 共同邻居 / 类型亲和 / 共现）明确标为**后续增强**；第三层仍待后续 graphify RFC（编号待定）
 
 ## 替代方案
 
@@ -206,13 +235,14 @@ python3 scripts/wiki_graph.py --json     # graph-data 打到 stdout（不写文�
 ### 新增
 
 - `scripts/wiki_graph.py`（约 400~600 行 Python）
+- `scripts/wiki_common.py`（lint 与 graph 共享的纯 helper：`MarkdownDoc` / `load_markdown` / `normalize_alias` / `write_json_atomic` 等）
 
 ### 改动正本
 
-- `scripts/wiki_lint.py`：轻量 refactor，把 frontmatter / id 解析抽成可 import 函数（**不改对外行为、退出码、error code**）
+- `scripts/wiki_lint.py`：改为从 `wiki_common.py` import 共享 helper（把现有内联解析抽到 common）。**不改 error code 集合 / `run_lint()` 返回语义 / CLI 退出码**；refactor 后**必须重跑 TASK-006 Step 6 全量验证**（A/B/C/D/E1~E11/F）确认 lint 无回归
 - `scripts/README.md`：新增 wiki-graph 段（用法 + 输出 + MVP 范围）
 - `wiki-design/02-workflows.md`：「图谱刷新」流程 → 具体命令
-- `wiki-design/03-obsidian-graph.md`：第二层标注落地状态
+- `wiki-design/03-obsidian-graph.md`：第二层标注 **MVP 落地**（canonical + wikilink + co_source），tag / 共同邻居 / 类型亲和 / 共现明确标为后续增强
 - `.gitignore`：新增 `knowledge/maps/knowledge-graph.md` + `knowledge/maps/graph-insights.md`（`graph-data.json` 已在）
 
 ### 不改动
@@ -230,18 +260,19 @@ python3 scripts/wiki_graph.py --json     # graph-data 打到 stdout（不写文�
 
 | 议题 | 关系 |
 | --- | --- |
-| RFC-008 graphify（第三层） | 本 RFC 是其前置：canonical 图谱先立住，graphify 才好接成发现层 |
+| 后续 graphify RFC（编号待定，第三层） | 本 RFC 是其前置：canonical 图谱先立住，graphify 才好接成发现层（注：RFC-006 曾把"wiki-design lint"暂称 RFC-008，编号以实际创建为准） |
 | 查询路由表（Backlog P1） | graph-data.json 可作"图谱多跳"通道的数据底座 |
 | Wiki 健康度指标（Backlog P2） | insights 的孤立 / hub / 社区可喂健康度 |
 | evidence 结构化（Backlog P1） | 语义关系类型（supports/contradicts）依赖它，故本 RFC 推迟 |
 
 ### 风险
 
-1. **wiki_lint.py refactor 回归**：抽 parser 时可能破坏 lint 行为。缓解：refactor 后必须重跑 TASK-006 Step 6 全量验证（A/B/C/D/E1~E11/F）确认 lint 无回归。
-2. **社区检测确定性**：label propagation 天然随机。缓解：固定遍历顺序（id 字典序）+ 平局取最小 community id + 固定迭代上限。
-3. **派生索引依赖顺序**：wiki_graph 依赖 id_index / normalized_alias_index。缓解：运行前检测，缺失则先构建或提示先跑 lint。
-4. **空 knowledge/ 当前态**：wiki/ 全空时应产出空图（nodes/edges/communities 全空）+ exit 0，不报错。
+1. **wiki_lint.py refactor 回归**：抽 helper 到 `wiki_common.py` 时可能破坏 lint 行为。缓解：抽**纯 helper**（不含全局 `ROOT` 状态），不改 error code 集合 / `run_lint()` 返回 / CLI 退出码；refactor 后**必须重跑 TASK-006 Step 6 全量验证**（A/B/C/D/E1~E11/F）确认无回归。
+2. **社区检测确定性**：label propagation 天然随机。缓解：无向投影图 + 节点/邻居按 id 排序 + 同步更新 + 平局取最小 label + 固定迭代上限（见 #4）。
+3. **派生索引依赖顺序**：wiki_graph 依赖 id_index / normalized_alias_index。缓解：普通模式缺失则提示先跑 lint；`--json` 模式内存构建不落盘。
+4. **空 knowledge/ 当前态**：wiki/ 全空时应产出空图（nodes/edges/communities 全空数组）+ exit 0，不报错；并确保创建 `knowledge/maps/` 目录。
 5. **规模**：MVP 全量重算，< 1000 页 < 1 秒；规模上去再考虑增量。
+6. **generated_at vs 确定性**（v2）：墙钟时间每次变。缓解：`generated_at` 排除在确定性外，另设 `content_hash`（对排序后 nodes+edges+communities 算 sha256）供验证。
 
 ## Review by codex · YYYY-MM-DD
 
@@ -319,3 +350,25 @@ python3 scripts/wiki_graph.py --json     # graph-data 打到 stdout（不写文�
 - C canonical 引用 + wikilink + 共享来源作为 MVP 合理，但要把 `co_source` 说成“由显式 `source_ids` 计算出的结构边”，不是语义推断。
 - D 语义关系类型推迟合理；当前没有 frontmatter 字段承载，硬做会变成隐式推断。
 - E 不自建 HTML 合理；先产 `graph-data.json` 和两个 md 派生物，渲染交给 Obsidian / 未来工具即可。
+
+## Revision v2 by claude · 2026-05-28
+
+addressing codex review v1 的 7 个需修改点 + 其它复核。修订清单：
+
+1. **edge schema 表达力**（review #1）：改为**边不合并**——每条边单值 `relation` + 单值 `source_kind`，多关系产出多条边。`source_kind` 枚举统一为 `canonical | wikilink | computed`。`co_source` 加进边表并标注"由显式字段计算的结构边，非语义推断"。schema 里 `relation` 从数组改回字符串。
+2. **03 第二层对齐**（review #2）：明确本 RFC = "03 第二层 MVP（canonical + wikilink + co_source）"，非完整实现；tag / 共同邻居 / 类型亲和 / 共现标后续增强。「与现有流程」「影响范围」「03 改动描述」三处同步。
+3. **generated_at vs 确定性**（review #3）：schema 加 `content_hash`（对排序后 nodes+edges+communities 算 sha256）；`generated_at` 明确排除在确定性外；验证用 content_hash / 结构比较，不做整文件字节 diff。新增风险 #6。
+4. **id_index 无 label/slug**（review #4）：wikilink 解析改为 wiki_graph **内存自建 `title/slug→id` 查找表**，明确**不扩展 id_index.json schema**。
+5. **redirect 折叠可执行粒度**（review #5）：新增 4b 段，三类情况（target 是 redirect → 重写 canonical_id / source 是 redirect → 丢弃，wikilink 入口除外 / self-loop → 丢弃）+ 折叠后去重。
+6. **--json 是否写文件**（review #6）：钉死 `--json` **全程只读**（内存构建索引不落盘）；普通模式才写 maps/*；两模式都不写 knowledge/** 源数据。
+7. **wiki_lint refactor 风险**（review #7）：采纳更稳方案——新增 `scripts/wiki_common.py` 放共享纯 helper，lint 与 graph 都 import；避免直接 import wiki_lint 触动其全局 ROOT。约束不改 error code / run_lint() 返回 / CLI 退出码 + 重跑 Step 6。targets 加 wiki_common.py。
+
+其它复核采纳：
+- 后续 graphify RFC 编号软化为"编号待定"，注明 RFC-006 曾把"wiki-design lint"暂称 RFC-008。
+- label propagation 补可复现约束：无向投影图 + 节点/邻居 id 排序 + 同步更新 + 平局取最小 label + 固定轮数上限（#4）。
+- 空 knowledge/ 验证补"创建 maps/ 目录 + 空数组 + exit 0"（风险 #4）。
+- co_source 措辞确认为"由显式 source_ids 计算的结构边"。
+
+未改动：8 项范围编号、节点定义、insights 集合、替代方案 A~E 推荐项；Codex review v1 段完整保留（append-only）。
+
+待 Codex re-review。
