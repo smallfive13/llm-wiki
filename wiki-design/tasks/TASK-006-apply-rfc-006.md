@@ -6,7 +6,7 @@ executor: codex
 status: pending
 type: apply
 created: 2026-05-28
-updated: 2026-05-28  # v2 after codex spec review v1
+updated: 2026-05-28  # v3 after codex spec review v2
 related_rfcs:
   - rfc_20260527_006
 ---
@@ -190,6 +190,16 @@ python3 scripts/wiki_lint.py [--check-only] [--json] [--scan-wiki-pii]
 | `query` | `que_` |
 | `open-question` | `oq_` |
 | `inbox` | `inb_` |
+
+**id 完整格式**（两套，违反报 `ID_FORMAT`）：
+
+- **wiki 页面**（8 类）：`<prefix>_YYYYMMDD_<slug>`，正则 `^(src|ent|top|cmp|syn|dec|que|oq)_\d{8}_[a-z0-9][a-z0-9-]*(_\d{2,3})?$`
+  - 末尾可选 `_NN`（同日同 slug 冲突短序号，2~3 位）
+- **inbox 文件**：`inb_YYYYMMDD_HHmmss_<slug>`（**含秒级时间戳**，比 wiki 多一段 `HHmmss`），正则 `^inb_\d{8}_\d{6}_[a-z0-9][a-z0-9-]*(-\d{2,3})?$`
+  - 注意：inbox id 的时间戳是 `YYYYMMDD_HHmmss`（两段），**不要**套用 wiki 的单段 `YYYYMMDD` 格式
+  - inbox 文件名是 `YYYYMMDD-HHmmss-<slug>.md`（连字符分隔），与 id 内部下划线分隔不同，两者都要校验
+
+`YYYYMMDD` 段必须是合法日期（额外 `strptime("%Y%m%d")` 验证）；inbox 的 `HHmmss` 段必须是合法时间（`strptime("%H%M%S")`）。
 
 **反向约束**（违反一律 error）：
 
@@ -436,7 +446,7 @@ wiki-lint v0.1.0
 | --- | --- | --- | --- |
 | `MISSING_FIELD` | frontmatter 缺必填字段 | error | #1 |
 | `EXTRA_FRONTMATTER` | 4 个上下文层 md 误带 frontmatter | error | #1 |
-| `ID_FORMAT` | `id` 不符 `<prefix>_YYYYMMDD_<slug>` | error | #1, #2 |
+| `ID_FORMAT` | `id` 格式不符或 prefix 与 type 不匹配。wiki：`<prefix>_YYYYMMDD_<slug>`；inbox：`inb_YYYYMMDD_HHmmss_<slug>`（见 1.3 两套 regex） | error | #1, #2 |
 | `ID_DUPLICATE` | 同 `id` 在多文件出现 | error | #2 |
 | `ENUM_INVALID` | 字段值不在合法 enum | error | #1 |
 | `DATE_FORMAT` | 日期不符 `YYYY-MM-DD` 或非 ISO 8601 带时区 | error | #1 |
@@ -514,7 +524,7 @@ python3 scripts/wiki_lint.py --scan-wiki-pii  # 加扫 wiki/ PII（默认只扫 
 | --- | --- | --- |
 | `MISSING_FIELD` | error | frontmatter 缺必填字段 |
 | `EXTRA_FRONTMATTER` | error | 上下文层 md 误带 frontmatter |
-| `ID_FORMAT` | error | id 格式不符 |
+| `ID_FORMAT` | error | id 格式不符 / prefix 与 type 不匹配（wiki `<prefix>_YYYYMMDD_<slug>`；inbox `inb_YYYYMMDD_HHmmss_<slug>`） |
 | `ID_DUPLICATE` | error | id 在多文件出现 |
 | `ENUM_INVALID` | error | 字段值不在合法 enum |
 | `DATE_FORMAT` | error | 日期格式不符 |
@@ -941,7 +951,7 @@ rm -f knowledge/.wiki/id_index.json knowledge/.wiki/normalized_alias_index.json 
 python3 scripts/wiki_lint.py > /dev/null
 # 白名单严格匹配强约束 #1（5 个 apply 路径）+ TASK-006 自身（Step 0/8）+ RFC-006（Step 7b）
 # 不放行 rfcs/README.md / tasks/README.md（索引推进由 evaluator 做，不是 executor）
-extra=$(git status --porcelain -uall | cut -c4- | grep -v '^scripts/\|^AGENTS.md$\|^wiki-design/02-workflows.md$\|^wiki-design/05-contracts-and-next-steps.md$\|^wiki-design/rfcs/RFC-006-wiki-lint-mvp.md$\|^wiki-design/tasks/TASK-006-apply-rfc-006.md$')
+extra=$(git status --porcelain -uall | cut -c4- | grep -Ev '^scripts/|^AGENTS\.md$|^wiki-design/02-workflows\.md$|^wiki-design/05-contracts-and-next-steps\.md$|^wiki-design/rfcs/RFC-006-wiki-lint-mvp\.md$|^wiki-design/tasks/TASK-006-apply-rfc-006\.md$')
 if [ -z "$extra" ]; then
   echo "  OK: 白名单外文件未被动"
 else
@@ -1207,3 +1217,28 @@ addressing codex spec review v1 的 5 个阻塞点 + 风险段 + 非阻塞建议
 - 强约束从 10 扩到 12 后，内部引用基本没有断裂；新增引用 `强约束 #10` 指向 lint 只读边界是正确的。
 - 反向约束和 error code 对应关系基本正确：prefix/type 复用 `ID_FORMAT`，非 entity redirect 复用 `ENUM_INVALID`，`canonical_id != null` 但非 redirect 复用 `REDIRECT_INVALID`，链式跳转复用 `CANONICAL_CHAIN`。
 - Step 7a / 7b / 8 commit 拆分仍清晰。
+
+## Revision v3 by claude · 2026-05-28
+
+addressing codex spec review v2 的 2 个阻塞点。修订清单：
+
+1. **Step 6 F grep 可移植性**（review v2 阻塞 #1）
+   - `grep -v '...\|...'`（BRE alternation，BSD grep 不可靠）改为 `grep -Ev '...|...'`（ERE alternation，GNU/BSD 通用）
+   - 路径中的 `.` 转义为 `\.`（精确匹配，避免误配）
+
+2. **inbox id 完整格式显式钉死**（review v2 阻塞 #2）
+   - 1.3 prefix 表后新增 **id 完整格式** 段，明确两套 regex：
+     - wiki：`^(src|ent|top|cmp|syn|dec|que|oq)_\d{8}_[a-z0-9][a-z0-9-]*(_\d{2,3})?$`
+     - inbox：`^inb_\d{8}_\d{6}_[a-z0-9][a-z0-9-]*(-\d{2,3})?$`（**含秒级 HHmmss 段**）
+   - 明确 inbox 文件名 `YYYYMMDD-HHmmss-<slug>.md`（连字符）与 id 内部下划线分隔不同，两者都校验
+   - 明确 `YYYYMMDD` / `HHmmss` 段须 strptime 验证合法性
+   - error code 表两处 `ID_FORMAT` 行（Step 1.6 + scripts/README.md）都更新为标注 wiki / inbox 两套格式
+
+### 未改动
+
+- 强约束 12 条不变。
+- 8 项 lint 范围 + 23 条 error code 集合不变。
+- 7a/7b/8 commit 拆分不变。
+- Codex Spec review v1 / v2 段完整保留（append-only）。
+
+待 Codex re-review。
