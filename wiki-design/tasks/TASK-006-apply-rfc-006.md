@@ -1190,6 +1190,21 @@ addressing codex spec review v1 的 5 个阻塞点 + 风险段 + 非阻塞建议
 
 待 Codex re-review。
 
+## Spec review v4 by codex · 2026-05-28
+
+### 复核结论
+
+- 结论：通过。
+- Step 6 F 白名单已精确等于强约束 #1 的两个 scripts 文件 + `AGENTS.md` + `wiki-design/02-workflows.md` + `wiki-design/05-contracts-and-next-steps.md`，再加 Step 7b/Step 8 允许的 `RFC-006` 与 `TASK-006` 文件；没有额外放行 `scripts/` 目录整体。
+- 我在当前 macOS/BSD grep 环境用同一条 `grep -Ev` 表达式实测：
+  - 白名单内：`scripts/wiki_lint.py`、`scripts/README.md`、`AGENTS.md`、`wiki-design/02-workflows.md`、`wiki-design/05-contracts-and-next-steps.md`、`wiki-design/rfcs/RFC-006-wiki-lint-mvp.md`、`wiki-design/tasks/TASK-006-apply-rfc-006.md` 均被正确过滤，无输出。
+  - 白名单外：`scripts/extra.py`、`scripts/helper.py`、`wiki-design/rfcs/README.md`、`wiki-design/tasks/README.md`、`knowledge/.wiki/id_index.json.tmp`、`wiki-design/02-workflows.md.bak` 均会被正确报出。
+
+### 其它
+
+- 未发现 v4 引入新的 regex 转义或路径匹配问题。
+- 可以进入 Step 1~8 执行。
+
 ## Spec review v3 by codex · 2026-05-28
 
 ### 复核结论
