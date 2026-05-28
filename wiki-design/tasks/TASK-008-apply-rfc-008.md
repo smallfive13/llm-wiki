@@ -3,7 +3,7 @@ id: task_20260528_008
 title: Apply RFC-008 — 实现 schema profile 机制（BASE_SCHEMA 抽取 + profile overlay + --root）
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-05-28
 updated: 2026-05-28  # v3 after codex spec review v2
@@ -592,6 +592,72 @@ addressing codex spec review v1 的 5 阻塞点。
 未改动：12 条强约束主体、9 步工作流骨架。Codex Spec review v1 段保留（append-only）。
 
 待 Codex re-review。
+
+## Execution log by codex · 2026-05-28
+
+### 步骤完成情况
+
+- Step 1.0: done。改代码前已用未改动 lint/graph 抓取 `/tmp/lint_before.json`、`/tmp/graph_before.json` 和 graph baseline content_hash。
+- Step 1~3: done。`wiki_common.BASE_SCHEMA` 已收拢 RFC-002~007 冻结 schema，新增 `load_profile` / `validate_profile` / `merge_schema` 和 10 个 `PROFILE_*`。
+- Step 4: done。`wiki_lint.py` / `wiki_graph.py` 已支持 `--root <instance>`，root/profile 回显写 stderr，`--json` stdout 保持纯 JSON。
+- Step 5: done。已同步 `scripts/README.md`、`knowledge/.wiki-schema.md`、`wiki-design/01-architecture.md`、`wiki-design/05-contracts-and-next-steps.md`。
+- Step 7: done。输出见下。
+
+### BASE_SCHEMA 抽取清单
+
+- 进 BASE_SCHEMA: `TYPE_PREFIX/page_types`、`WIKI_ID_RE`、`INBOX_ID_RE`、`INBOX_FILE_RE`、`DATE_RE`、`ISO_RE`、`HASH_RE`、core required fields、`status/confidence` enum、`INBOX_STATUSES`、`SUGGESTED_TYPES`、inbox required fields、`SOURCE_TYPES`、`SOURCE_STATUSES`、`SOURCE_ADAPTERS`、source manifest required fields、`REVIEW_TYPES`、`REVIEW_STATUSES`、`PRIORITIES`、review queue contract、capture policy required fields/version、canonical list fields、source required fields、entity fields、context docs、既有 `ERROR_LEVEL` mapping。
+- 保持代码常量: PII scan algorithm、label propagation algorithm、graph edge construction、atomic write tmp naming、CLI exit code behavior。
+
+### 验证输出
+
+```text
+=== Preflight ===
+Python 3.12.11
+PyYAML 6.0.3
+=== BASE_SCHEMA extraction inventory ===
+IN BASE_SCHEMA: TYPE_PREFIX/page_types, WIKI_ID_RE, INBOX_ID_RE, INBOX_FILE_RE, DATE_RE, ISO_RE, HASH_RE, core required fields, status/confidence enum, INBOX_STATUSES, SUGGESTED_TYPES, inbox required fields, SOURCE_TYPES, SOURCE_STATUSES, SOURCE_ADAPTERS, source manifest required fields, REVIEW_TYPES, REVIEW_STATUSES, PRIORITIES, review queue contract, capture policy required fields/version, canonical list fields, source required fields, entity fields, context docs, ERROR_LEVEL existing mapping
+KEPT AS CODE CONSTANTS: PII scan algorithm, label propagation algorithm, graph edge construction, atomic write tmp naming, CLI exit code behavior
+=== 7a-1 zero regression: rerun baseline fixture and compare Step 1.0 before ===
+  lint after exit: 1 (expected 1)
+  graph after exit: 0 (expected 0)
+  OK: lint JSON structurally equivalent after stripping time fields
+  OK: graph content_hash unchanged (3439e0db5b5dc1a687228b0cd86d714138b38136335d3abaa04cff13e9c0901e)
+=== 7a-2 default call equals --root knowledge ===
+  default exit: 0; --root knowledge exit: 0
+  OK: default equals --root knowledge after stripping time fields
+=== 7b profile tests with temp instance knowledge-gtest/ ===
+  OK: valid case page lint exit 0
+  OK: case node enters graph
+  OK: missing case_id triggers MISSING_FIELD
+  OK: unknown type is skipped from graph nodes
+  OK: unknown type is recorded in insights
+  OK: [PROFILE_SCHEMA_VERSION]
+  OK: [PROFILE_PREFIX_FORMAT]
+  OK: [PROFILE_PREFIX_COLLISION]
+  OK: [PROFILE_TYPE_COLLISION]
+  OK: [PROFILE_DIR_INVALID]
+  OK: [PROFILE_FIELD_INVALID]
+  OK: [PROFILE_FIELD_OVERLAP]
+  OK: [PROFILE_CORE_SHADOW]
+  OK: [PROFILE_ENUM_UNKNOWN_FIELD]
+  OK: [PROFILE_OPTFIELD_UNKNOWN_TYPE]
+=== 7c cleanup and default instance check ===
+  OK: default knowledge/ still exits 0
+=== whitelist check before Step 8a commit ===
+  OK: no changes outside whitelist
+=== verification end: PASS=1 (1 means all passed) ===
+```
+
+### Commit
+
+- Step 8a: `58bd5f0`
+- Step 8b: `2b73195`
+- Step 9: this commit (`[task] TASK-008 done by codex`)
+
+### 偏离 / 异常
+
+- 第一次 Step 7 试跑误用了系统 Python 3.9.13；未作为最终验证依据。已按约束激活 conda `py312` 后完整重跑，最终日志为上方 Python 3.12.11 / PyYAML 6.0.3 输出。
+- 未发现 lint/graph 回归；临时 `knowledge-gtest/` 已清理，白名单外无改动。
 
 ## Spec review v3 by codex · 2026-05-28
 
