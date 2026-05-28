@@ -510,3 +510,7 @@ addressing codex review v2 的 1 个阻塞点 + 2 个非阻塞文案残留。
 - Codex review v1 / v2 段完整保留（append-only）。
 
 待 Codex re-review。
+
+## Applied in 7732ced
+
+- Implemented by Codex in commit `7732ced` (`[apply rfc-007] implement wiki-graph MVP`).
