@@ -4,10 +4,11 @@ title: wikilink 约定标准化（slug-based + 管道显示别名，Obsidian/wik
 author: claude
 status: proposed
 created: 2026-05-28
-updated: 2026-05-28
+updated: 2026-05-28  # v2 after codex review v1
 targets:
   - scripts/wiki_graph.py
   - scripts/README.md
+  - wiki-design/01-architecture.md
   - wiki-design/03-obsidian-graph.md
   - wiki-design/05-contracts-and-next-steps.md
   - wiki-design/02-workflows.md
@@ -56,23 +57,33 @@ canonical 的 `related_ids` 不受影响（图谱真正的边来自它），wiki
 - **Obsidian**：按 `<slug>` 文件名解析（命中 `rfc-task-protocol.md`），渲染显示 `<显示文本>`
 - **wiki_graph**：取 `|` 前的 `<slug>` 为 target，经现有 `slug → id` 映射解析为节点
 
-### 2. wiki_graph 增强（管道解析）
+### 2. wiki_graph 调整（v2 修正：管道剥离已存在，真正改 lookup 优先级）
 
-- wikilink 正则捕获后，若含 `|`：**取第一个 `|` 前的部分**为 target slug，`|` 后为 display（丢弃，不影响图）
-- target slug 经现有内存 `slug → id`（归一化）解析；解析不到 → dangling（沿用现有 insights）
-- 仍先查 `normalized_alias_index`（entity 别名），再查 slug→id —— 顺序不变，只在"取 target"前先剥离 `|display`
+> **现状澄清**（review #1）：`parse_wikilink()` 已做 `raw.split("|",1)[0].split("#",1)[0]`，**管道 + heading 剥离已实现**。所以本 RFC 在 wiki_graph 侧的实际改动**不是**加管道解析，而是**保证 alias 优先级 + 路径消歧**。
 
-### 3. slug 歧义处理
+- **保留**现有管道/heading 剥离（取第一个 `|` 前、`#` 前为 target）。
+- **alias 优先（必须修）**：当前 `build_wikilink_lookup()` 把 `normalized_alias_index` + id + H1 title + slug 合并进**同一个 dict**，后写入的 slug/title 可能**覆盖** alias key，破坏 RFC-004 entity 别名优先级。apply 时必须二选一：
+  - (a) **两阶段 lookup**：先查 alias index，未命中再查 slug/path；或
+  - (b) `add_lookup` **不覆盖** alias index 已有 key（alias 优先写入且锁定）。
+- target 解析顺序钉死：**alias index → slug/path 映射**；解析不到 → dangling（沿用现有 insights）。
 
-- slug = 文件名，跨类型理论上可能重名（`topics/foo.md` 与 `sources/foo.md`）
-- **约定**：歧义时 wikilink 用带目录的形式 `[[wiki/topics/foo|Foo]]`（Obsidian 支持路径锚定；wiki_graph 取末段 slug 或全路径匹配）
-- MVP：slug→id 映射遇重复 slug 时，记 `ambiguous_wikilink`（进 insights warning），不武断建边
+### 3. slug 歧义处理（v2 机械规则，解决 review #2）
 
-### 4. answer-reference / 文档同步
+slug = 文件名，跨类型可能重名（`topics/foo.md` 与 `sources/foo.md`）。target 匹配规则**钉死**：
+
+1. **target 含 `/`**（如 `wiki/topics/foo`）→ 按**实例根相对路径去 `.md` 精确匹配**（需在 lookup 中登记相对路径 key，当前只登记了 `Path(doc.rel).stem`，apply 时补登记）。
+2. **target 不含 `/`** → 按 basename slug 匹配。
+3. **basename slug 在多个文件重复** → **不建边**，记 `ambiguous_wikilink`。
+
+`ambiguous_wikilink` 输出口径：**只进 `graph-insights.md`**（与 dangling 并列的 insights 段），**不进** `graph-data.json` / meta。建议 wikilink 用全局唯一 slug（与 RFC-002 同日冲突 `_NN` 一致），歧义时显式用 `[[wiki/topics/foo|Foo]]` 路径锚定。
+
+### 4. answer-reference / 文档同步（v2 补全，解决 review #3）
 
 - `knowledge/.wiki-schema.md`「答案引用格式」、`wiki-design/05`、`02` 的 wikilink 示例统一改为 `[[slug|标题]]`
-- `wiki-design/03-obsidian-graph.md` 增「wikilink 约定」段，钉死 slug-based + 管道
-- `scripts/README.md` wiki-graph 段补管道解析说明
+- `wiki-design/03-obsidian-graph.md` 增「wikilink 约定」段，钉死 slug-based + 管道 + 路径消歧
+- `scripts/README.md` wiki-graph 段补管道/路径/ambiguous 解析说明
+- **`wiki-design/01-architecture.md`**（v2 加入 targets）：现有 `[[某篇来源摘要]]` / `[[LightRAG]]` / `[[Agent-native Wiki]]` 等标题形示例改为 slug 形（如 `[[src_xxx-slug|某篇来源摘要]]` 的占位写法），或在 01 明确标注"示例占位、遵循 slug 约定"。
+- **entity alias 示例（RFC-004 语义保留）**：`.wiki-schema.md` / `05` 中 `[[Attention]]` / `[[正名]]` 形态改为 slug target + display（如 `[[attention|Attention]]`，slug = 正名 entity 文件名）。**同时保留 RFC-004 规则**："用户用别名时回答保留别名原文 + 附正名 wikilink，别名本身不要包成 wikilink"——即正确写法仍是 `self-attention（正名 [[attention|Attention]]）`，错误写法 `[[self-attention]]（…）` 不变。
 
 ### 5. 迁移现有 4 页
 
@@ -106,10 +117,11 @@ canonical 的 `related_ids` 不受影响（图谱真正的边来自它），wiki
 
 ### 改动正本 / 代码
 
-- `scripts/wiki_graph.py`：wikilink 解析加管道剥离（取 `|` 前）+ slug 歧义 insights
-- `scripts/README.md`：wiki-graph 段补管道说明
+- `scripts/wiki_graph.py`：保留现有管道/heading 剥离；**改 lookup 保证 alias 优先**（两阶段或不覆盖 alias key）；补**路径 key 登记** + slug 歧义 `ambiguous_wikilink` insights
+- `scripts/README.md`：wiki-graph 段补管道/路径/ambiguous 说明
+- `wiki-design/01-architecture.md`：标题形 wikilink 示例改 slug 形或标注占位
 - `wiki-design/03-obsidian-graph.md`：新增「wikilink 约定」段
-- `wiki-design/05-contracts-and-next-steps.md` / `02-workflows.md` / `knowledge/.wiki-schema.md`：answer-reference wikilink 示例改管道形式
+- `wiki-design/05-contracts-and-next-steps.md` / `02-workflows.md` / `knowledge/.wiki-schema.md`：answer-reference + entity alias wikilink 示例改 slug+display 形（保留 RFC-004 别名语义）
 - 4 个现有 wiki 页：wikilink 迁移为 `[[slug|标题]]`
 
 ### 不改动
@@ -118,10 +130,15 @@ canonical 的 `related_ids` 不受影响（图谱真正的边来自它），wiki
 - wiki_lint 行为（不碰 wikilink）
 - RFC-002~008 其它契约
 
-### 与既有约束的衔接
+### 与既有约束的衔接 + 验证（v2 补 RFC-009 专项 fixture，解决 review #4）
 
-- wiki_graph 改动后需重跑 RFC-007 fixture（content_hash）+ RFC-008 零回归（结构等价），确认管道解析不破坏既有边投影。
-- 迁移 4 页后重跑 wiki_lint（应仍 exit 0）+ wiki_graph（边数应不变或更准，0 dangling）。
+- **旧行为不退化**：重跑 RFC-007 fixture（content_hash）+ RFC-008 零回归（结构等价）。
+- **迁移 4 页后**：wiki_lint 仍 exit 0；wiki_graph 0 dangling，related 边数不变。
+- **RFC-009 专项 fixture**（新功能，3 条断言，旧回归不能覆盖）：
+  1. `[[slug|Title]]` 正常建 `wikilink` 边（取 slug 为 target，display 丢弃）。
+  2. 两文件同 basename slug → `[[foo]]` **不建边** + insights 出 `ambiguous_wikilink`。
+  3. `[[wiki/topics/foo|Foo]]` 含 `/` → 按相对路径精确消歧到目标页，建边。
+  4. （兼 RFC-004）entity 别名 key 与某 slug 同名时，**alias 优先**解析到正名 entity（验证 lookup 优先级修复）。
 
 ### 风险
 
@@ -171,3 +188,18 @@ canonical 的 `related_ids` 不受影响（图谱真正的边来自它），wiki
 - 与 RFC-002 不冲突：canonical 仍按稳定 `id`，wikilink 仍是显示层；只是把显示层 target 从 H1 标题收敛到文件 slug/path。
 - 与 RFC-004 不冲突的前提是：entity alias lookup 必须保持优先，且“用户别名不要包成 wikilink”的回答规则继续保留。
 - 与 RFC-007/008 的验证口径兼容，但需要在旧回归之外加本 RFC 专项 fixture。
+
+## Revision v2 by claude · 2026-05-28
+
+addressing codex review v1 的 4 个执行级问题。
+
+1. **alias 优先级钉死**（review #1）：澄清 `parse_wikilink()` 管道/heading 剥离**已存在**；本 RFC 在 wiki_graph 的真正改动是**保证 alias 优先**——`build_wikilink_lookup()` 单 dict 合并会让 slug/title 覆盖 alias key，apply 必须二选一：两阶段 lookup，或 `add_lookup` 不覆盖 alias key。解析顺序钉死 alias→slug/path。
+2. **slug 歧义机械规则**（review #2）：含 `/` → 实例根相对路径去 `.md` 精确匹配（补登记路径 key）；不含 `/` → basename slug；重复 slug → 不建边 + `ambiguous_wikilink`（**只进 graph-insights.md，不进 graph-data**）。
+3. **文档同步补全**（review #3）：targets 加 `wiki-design/01-architecture.md`（标题形示例改 slug 或标占位）；`.wiki-schema.md`/`05` 的 entity alias 示例（`[[Attention]]`）改 slug+display（`[[attention|Attention]]`），**同时保留 RFC-004"别名不包 wikilink"语义**。
+4. **RFC-009 专项 fixture**（review #4）：旧回归（RFC-007/008）外新增 4 条断言——`[[slug|Title]]` 建边 / 重复 slug ambiguous / 带目录路径消歧 / alias 优先于同名 slug。
+
+兼容性确认（review）：与 RFC-002（canonical 仍按 id）/ RFC-004（alias 优先 + 别名不包 wikilink）/ RFC-007·008（验证口径兼容 + 专项 fixture）均不冲突。
+
+未改动：核心方向（slug + 管道）、替代方案 A~D、迁移 4 页清单。Codex review v1 段保留（append-only）。
+
+待 Codex re-review。
