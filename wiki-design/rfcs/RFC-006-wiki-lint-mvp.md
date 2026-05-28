@@ -512,3 +512,49 @@ addressing codex review v1 的 5 个阻塞点 + 4 个非阻塞建议。修订清
 - Codex review v1 段完整保留不动（append-only 规则）
 
 待 Codex re-review。
+
+## Review v2 by codex · 2026-05-27
+
+### 总体结论
+
+- 结论：通过(有非阻塞建议)。
+- v2 已经实质回应 v1 review 的 5 个阻塞点，当前设计可以进入用户 Decision / 后续 TASK spec 阶段。
+- 我没有看到新的阻塞级问题；下面剩余事项更适合在 TASK-006 的实现 spec、`scripts/README.md` 或测试用例中钉死。
+
+### v1 阻塞点复核
+
+1. 完整性补漏：已解决。
+   - `supersedes` / `superseded_by` 对称校验、`hash_sha256` 64 位十六进制、日期格式、JSON enum、`canonical_id` 链式跳转都已进入范围。
+   - hash 实际值比对被明确排除到后续 RFC，这个边界合理。
+
+2. 派生层 schema 兼容：已解决。
+   - `normalized_alias_index.json` 已改成 05 冻结的 `version + updated_at + entries{canonical_id, matched_form, source}`。
+   - `inbox_index.json` 已改成 05 冻结的字段结构。
+   - `id_index.json` 升级为 `version + updated_at + entries{id: {path, type, status}}` 不与 RFC-002 冲突：RFC-002 只约定 `id → current_path` 派生索引，v2 仍保留 `path`，只是扩展了可读元数据。
+
+3. 范围边界：已解决。
+   - v2 明确只覆盖 `knowledge/**` 的知识数据层，不 lint `wiki-design/rfcs/**` / `wiki-design/tasks/**`。
+   - 这避免了把需要 git 历史的 RFC/task status 流转校验误塞进 wiki-lint MVP。
+
+4. 并发原子写：已解决到 MVP 足够程度。
+   - 原子写 + 确定序 JSON 已写入实现约束和风险段。
+   - 是否加文件锁留后续 RFC 合理；MVP 不需要先引入 lock。
+
+5. targets 一致性：已解决。
+   - `.gitignore` 已从 targets 删除，影响范围也说明本 RFC 不再改 `.gitignore`。
+
+### v1 非阻塞建议复核
+
+- `python3`：已采纳。
+- 行数估算 600~800：已采纳。
+- `--json` 固定结构：已采纳，且六字段 `code/file/line/field/message/hint` 足够后续 CI / Agent 消费。
+- PII 默认 inbox-only + `--scan-wiki-pii`：已采纳，分级也更清楚。
+
+### 新问题复核
+
+- `id_index.json` 的格式升级不是冲突；它是 RFC-002 的兼容扩展。后续 apply 时若改 05，可把这个格式作为 lint 产物格式写清楚。
+- enum 列表基本够用，但 TASK-006 spec 建议补两类小项，避免实现时漏掉：
+  - inbox frontmatter 的 `status ∈ {draft,promoted,dropped}`、`confidence ∈ {low,medium,high}`、`review` 为 bool。
+  - JSON 顶层 `version == 1`（`source_manifest` / `review_queue` / `capture_policy`），以及 `review_queue.resolved_action` 必须来自 `options.action` 或为 `manual_resolution` / `null`。
+- error code 命名规则对 RFC 阶段够用；TASK-006 或 `scripts/README.md` 里应给完整 code 表并保持 uppercase snake case，测试里至少覆盖每个 lint 大类一个 code。
+- 原子写实现时建议使用同目录下唯一临时文件名（例如带 pid / uuid），再 `os.replace` 到目标路径；固定 `<file>.tmp` 在两个进程同时写时仍可能互相踩临时文件。这不影响 RFC 通过，但应进实现 spec。
