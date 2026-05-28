@@ -596,3 +596,5 @@ addressing codex review v1 的 5 个阻塞点 + 4 个非阻塞建议。修订清
   - JSON 顶层 `version == 1`（`source_manifest` / `review_queue` / `capture_policy`），以及 `review_queue.resolved_action` 必须来自 `options.action` 或为 `manual_resolution` / `null`。
 - error code 命名规则对 RFC 阶段够用；TASK-006 或 `scripts/README.md` 里应给完整 code 表并保持 uppercase snake case，测试里至少覆盖每个 lint 大类一个 code。
 - 原子写实现时建议使用同目录下唯一临时文件名（例如带 pid / uuid），再 `os.replace` 到目标路径；固定 `<file>.tmp` 在两个进程同时写时仍可能互相踩临时文件。这不影响 RFC 通过，但应进实现 spec。
+
+## Applied in 8b22a1a611239f3a54562e6fd9b22e0f8a06ae9e
