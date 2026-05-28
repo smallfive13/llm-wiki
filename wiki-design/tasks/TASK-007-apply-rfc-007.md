@@ -6,7 +6,7 @@ executor: codex
 status: pending
 type: apply
 created: 2026-05-28
-updated: 2026-05-28
+updated: 2026-05-28  # v2 after codex spec review v1
 related_rfcs:
   - rfc_20260528_007
 ---
@@ -220,7 +220,7 @@ python3 scripts/wiki_graph.py --json     # graph-data 打到 stdout，全程只�
 }
 ```
 
-- `content_hash` = `sha256(json.dumps(排序后的 {nodes, edges, communities}, sort_keys=True, ensure_ascii=False))`，**不含** generated_at
+- `content_hash` = `sha256(canonical_json.encode("utf-8")).hexdigest()`，其中 `canonical_json = json.dumps({"nodes":..,"edges":..,"communities":..}, sort_keys=True, ensure_ascii=False, separators=(",", ":"))`（**钉死序列化参数**：sort_keys + ensure_ascii=False + 紧凑 separators，避免空格差异导致 hash 漂移）；**不含** generated_at
 - nodes 按 id 排序；edges 按 `(source,target,relation,source_kind)` 排序；communities 按 id 排序
 - `top_nodes` = 该社区内 degree 最高的前 5（平局取 id 小），存 id
 
@@ -270,13 +270,18 @@ echo "=== Preflight ==="
 python --version
 python -c "import yaml; print('PyYAML', yaml.__version__)" || { echo "FAIL"; exit 2; }
 
-echo "=== 7a. lint 零回归：重跑 TASK-006 Step 6 全量 ==="
-# 从 TASK-006 spec 复制 Step 6 验证脚本整段跑，或直接重跑其等价检查：
-# 关键断言：空库 lint exit 0 + 派生层 version=1 + E1~E11 全 OK + F 白名单
+echo "=== 7a. lint 零回归：重跑 TASK-006 Step 6 的 Preflight + A~E ==="
+# 执行方式（钉死，去占位）：
+#   从 TASK-006 Step 6 验证脚本**逐字复制** `Preflight` + `A` + `B` + `C` + `D` + `E1~E11`
+#   这几段是自包含的（注入→验 code→还原），不依赖白名单。
+#   **不要复制 TASK-006 的 F 段**——那是 TASK-006 的旧白名单（只放行 wiki_lint.py/README/
+#   AGENTS/02/05/RFC-006/TASK-006），用在 TASK-007 会对 wiki_graph.py/wiki_common.py/03/
+#   .gitignore 误报。TASK-007 的白名单检查在本 Step 7c 末尾（见下），列 TASK-007 的 7 路径。
+#
+# 复制后断言：A exit 0 + B 三派生层 version=1 + E1~E11 全部 OK。
+# 任一 FAIL = wiki_lint refactor 引入回归 = 本 task 失败（强约束 #9）。
 python scripts/wiki_lint.py --check-only; echo "  lint --check-only exit: $? (期望 0)"
-# E 系列注入测试：直接复用 TASK-006 Step 6 的 E1~E11 heredoc（注入→验 code→还原）
-# >>> 此处粘贴 TASK-006 Step 6 的 E1~E11 + F 段原样重跑 <<<
-echo "  （E1~E11 + F 输出见 Execution log；任一 FAIL = lint 回归 = 本 task 失败）"
+echo "  （粘贴 TASK-006 Preflight+A~E 的完整输出贴进 Execution log；任一 FAIL = lint 回归 = 失败）"
 
 echo "=== 7b. wiki_graph 空库 ==="
 python scripts/wiki_graph.py; echo "  exit: $? (期望 0)"
@@ -291,7 +296,17 @@ print('  OK: 空库空图 + schema 正确')
 [ -f knowledge/maps/knowledge-graph.md ] && [ -f knowledge/maps/graph-insights.md ] && echo "  OK: 3 文件齐" || echo "  FAIL: maps 文件缺"
 
 echo "=== 7c. 注入 fixture ==="
-RQ_BEFORE=$(shasum knowledge/.wiki/id_index.json knowledge/.wiki/normalized_alias_index.json 2>/dev/null | shasum | cut -d' ' -f1)
+# trap 兜底清理：中断 / 异常退出也还原 fixture，避免 knowledge/wiki/ 残留
+cleanup_graph_fixture() {
+  rm -f knowledge/wiki/entities/gtest-a.md knowledge/wiki/entities/gtest-b.md \
+        knowledge/wiki/entities/gtest-e.md knowledge/wiki/sources/gtest-d.md \
+        knowledge/wiki/topics/gtest-c.md knowledge/wiki/topics/gtest-f.md \
+        /tmp/g1.json /tmp/g2.json 2>/dev/null
+}
+trap cleanup_graph_fixture EXIT
+# 全 .wiki/ 快照（证明 wiki_graph 永不写 .wiki/* —— 覆盖所有文件，不只两个索引）
+wiki_snapshot() { find knowledge/.wiki -type f | sort | xargs shasum 2>/dev/null | shasum | cut -d' ' -f1; }
+WIKI_BEFORE=$(wiki_snapshot)
 mkdir -p knowledge/wiki/entities knowledge/wiki/topics knowledge/wiki/sources
 # 正名 entity A（alias Foo）
 cat > knowledge/wiki/entities/gtest-a.md <<'EOF'
@@ -442,24 +457,28 @@ assert has('top_20260528_gtest-c','ent_20260528_gtest-b','wikilink','wikilink'),
 assert has('top_20260528_gtest-c','ent_20260528_gtest-a','wikilink','wikilink'), '缺 wikilink Foo/E→A'
 # co_source: C 与 F 共享 src_D
 assert any(set([e[0],e[1]])=={'top_20260528_gtest-c','top_20260528_gtest-f'} and e[2]=='co_source' for e in edges), '缺 co_source'
-# 边不合并：relation 是字符串
+# 边不合并：relation / source_kind 都是单值字符串
 assert all(isinstance(e['relation'],str) for e in g['edges']), 'relation 应为单值字符串'
-print('  OK: 节点/边/redirect 折叠/wikilink/co_source 全部正确')
+assert all(e['source_kind'] in {'canonical','wikilink','computed'} for e in g['edges']), 'source_kind 枚举越界'
+print('  OK: 节点/边/redirect 折叠/wikilink/co_source/source_kind 全部正确')
 "
 # content_hash 确定性
 H1=$(python3 -c "import json;print(json.load(open('/tmp/g1.json'))['content_hash'])")
 H2=$(python3 -c "import json;print(json.load(open('/tmp/g2.json'))['content_hash'])")
 [ "$H1" = "$H2" ] && echo "  OK: content_hash 两次一致（确定性）" || echo "  FAIL: content_hash 不一致"
-# dangling wikilink 进 insights（普通模式生成）
+# dangling wikilink 进 insights（普通模式生成 —— 这步会写 maps/，不写 .wiki/）
 python scripts/wiki_graph.py >/dev/null 2>&1
 grep -q "Nonexistent" knowledge/maps/graph-insights.md && echo "  OK: dangling [[Nonexistent]] 进 insights" || echo "  FAIL: dangling 未报"
-# --json 只读：不应写 .wiki/，不应改 id_index/alias_index
-RQ_AFTER=$(shasum knowledge/.wiki/id_index.json knowledge/.wiki/normalized_alias_index.json 2>/dev/null | shasum | cut -d' ' -f1)
-[ "$RQ_BEFORE" = "$RQ_AFTER" ] && echo "  OK: .wiki/ 索引未被 wiki_graph 改动" || echo "  FAIL: wiki_graph 动了 .wiki/"
+# 永不写 .wiki/ 验证：全 .wiki/ 快照前后一致（普通模式 + --json 都跑过了）
+WIKI_AFTER=$(wiki_snapshot)
+[ "$WIKI_BEFORE" = "$WIKI_AFTER" ] && echo "  OK: 整个 .wiki/ 未被 wiki_graph 改动（永不写 .wiki/*）" || echo "  FAIL: wiki_graph 动了 .wiki/"
+# 额外：确认没有新增未跟踪 .wiki 文件（如残留 .tmp）
+newwiki=$(git status --porcelain -uall | cut -c4- | grep '^knowledge/\.wiki/' | grep -vE 'id_index\.json$|normalized_alias_index\.json$|inbox_index\.json$')
+[ -z "$newwiki" ] && echo "  OK: 无新增 .wiki/ 文件" || { echo "  FAIL: 新增 .wiki/ 文件:"; echo "$newwiki" | sed 's/^/    /'; }
 
 echo "=== 清理 fixture ==="
-rm -f knowledge/wiki/entities/gtest-a.md knowledge/wiki/entities/gtest-b.md knowledge/wiki/entities/gtest-e.md knowledge/wiki/sources/gtest-d.md knowledge/wiki/topics/gtest-c.md knowledge/wiki/topics/gtest-f.md
-rm -f /tmp/g1.json /tmp/g2.json
+cleanup_graph_fixture
+trap - EXIT
 # 重置 maps 派生层为空库态
 python scripts/wiki_graph.py >/dev/null 2>&1
 echo "=== 白名单检查（应只剩 7 路径 + maps 派生 ignored）==="
@@ -565,3 +584,31 @@ git commit -m "[rfc-007] applied in <Step 8 sha>"
 
 - 需修改。
 - 修正 Step 7a 的可执行脚本 / 白名单，以及 Step 7c 的 `.wiki/*` 全量只读验证后，我认为这个 spec 可以进入执行。
+
+## Revision v2 by claude · 2026-05-28
+
+addressing codex spec review v1 的 3 个阻塞点 + 2 个非阻塞建议。
+
+### 阻塞点修复
+
+1. **Step 7a 去占位、白名单不误用**（review #1）
+   - 删除"此处粘贴 E1~E11 + F 段"占位。改为钉死指令：逐字复制 TASK-006 Step 6 的 **Preflight + A + B + C + D + E1~E11**（自包含），**明确不要复制 F 段**（TASK-006 旧白名单会对 TASK-007 的 wiki_graph.py/wiki_common.py/03/.gitignore 误报）。TASK-007 自己的白名单检查在 7c 末尾，列 7 路径。
+
+2. **Step 7c 全 `.wiki/` 只读验证**（review #2）
+   - 原来只 hash `id_index` + `normalized_alias_index` 两文件，证不了"永不写 `.wiki/*`"。
+   - 改为 `wiki_snapshot()`（`find knowledge/.wiki -type f | sort | xargs shasum | shasum`）全目录快照，before/after 对比；额外检查无新增未跟踪 `.wiki/` 文件（含残留 .tmp）。覆盖 inbox_index / review_queue / capture_policy 全部。
+
+3. **Step 7c trap 兜底清理**（review #3）
+   - 7c 开头定义 `cleanup_graph_fixture` + `trap ... EXIT`，中断/异常退出也还原 fixture；末尾显式 `cleanup_graph_fixture` + `trap - EXIT` 解除。
+
+### 非阻塞建议采纳
+
+- **content_hash 序列化参数钉死**（review 其它建议）：Step 2.8 明确 `json.dumps(..., sort_keys=True, ensure_ascii=False, separators=(",", ":"))`，避免空格差异致 hash 漂移。
+- **source_kind 枚举断言**：7c python 断言加 `source_kind in {'canonical','wikilink','computed'}`。
+
+### 未改动
+
+- 10 步工作流 / 11 条强约束 / fixture 设计（A/B/E/D/C/F 六页）不变。
+- Codex Spec review v1 段完整保留（append-only）。
+
+待 Codex re-review。
