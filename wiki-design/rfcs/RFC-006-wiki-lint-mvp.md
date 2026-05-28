@@ -2,9 +2,9 @@
 id: rfc_20260527_006
 title: 引入 wiki-lint MVP，闭合 RFC-002/003/004 的约束
 author: claude
-status: proposed
+status: accepted
 created: 2026-05-27
-updated: 2026-05-27  # v2 after codex review v1
+updated: 2026-05-28  # accepted; decision by claude (per user authorization, Path A)
 targets:
   - scripts/wiki_lint.py
   - AGENTS.md
@@ -413,9 +413,47 @@ commit 前必须跑 `python3 scripts/wiki_lint.py --check-only` 通过。
 
 （待 Codex 追加）
 
-## Decision
+## Decision by claude · 2026-05-28（用户授权 Path A 代写）
 
-（待用户填写或授权 Agent 代写）
+**Accepted**。RFC-006 v2 + Codex review v2 都已 commit，所有阻塞点修复，4 个非阻塞建议在 v2 已采纳。本 Decision 同时收尾 Codex v2 review 的 3 条剩余非阻塞建议，明确移交 TASK-006 spec。
+
+### 关键决策点（替代方案的最终选择）
+
+| 决策点 | 选择 | 替代记录 |
+| --- | --- | --- |
+| A. 触发方式 | **MVP 手动跑 + AGENTS.md 写明触发约束** | pre-commit hook / CI 留给后续 RFC（暂称 RFC-007），先看 lint 实际表现 |
+| B. 实现语言 | **Python 3.9+ + PyYAML** | 拒绝纯标准库（YAML 解析风险）/ 拒绝 Node / Shell |
+| C. MVP 范围 | **1~8 项全做**（schema + 唯一性 + canonical + source 单主键 + alias + inbox + PII + 跨流程） | 拒绝仅 1~4 / 仅派生层 |
+| D. 输出 | **人类可读 + `--json` 固定结构**（6 字段 errors[]/warnings[]） | 拒绝纯 JSON / 纯人类可读 |
+| E. PII 扫描 | **默认 inbox-only + `--scan-wiki-pii` 扩展** | 拒绝默认全扫（误报） |
+| 派生层 schema | **三个派生层统一 `version + updated_at + entries`**（normalized_alias / inbox 严格按 05 冻结格式；id_index 升级为兼容扩展） | — |
+
+### 留给 TASK-006 spec 钉死的事项
+
+以下 3 条来自 Codex review v2 的剩余非阻塞建议，不进 RFC 正文但在 TASK-006 spec 必须明确：
+
+1. **enum 补齐**（避免实现时漏校验）：
+   - inbox frontmatter：`status ∈ {draft, promoted, dropped}`、`confidence ∈ {low, medium, high}`、`review: bool`
+   - 三个 JSON 顶层：`version == 1`（`source_manifest.json` / `review_queue.json` / `capture_policy.json`）
+   - `review_queue.resolved_action` 必须来自该条 item 的 `options[].action` 集合，或为 `manual_resolution`、或为 `null`
+2. **error code 表完整化**：
+   - 完整 code 表写在 `scripts/README.md`
+   - 命名规则：**UPPER_SNAKE_CASE**（如 `ID_DUPLICATE` / `CANONICAL_DANGLING` / `SUPERSEDES_ASYMMETRY` / `ALIAS_CONFLICT` / `CANONICAL_CHAIN` / `SOURCE_KEY_MISMATCH` / `HASH_FORMAT` / `DATE_FORMAT` / `ENUM_INVALID` / `PII_HIT_DRAFT` 等）
+   - 测试至少覆盖每个 lint 大类（范围 #1~#8）一个 code
+3. **原子写临时文件名唯一化**：
+   - 不用固定 `<file>.tmp`（两个进程同时写会互相踩临时文件）
+   - 用同目录下 `<file>.<pid>.<uuid4_hex8>.tmp` 等唯一命名 + `os.replace(tmp, target)`
+
+### Apply 触发
+
+- targets 尚未真正改动（scripts/wiki_lint.py 等都还不存在）
+- 立即开 **TASK-006: apply RFC-006 — implement wiki-lint MVP**（type: apply，executor: codex）
+- 在首次 ingest 之前落地（当前 `knowledge/wiki/` 全空，零回扫成本）
+- TASK-006 done 后回本 RFC 末尾追加 `## Applied in <commit-sha>`
+
+## Applied in working tree · 2026-05-28 · claude
+
+RFC accepted，targets 待 TASK-006 落地。本登记仅记录 Decision 时间点，apply 真正完成后由 TASK-006 evaluator 追加 commit sha。
 
 ## Review by codex · 2026-05-27
 
