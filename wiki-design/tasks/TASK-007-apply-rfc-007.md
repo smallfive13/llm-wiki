@@ -3,7 +3,7 @@ id: task_20260528_007
 title: Apply RFC-007 — 实现 wiki-graph MVP（wiki_common 抽取 + wiki_graph.py + 文档同步）
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-05-28
 updated: 2026-05-28  # v2 after codex spec review v1
@@ -640,3 +640,110 @@ addressing codex spec review v1 的 3 个阻塞点 + 2 个非阻塞建议。
 - `content_hash` 的 canonical JSON 序列化参数已钉死为 `sort_keys=True`、`ensure_ascii=False`、`separators=(",", ":")`，避免 hash 因空格漂移。
 - Step 7c 已加入 `source_kind in {'canonical','wikilink','computed'}` 断言。
 - v2 没有引入新的边界矛盾；执行时只需要把 TASK-006 的 A~E 输出完整贴进 Execution log，确保 lint refactor 回归证据可追溯。
+
+
+## Execution log by codex · 2026-05-28
+
+### 步骤完成情况
+
+- Step 0 Spec review: 通过
+- Step 1 wiki_common 抽取: done（抽取 MarkdownDoc / load_markdown / normalize_alias / first_h1 / now_iso / LOCAL_TZ / rel_to_knowledge / write_json_atomic）
+- Step 2 wiki_graph.py: done
+- Step 3~6 文档 / gitignore: done
+- Step 7 验证: 输出见下
+
+### 验证输出
+
+```text
+=== Preflight ===
+Python 3.12.11
+PyYAML 6.0.3
+=== 7a. lint 零回归：重跑 TASK-006 Step 6 的 Preflight + A~E ===
+=== Preflight: Python 3.9+ + PyYAML ===
+Python 3.12.11
+PyYAML 6.0.3
+=== A. 基线：空 knowledge/ 跑 lint 应全 OK ===
+wiki-lint v0.1.0
+================
+扫描: knowledge/wiki/ (0 文件) · knowledge/inbox/ (0 draft) · knowledge/raw/ (0 source)
+
+[OK]    schema 校验: 0 页扫描
+[OK]    ID 唯一性: 0 个 id
+[OK]    canonical 引用 + supersedes 对称
+[OK]    source 单主键
+[OK]    entity 别名（含链式跳转 / status:redirect）: 0 entries
+[OK]    inbox: 0 draft
+[OK]    PII 扫描（inbox-only）: 0 命中
+
+派生层已重建（原子写入）:
+  .wiki/id_index.json (0 entries)
+  .wiki/normalized_alias_index.json (0 entries)
+  .wiki/inbox_index.json (0 drafts)
+
+错误: 0 · 警告: 0
+  exit code: 0  (期望 0)
+=== B. 派生层 JSON 合法 + 顶层 schema ===
+  OK: knowledge/.wiki/id_index.json (version=1, 应 = 1)
+  OK: knowledge/.wiki/normalized_alias_index.json (version=1, 应 = 1)
+  OK: knowledge/.wiki/inbox_index.json (version=1, 应 = 1)
+=== C. --check-only 不写派生层 ===
+wiki-lint v0.1.0
+================
+扫描: knowledge/wiki/ (0 文件) · knowledge/inbox/ (0 draft) · knowledge/raw/ (0 source)
+
+[OK]    schema 校验: 0 页扫描
+[OK]    ID 唯一性: 0 个 id
+[OK]    canonical 引用 + supersedes 对称
+[OK]    source 单主键
+[OK]    entity 别名（含链式跳转 / status:redirect）: 0 entries
+[OK]    inbox: 0 draft
+[OK]    PII 扫描（inbox-only）: 0 命中
+
+派生层未重建（--check-only）
+
+错误: 0 · 警告: 0
+  OK: --check-only 未写派生层
+=== D. --json 输出固定结构 ===
+  OK: 顶层 6 字段齐全
+  OK: errors/warnings 6 字段齐全（空数组也通过）
+=== E. 11 项错误注入测试（每项注入 → 验 exit=1 + 期望 code → 还原） ===
+  OK: [MISSING_FIELD] 缺 id
+  OK: [ID_FORMAT] id 格式不对
+  OK: [ENUM_INVALID] type 不在 enum
+  OK: [DATE_FORMAT] created 日期非 YYYY-MM-DD
+  OK: [HASH_FORMAT] hash 非 64 位 hex
+  OK: [SOURCE_KEY_MISMATCH] source id != source_id
+  OK: [CANONICAL_DANGLING] related_ids 断引
+  OK: [SUPERSEDES_ASYMMETRY] supersedes 单向
+  OK: [ALIAS_CONFLICT] 两 entity 同 alias 规范化冲突
+  OK: [CANONICAL_CHAIN] canonical_id 链式 A→B→C
+  OK: [PII_HIT_DRAFT] inbox draft 含 PII 手机号
+=== 7b. wiki_graph 空库 ===
+wiki-graph: 0 nodes, 0 edges, 0 communities
+  exit: 0 (期望 0)
+  OK: 空库空图 + schema 正确
+  OK: 3 文件齐
+=== 7c. 注入 fixture ===
+  OK: 节点/边/redirect 折叠/wikilink/co_source/source_kind 全部正确
+  OK: content_hash 两次一致（确定性）
+  OK: dangling [[Nonexistent]] 进 insights
+  OK: 整个 .wiki/ 未被 wiki_graph 改动（永不写 .wiki/*）
+  OK: 无新增 .wiki/ 文件
+=== 清理 fixture ===
+=== 白名单检查（应只剩 7 路径 + maps 派生 ignored）===
+  OK: 白名单外无改动
+=== 验证结束 ===
+```
+
+### Commit
+
+- Step 8 sha: 7732ced
+- Step 9 sha: efc1cf4
+- Step 10 sha: 本提交（提交后由 Codex 回报）
+
+### 偏离 / 异常
+
+- 直接执行 `conda activate py312` 在非交互 shell 中不可用，实际用 `eval "$(conda shell.zsh hook)" && conda activate py312` 激活 py312 后执行。
+- 本地 `/usr/bin/python3` 是 3.9.6；为满足“全程用 py312”，验证脚本在 conda 激活后追加 `export PATH="$CONDA_PREFIX/bin:$PATH"`，使 TASK-006 A~E 里的 `python3` 也解析到 py312。
+- Python import 会生成 `scripts/__pycache__/`，与 TASK-007 白名单冲突；正式验证使用 `PYTHONDONTWRITEBYTECODE=1` 并在验证前清理缓存。未改 spec，未放宽白名单。
+- lint 回归验证、wiki_graph 空库验证、fixture 验证、`.wiki/*` 只读验证均通过；commit 前无 knowledge/ fixture 残留，maps/* 与 .wiki 派生层均保持 ignored。
