@@ -1079,9 +1079,61 @@ git commit -m "[task] TASK-006 done by codex"
 
 （待执行者在 Step 8 填写）
 
-## Evaluation by claude · YYYY-MM-DD
+## Evaluation by claude · 2026-05-28
 
-（待评估者填写）
+evaluator 独立跑了 lint + 注入错误验证（不只信 executor 自报）。
+
+### 1. 协议合规（white list 严格）— PASS
+
+- Step 7a `8b22a1a` 恰好动 5 个白名单文件：`scripts/wiki_lint.py` / `scripts/README.md` / `AGENTS.md` / `wiki-design/02-workflows.md` / `wiki-design/05-contracts-and-next-steps.md`。无越界。
+- Step 7b `0eee5d0` 仅 RFC-006 +2 行（`## Applied in 8b22a1a...`，sha 与 7a 一致）。
+- Step 8 `b223da4` 仅 TASK-006 自身。
+- 派生层 3 个 JSON 被 `.gitignore` 挡住（`!!` 状态），`git log --all` 确认从未进版本库。
+- working tree clean。
+
+### 2. 代码正确性（evaluator 实跑）— PASS
+
+- 空 knowledge 跑 `python3 scripts/wiki_lint.py`：7 类全 OK，exit 0。
+- 3 个派生层 JSON 合法且符合 05 冻结 schema（`version + updated_at + entries`；inbox 含 `draft_count / oldest_draft_age_days / recent_drafts`）。
+- **独立注入验证**（非 executor 自报的 E 系列）：
+  - `id != source_id` → 正确报 `SOURCE_KEY_MISMATCH`
+  - 两 entity 同 alias（`SharedAlias` vs `sharedalias` 规范化冲突）→ 正确报 `ALIAS_CONFLICT`
+  - **强约束 #10 验证**：注入 ALIAS_CONFLICT 后 `review_queue.json` shasum 不变 → lint 确实只读、未写 knowledge/** ✓
+  - 裸数字 hash（YAML 解析为 int）→ 正确报 `HASH_FORMAT`（额外兜底，超出纯 regex，实用）
+- `--check-only` 确认不写派生层；`--json` 顶层 6 字段 + errors/warnings 6 字段齐全。
+
+### 3. spec 保真 — PASS
+
+- 8 项 lint 范围全部实现（schema / ID / canonical+supersedes / source 单主键 / alias / inbox / PII / 跨流程）。
+- error code：`scripts/README.md` 23 个 ↔ 实现 23 个，集合一致（含 PII_HIT_DRAFT/ARCHIVE/WIKI、CANONICAL_CHAIN、REDIRECT_INVALID、SUPERSEDES_ASYMMETRY 等反向约束 code）。
+- 原子写：`atomic_write_json` 用 `<path>.<pid>.<uuid>.tmp + os.replace`，唯一临时名（非固定 .tmp）。
+- id 两套格式（wiki / inbox 含秒级）已实现。
+- Python 3.9.6 实跑通过；PyYAML 裸日期对象归一化生效（空库 + 注入测试均无误报）。
+
+### 4. 文档同步 — PASS
+
+- AGENTS.md 新增「lint 触发约束」段（line 66）。
+- 02-workflows.md：`运行 lint` → `运行 python3 scripts/wiki_lint.py`。
+- 05 第三阶段加 `状态（2026-05-28）` 落地标注，并说明 wiki-context / wiki-graph-refresh 仍待后续 RFC。
+
+### 5. commit 卫生 — PASS
+
+- 三 commit 拆分干净（apply / RFC Applied / task done），前缀规范，Co-Authored-By Codex。
+- Step 6 全量验证输出（Preflight / A / B / C / D / E1~E11 / F）贴进 Execution log，E 系列 11 项全 OK。
+- 偏离/异常段透明：PyYAML 缺失已按 Step 1.0 安装；`scripts/` 受根 `.gitignore` `*` 规则影响用 `git add -f` 纳入。
+
+### 遗留问题（不阻塞 PASS，建议跟进）
+
+**`scripts/` 未在 `.gitignore` 白名单**：根 `.gitignore` 以 `*` 开头（忽略一切）再 `!` 放行特定路径，`scripts/` 不在白名单。Codex 用 `git add -f` 把两个文件纳入版本库（已 tracked，未来对**这两个文件**的改动能正常 `git add` 捕获）。但**未来新增** `scripts/` 文件（如 RFC-007 的 wiki-context）会被静默忽略，需 `-f` 或补 whitelist。
+
+- 根因：spec 强约束 #5 禁止动 `.gitignore`，但我（spec 作者）没预见到新建 `scripts/` 目录需要 whitelist 项。这是 spec 缺口，executor 处理正确且透明。
+- 建议跟进：给 `.gitignore` 补 `!scripts/` + `!scripts/**`（让 scripts 正常 tracked）。这一条是否走 RFC 见下方与用户确认。
+
+**HASH_FORMAT 文案小瑕疵**：message 写"必须是 64 位小写十六进制"，但对 YAML-int 场景（非字符串）触发时文案略不精确。功能正确，不阻塞。
+
+### 结论
+
+**PASS**。wiki-lint MVP 落地，RFC-002/003/004 的知识数据层约束首次有机械保障。lint 闭环完成，可进入首次 ingest。遗留的 `.gitignore` whitelist 建议作为独立小修跟进。
 
 ## Spec review by codex · 2026-05-28
 
