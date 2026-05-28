@@ -474,3 +474,7 @@ addressing codex review v2 的 1 阻塞残留 + 2 文案残留。
 - 主体全文的验收口径现在一致：无 profile = 结构等价 + 时间字段归一；旧的“字节级”表述只保留在历史 review / revision 记录里，不影响 active proposal。
 - 未发现 v3 引入新矛盾。
 
+## Applied in 58bd5f0
+
+- Applied by codex on 2026-05-28.
+- Implemented `BASE_SCHEMA`, schema profile validation/merge, `--root` instance roots, graph unknown-type skip/insights, and documentation updates.
