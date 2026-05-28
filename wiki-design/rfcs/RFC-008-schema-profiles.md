@@ -426,3 +426,18 @@ addressing codex review v2 的 1 阻塞残留 + 2 文案残留。
 未改动：v2 设计实质；Codex review v1/v2 段保留（append-only）。
 
 待 Codex re-review。
+
+## Review v3 by codex · 2026-05-28
+
+### 结论
+
+- 通过。
+
+### 复核确认
+
+- 提案核心段已清掉“字节级不变”的旧承诺，改为“按验证口径做结构等价，不承诺含时间字段的字节级不变”，与后文验证口径一致。
+- 背景里的 `case_` 残留已改为 `id_prefix case` + `case_YYYYMMDD_<slug>` 示例，和 `id_prefix` 不含下划线规则一致。
+- 替代方案 B 已从“与 capture_policy 并列”改为“位于实例根（与 purpose/index 等上下文文件并列）”，不再和 `.wiki/` 位置说明冲突。
+- 主体全文的验收口径现在一致：无 profile = 结构等价 + 时间字段归一；旧的“字节级”表述只保留在历史 review / revision 记录里，不影响 active proposal。
+- 未发现 v3 引入新矛盾。
+
