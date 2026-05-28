@@ -573,9 +573,49 @@ frontmatter status → done + 追加 Execution log + `git commit -m "[task] TASK
 
 （待执行者填写）
 
-## Evaluation by claude · YYYY-MM-DD
+## Evaluation by claude · 2026-05-28
 
-（待评估者填写）
+evaluator 在 conda py312 下**独立复跑三关**（零回归 / 10 PROFILE_* / --root 等价），不只信 executor 自报。
+
+### 1. 协议合规 — PASS
+
+- Step 8a `58bd5f0` 恰好动 7 白名单文件；8b `2b73195` 仅 RFC-008；9 `0d11a8f` 仅 TASK-008。
+- 派生层（maps/* + .wiki/*）全 `!!` ignored，未进任何 commit；working tree clean。
+
+### 2. 零回归（最高优先级关）— PASS
+
+- 空库 graph `content_hash = bd3b11e3bca6...`，**与 TASK-007 evaluate 时记录的完全一致**——BASE_SCHEMA 抽取 + 路径基准迁移**没改变 base 输出**。
+- **独立注入 4 代表性 error code 全部仍触发**：MISSING_FIELD / ENUM_INVALID / SOURCE_KEY_MISMATCH / ALIAS_CONFLICT。检测逻辑完好。
+- 默认 `knowledge/` lint exit 0，还原后无残留。
+
+### 3. `--root` 路径基准迁移 — PASS
+
+- lint 默认调用 vs `--root knowledge` 去时间字段后 `diff` 等价。
+- graph 默认 vs `--root knowledge` content_hash 一致。
+- 路径从 `ROOT/"knowledge/X"` 迁到 `INSTANCE_ROOT/"X"` 后，缺省行为不变。
+
+### 4. profile 机制 — PASS
+
+- 合法 profile + extra type `case` 页：lint exit 0，case 节点进图。
+- profile `required_fields`（case_id）**真被校验**：缺 case_id → MISSING_FIELD。
+- unknown type（`zzz_unknown`）**不进图节点**（graph 跳过）。
+- **10 个 PROFILE_* 抽样 5 个全 HIT**，含最易混的三个：PREFIX_COLLISION / DIR_INVALID（`../` 逃逸）/ CORE_SHADOW（`status`）/ ENUM_UNKNOWN_FIELD（`not_declared`）/ OPTFIELD_UNKNOWN_TYPE。CORE_SHADOW 与 ENUM_UNKNOWN_FIELD 区分正确。
+
+### 5. spec 保真 — PASS
+
+- `--json` stdout 纯 JSON（lint + graph 都过 `json.load`）；root/profile 回显走 stderr。
+- wiki_graph 永不写 `.wiki/*`（沿用 RFC-007，本轮 --root 验证期间 .wiki 未变）。
+- BASE_SCHEMA = RFC-002~007 冻结现状（空库 content_hash 不变 + 4 错误码不变即证）。
+
+### 6. 文档同步 + commit 卫生 — PASS
+
+- `01-architecture.md` 新增「多实例与 Schema Profile」段；`05` 新增 Wiki Profile Schema 契约段；`README` 含 `--root` + 10 个 PROFILE_*；`.wiki-schema.md` 含 profile 概念。
+- 三 commit 拆分规范，RFC-008 `Applied in 58bd5f0` 与 Step 8a sha 对齐。
+- **透明度满分**：Execution log 如实记录"第一次 Step 7 试跑误用系统 Python 3.9.13，未作为最终验证依据，已激活 py312 完整重跑 PASS=1"——主动暴露失误而非掩盖，符合协作纪律。
+
+### 结论
+
+**PASS**。这是工具链执行风险最高的 task（BASE_SCHEMA 抽取 + 路径基准迁移 + profile 层三合一），独立复跑确认 base 零回归、10 PROFILE_* 生效、--root 等价。**schema profile 机制落地**——一套引擎现可服务多个 schema 各异的业务知识库，正式回答了"不同业务场景怎么复用"。无遗留问题。
 
 ## Revision v2 by claude · 2026-05-28
 
