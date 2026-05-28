@@ -372,3 +372,55 @@ addressing codex review v1 的 7 个需修改点 + 其它复核。修订清单�
 未改动：8 项范围编号、节点定义、insights 集合、替代方案 A~E 推荐项；Codex review v1 段完整保留（append-only）。
 
 待 Codex re-review。
+
+## Review v2 by codex · 2026-05-28
+
+### 总体结论
+
+- 结论：需修改。
+- v2 已经实质修好 v1 review 的大部分阻塞点，方向可以继续推进。
+- 仍有一个会影响执行边界的残留歧义：普通模式是否只写 `knowledge/maps/*`，还是也可以顺手落盘 `.wiki/id_index.json` / `.wiki/normalized_alias_index.json`。这会影响职责边界、验证白名单和后续 TASK spec，建议先钉死。
+
+### v1 七点复核
+
+1. edge schema：已解决。
+   - v2 改成边不合并，`relation` / `source_kind` 都是单值，多关系产出多条边。
+   - `source_kind` 枚举已补 `computed`，`co_source` 也明确是由显式 `source_ids` 计算出的结构边，不是语义推断。
+   - schema 示例里的 `edges[].relation` 已是字符串，和正文一致。
+
+2. 03 第二层对齐：已解决。
+   - v2 明确本 RFC 只是第二层 MVP 子集：`canonical + wikilink + co_source`。
+   - tag / 共同邻居 / 类型亲和 / 共现都被标为后续增强，避免把 03 第二层误写成完整落地。
+
+3. content_hash 确定性：已解决。
+   - `generated_at` 被明确排除在确定性保证外。
+   - `content_hash` 对排序后的 nodes + edges + communities 计算，后续验证用 hash 或结构比较，不做整文件字节 diff，这个边界自洽。
+   - 非阻塞建议：TASK spec 里最好钉死 canonical JSON 序列化方式，例如 `sort_keys=True`、固定 separators，避免不同实现算出不同 hash。
+
+4. wikilink 解析与 id_index schema：已解决。
+   - v2 改成 wiki_graph 在内存自建 `title/slug -> id` 查找表，并明确不扩展 `id_index.json`。
+   - 这保持了 RFC-006/TASK-006 已落地的 `id_index` schema 兼容性。
+
+5. redirect 折叠规则：已解决。
+   - 4b 对 target redirect、source redirect、wikilink 入口例外、self-loop 丢弃、折叠后去重都写到了可执行粒度。
+   - 这符合 RFC-004 “薄页不参与主图谱节点”的边界。
+
+6. `--json` 只读 vs 普通模式写入：仍需修改。
+   - `--json` 全程只读已经写清楚。
+   - 但实现约束里同时写了“普通模式才写 `knowledge/maps/*` 三个派生文件”，又写“普通模式缺 `id_index.json` / `normalized_alias_index.json` 时提示先跑 lint（或内部用 wiki_common 构建后落盘）”。
+   - 这个“或内部构建后落盘”会让 wiki_graph 普通模式也写 `.wiki/*` 派生层，和“普通模式写 maps/*”的边界冲突，也会让后续验证白名单变复杂。
+   - 建议二选一并写死：
+     - 推荐：`wiki_graph.py` 永不写 `.wiki/*`；缺 lint 派生索引时普通模式要么 exit 2 提示先跑 lint，要么在内存重建但不落盘，最终只写 `knowledge/maps/*`。
+     - 备选：允许普通模式刷新 `.wiki/*`，那就把输出文件、风险、验证白名单和职责边界全部同步写清。
+
+7. wiki_common.py 拆分与 lint 回归：已解决。
+   - 新增 `scripts/wiki_common.py` 作为纯 helper，比直接 import `wiki_lint.py` 更稳。
+   - v2 已限制不改 error code 集合、不改 `run_lint()` 返回语义、不改 CLI 退出码，并要求重跑 TASK-006 Step 6，全量验证约束足够。
+   - 非阻塞建议：替代方案 A 里仍写“独立 `scripts/wiki_graph.py`（import lint parser）”，建议后续改成“import wiki_common helper”，避免文案残留。
+
+### 新矛盾复核
+
+- 未发现新的结构性矛盾。
+- 有两个非阻塞文案残留：
+  - 背景表和 MVP 不包含段仍有 “RFC-008” 字样，而后文已改成“后续 graphify RFC（编号待定）”。建议统一成编号待定，避免和 RFC-006 里曾提到的“wiki-design lint 暂称 RFC-008”混淆。
+  - 提案开头仍说“复用 wiki-lint 已有的 frontmatter 解析、`id_index`、`normalized_alias_index`”，建议改成“复用 wiki_common 解析 helper；读取或内存构建索引数据”，和 v2 的实际方案完全一致。
