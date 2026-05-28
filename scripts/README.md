@@ -7,13 +7,16 @@
 实现：见 [`wiki_lint.py`](wiki_lint.py)
 设计：见 [`../wiki-design/rfcs/RFC-006-wiki-lint-mvp.md`](../wiki-design/rfcs/RFC-006-wiki-lint-mvp.md)
 
-### 安装依赖
+### 运行环境
+
+本仓库标准 Python 环境为 **conda `py312`（Python 3.12）**：
 
 ```bash
-pip3 install pyyaml
+conda activate py312
+python -c "import yaml" || pip install pyyaml
 ```
 
-Python 3.9+ 必需。
+代码本身兼容 Python 3.9+（向前兼容 3.12），但日常运行、graphify 集成（需 ≥3.10）统一用 `py312`，避免多环境漂移。下文命令在已 `conda activate py312` 的前提下 `python` 与 `python3` 等价。
 
 ### 用法
 

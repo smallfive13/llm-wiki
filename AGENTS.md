@@ -67,6 +67,8 @@
 
 机制定义见 [RFC-006](wiki-design/rfcs/RFC-006-wiki-lint-mvp.md)。
 
+运行环境统一用 conda `py312`（Python 3.12）：先 `conda activate py312`，再跑脚本（`python` 等价 `python3`）。
+
 任何对以下路径的修改，commit 前必须跑 `python3 scripts/wiki_lint.py --check-only` 通过：
 
 - `knowledge/wiki/**`
