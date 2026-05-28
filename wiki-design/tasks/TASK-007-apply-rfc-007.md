@@ -530,3 +530,38 @@ git commit -m "[rfc-007] applied in <Step 8 sha>"
 ## Evaluation by claude · YYYY-MM-DD
 
 （待评估者填写）
+
+## Spec review by codex · 2026-05-28
+
+### 完整性
+
+- 9 条 RFC-007 Decision 实现约束基本都有对应步骤：边不合并、`content_hash`、wikilink 解析、redirect 折叠、写入边界、`wiki_common.py` 拆分、lint 零回归、空 knowledge/、py312 + PyYAML 都已映射到 Step 1 / 2 / 7。
+- `wiki_common` helper 清单基本明确：`MarkdownDoc`、`load_markdown`、`normalize_alias`、`write_json_atomic` 是必须项；允许顺带抽 id / ISO 解析等纯 helper 也合理，但后续实现 spec 最好要求保持函数语义不变。
+- graph-data schema、5 类边、redirect 4b 折叠、label propagation 的机械规则写得足够具体。
+
+### 需修改
+
+1. Step 7a 不是可直接机械执行的验证脚本。
+   - 当前写法仍是“从 TASK-006 spec 复制 Step 6”以及“此处粘贴 E1~E11 + F 段原样重跑”的占位说明。
+   - 如果 executor 真把 TASK-006 Step 6 的 F 段原样粘贴，会使用 TASK-006 的旧白名单，只放行 `scripts/wiki_lint.py`、`scripts/README.md`、`AGENTS.md`、`02`、`05`、RFC-006、TASK-006；而 TASK-007 apply 会改 `wiki_graph.py`、`wiki_common.py`、`03`、`.gitignore` 等，F 会误报。
+   - 建议把 TASK-006 Step 6 全量脚本直接内嵌到 TASK-007，或明确引用“复制 TASK-006 的 Preflight/A/B/C/D/E1~E11，但 F 白名单替换为 TASK-007 的 7 个路径 + TASK-007 自身”。不要留下人工粘贴占位。
+
+2. Step 7c 对“wiki_graph 永不写 `.wiki/*`”的验证不完整。
+   - 当前只比较 `knowledge/.wiki/id_index.json` 和 `knowledge/.wiki/normalized_alias_index.json` 的 hash。
+   - RFC-007 Decision 锁定的是永不写 `.wiki/*`，因此也应覆盖 `inbox_index.json`、`review_queue.json`、`capture_policy.json`，以及任何新增 `.wiki/*` 文件。
+   - 建议改为 before/after 快照整个 `knowledge/.wiki`，例如 `find knowledge/.wiki -type f -maxdepth ... | sort | xargs shasum | shasum`，并同时检查没有新增未跟踪 `.wiki` 文件。这样才能真正捕获“普通模式或 --json 写了 .wiki”的违规。
+
+3. Step 7c 的 fixture 清理建议加 `trap`。
+   - 现在 `set +e` 下普通断言失败后会继续执行清理，常规失败能还原。
+   - 但如果执行中断、shell 退出或 heredoc 粘贴错误，fixture 可能残留在 `knowledge/wiki/`。
+   - 建议在 7c 开头定义 `cleanup_graph_fixture` 并 `trap cleanup_graph_fixture EXIT`，最后再解除 trap；这比依赖末尾 `rm -f` 更稳。
+
+### 其它建议
+
+- `content_hash` 公式建议在 spec 里钉死 canonical JSON 序列化参数，例如 `sort_keys=True`、`ensure_ascii=False`、固定 `separators=(',', ':')`。当前写法可实现，但不同实现可能因空格而得到不同 hash。
+- Step 7c 已覆盖节点、边、redirect、dangling、co_source、`content_hash` 和 `--json` 只读；可以再加一条断言 `source_kind in {'canonical','wikilink','computed'}`，但这不是阻塞。
+
+### 结论
+
+- 需修改。
+- 修正 Step 7a 的可执行脚本 / 白名单，以及 Step 7c 的 `.wiki/*` 全量只读验证后，我认为这个 spec 可以进入执行。
