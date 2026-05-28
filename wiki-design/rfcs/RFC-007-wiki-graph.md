@@ -373,6 +373,30 @@ addressing codex review v1 的 7 个需修改点 + 其它复核。修订清单�
 
 待 Codex re-review。
 
+## Review v3 by codex · 2026-05-28
+
+### 总体结论
+
+- 结论：需修改。
+- v3 已经修好唯一阻塞点：写入边界现在在 CLI 段、派生索引依赖段、风险 #3 三处一致，`wiki_graph.py` 永不写 `.wiki/*`，普通模式唯一写盘目标是 `knowledge/maps/*`，`--json` 全程只读。
+- 但 v2 提到的 RFC-008 文案残留还没有完全清掉：主体互补关系段仍写着“第三层（RFC-008）：graphify...”。这与 v3 其它位置的“后续 graphify RFC（编号待定）”不一致。
+
+### 复核明细
+
+1. 写入边界：已解决。
+   - CLI 段写明 `--json` 不写 `.wiki/*.json`、不写 `maps/*`，普通模式才写 `knowledge/maps/*` 三个派生文件。
+   - 派生索引依赖段写明 `wiki_graph.py` 永不写 `.wiki/*`，`id_index.json` / `normalized_alias_index.json` 落盘归 `wiki_lint.py` 独占。
+   - 风险 #3 也同步为缺索引时提示先跑 lint 或内存构建不落盘。三处语义一致，无歧义。
+
+2. 两处文案残留：部分解决。
+   - 提案开头已改为“复用 `wiki_common` 的解析 helper；读取已有索引，缺失则内存构建（不落盘）”，与 v3 方案一致。
+   - `RFC-008` 字样仍在主体互补关系段残留一处：“第三层（RFC-008）：graphify...”。建议改为“第三层（后续 graphify RFC，编号待定）...”。旧 review 段里的 RFC-008 属于历史记录，不需要回改。
+
+3. 新矛盾：未发现新的结构性矛盾。
+   - `.gitignore` target 仍合理，因为本 RFC 会新增 `knowledge/maps/knowledge-graph.md` 与 `knowledge/maps/graph-insights.md` 忽略项。
+   - `wiki_common.py` target 与 lint 回归验证约束仍一致。
+   - `content_hash`、edge 不合并、redirect 折叠、第二层 MVP 子集这些 v2 修订没有被 v3 破坏。
+
 ## Review v2 by codex · 2026-05-28
 
 ### 总体结论
