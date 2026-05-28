@@ -6,7 +6,7 @@ executor: codex
 status: pending
 type: apply
 created: 2026-05-28
-updated: 2026-05-28
+updated: 2026-05-28  # v2 after codex spec review v1
 related_rfcs:
   - rfc_20260528_009
 ---
@@ -26,7 +26,7 @@ related_rfcs:
 
 - 仓库根：`/Users/zhangjunwu/workspace/llm-wiki/llm-wiki`
 - HEAD 含 **RFC-009 status: accepted**（commit `24c4b9a` 及之后）
-- working tree clean（先手动删 2 个 Obsidian 空桩：`knowledge/RFC + Task 协作协议.md`、`knowledge/知识库 Schema 与页面规则.md`）
+- working tree clean。**2 个 Obsidian 空桩**（`knowledge/RFC + Task 协作协议.md`、`knowledge/知识库 Schema 与页面规则.md`）由**用户/人工在执行前删除**，**不纳入本 task commit**（executor 不在 apply 中处理它们；若仍存在，executor 在 Step 0 提示用户先删再开工）
 - 已读 RFC-009 全文（含 Decision 6 条约束 + v1/v2 review）
 - 已读 `scripts/wiki_graph.py` 的 `parse_wikilink()` / `build_wikilink_lookup()` 现有实现
 - conda `py312` + PyYAML
@@ -80,26 +80,35 @@ Step 8  task done + Execution log + commit [task]
 
 末尾追加 `## Spec review by codex · 2026-05-28`，检查：完整性（6 约束覆盖）/ 可执行性（lookup 改法 + 5c 断言机械可跑）/ 边界（不碰 lint，related_ids 不变）/ 风险。commit `[task] TASK-009 spec review by codex (conclusion: <...>)`。
 
-### Step 1：抓 baseline（改 wiki_graph 前）
+### Step 1：抓 baseline（改 wiki_graph 前，固化到文件）
 
 ```bash
 conda activate py312; set +e
-# 现状 knowledge/（4 页）graph content_hash + lint
-python scripts/wiki_graph.py --json 2>/dev/null | python3 -c "import json,sys;print('before graph content_hash:', json.load(sys.stdin)['content_hash'])"
-# 复用 TASK-008 的 mk_regress 回归 fixture（注入 knowledge/ → 抓 hash → 还原），存 /tmp/g009_before.txt
+# 现有 knowledge/（4 页）graph：固化 content_hash + related/wikilink 边数
+python scripts/wiki_graph.py --json 2>/dev/null > /tmp/g009_before.json
+python3 -c "
+import json
+g=json.load(open('/tmp/g009_before.json'))
+rel=sum(1 for e in g['edges'] if e['relation']=='related')
+wl=sum(1 for e in g['edges'] if e['relation']=='wikilink')
+open('/tmp/g009_before_hash','w').write(g['content_hash'])
+open('/tmp/g009_before_counts','w').write(f'{rel} {wl}')
+print('baseline content_hash:', g['content_hash'])
+print('baseline related/wikilink 边数:', rel, wl)
+"
 ```
 
-> baseline 用于 Step 5a 证明 wiki_graph 改动对**现有边投影零影响**（content_hash 不变）。
+> baseline 边数**以本机实跑为准**（Codex 实测当前为 `related=8 / wikilink=8`，非估算值）。Step 5a/5b 与此 baseline 比，不写死数字。
 
 ### Step 2：wiki_graph lookup 改造
 
 按 RFC-009 Decision #1 #2：
 
 - 保留 `parse_wikilink()` 现有管道/heading 剥离
-- **`build_wikilink_lookup()` 改造**：保证 `normalized_alias_index` key 优先——两阶段 lookup（先 alias，未命中再 slug/path），或 add_lookup 不覆盖 alias key
-- **补路径 key 登记**：除 `Path(doc.rel).stem`（basename slug）外，登记实例根相对路径去 `.md`（如 `wiki/topics/foo`）
-- target 解析：含 `/` → 路径精确匹配；不含 `/` → basename slug；basename 重复 → 不建边 + `ambiguous_wikilink`
-- `ambiguous_wikilink` **只进 graph-insights.md**（与 dangling 并列段），不进 graph-data.json
+- **结构化 lookup（v2，解决 review #1）**：不再用单个 `Dict[str,str]` 硬塞 ambiguity。`build_wikilink_lookup()` 返回**结构化对象**（或新增 `resolve_wikilink_target(raw, lookups)` helper），至少含：`alias`（normalized_alias_index）、`path`（实例根相对路径去 `.md`）、`slug`（basename）、`ambiguous_slugs`（basename 重复集合）。`build_edges()` 改调 resolver。
+- **解析顺序钉死**：① alias 命中 → 正名 canonical_id；② target 含 `/` → path 精确匹配；③ 不含 `/` 且 slug 唯一 → slug 命中；④ slug 在 `ambiguous_slugs` → **不建边** + `ambiguous_wikilink`；⑤ 都不中 → dangling。
+- **alias 不被覆盖**：alias key 与某 slug/title 同名时，alias 优先（resolver 先查 alias 表）。
+- `ambiguous_wikilink` **只进 graph-insights.md**（与 dangling 并列段），不进 graph-data.json。
 
 ### Step 3：迁移 4 页
 
@@ -124,35 +133,157 @@ python scripts/wiki_graph.py --json 2>/dev/null | python3 -c "import json,sys;pr
 ```bash
 conda activate py312; set +e
 PASS=1; fail(){ echo "  FAIL: $1"; PASS=0; }
+strip(){ python3 -c "
+import json,sys
+d=json.load(open(sys.argv[1]))
+def s(o):
+ if isinstance(o,dict): return {k:s(v) for k,v in o.items() if k not in ('ran_at','updated_at','generated_at')}
+ if isinstance(o,list): return [s(x) for x in o]
+ return o
+json.dump(s(d),open(sys.argv[2],'w'),sort_keys=True)
+" "$1" "$2"; }
 
 echo "=== 5a 零回归 ==="
-# RFC-007 fixture（复制 TASK-007 Step7c）：content_hash 仍确定一致
-# RFC-008 结构等价（复制 TASK-008 Step7a-1 mk_regress + strip diff）
-# >>> 粘贴 TASK-007 Step7c + TASK-008 7a-1 <<<
-# 关键：现有 knowledge/ 4 页 graph content_hash == Step1 baseline（wikilink target 从标题变 slug
-#       但都解析到同一 id，related/wikilink 边不变 → content_hash 应不变）
+# RFC-007 fixture（逐字复制 TASK-007 Step 7c，含 trap + 全 .wiki 快照 + content_hash 断言）
+# >>> 粘贴 TASK-007 Step 7c <<<
+# RFC-008 结构等价（逐字复制 TASK-008 Step 7a-1：mk_regress + strip + diff lint + graph content_hash）
+# >>> 粘贴 TASK-008 Step 7a-1 <<<
+echo "--- 现有 knowledge/ 4 页 content_hash 不变（迁移只改 target 标题→slug，解析到同一 id）---"
+python scripts/wiki_graph.py --json 2>/dev/null > /tmp/g009_after.json
+HA=$(python3 -c "import json;print(json.load(open('/tmp/g009_after.json'))['content_hash'])")
+HB=$(cat /tmp/g009_before_hash)
+[ "$HA" = "$HB" ] && echo "  OK: content_hash 不变（$HA）" || fail "content_hash 变了（迁移影响了边投影）"
 
-echo "=== 5b 4 页迁移后 ==="
-python scripts/wiki_lint.py --check-only >/dev/null 2>&1; [ $? = 0 ] && echo "  OK lint exit0" || fail "lint"
-python scripts/wiki_graph.py --json 2>/dev/null | python3 -c "
-import json,sys; g=json.load(sys.stdin)
-rel=[e for e in g['edges'] if e['relation']=='related']
-wl=[e for e in g['edges'] if e['relation']=='wikilink']
-print(f'  related 边: {len(rel)} (期望 6) · wikilink 边: {len(wl)} (期望 6)')
-"
-grep -A2 "Dangling Wikilinks" knowledge/maps/graph-insights.md | grep -q "(none)" && echo "  OK 0 dangling" || fail "dangling 非空"
+echo "=== 5b 4 页迁移后边数 == baseline + 0 dangling ==="
+read RB WB < /tmp/g009_before_counts
+python3 -c "
+import json
+g=json.load(open('/tmp/g009_after.json'))
+rel=sum(1 for e in g['edges'] if e['relation']=='related'); wl=sum(1 for e in g['edges'] if e['relation']=='wikilink')
+import sys; sys.exit(0 if (rel==$RB and wl==$WB) else 1)
+" && echo "  OK: related/wikilink 边数 == baseline ($RB/$WB)" || fail "边数偏离 baseline $RB/$WB"
+python scripts/wiki_lint.py --check-only >/dev/null 2>&1; [ $? = 0 ] && echo "  OK: lint exit 0" || fail "lint"
+# 普通模式生成 fresh insights 再 grep（不读 stale）
+python scripts/wiki_graph.py >/dev/null 2>&1
+grep -A2 "Dangling Wikilinks" knowledge/maps/graph-insights.md | grep -q "(none)" && echo "  OK: 0 dangling" || fail "dangling 非空"
 
 echo "=== 5c RFC-009 专项（临时实例 knowledge-gtest/，knowledge/ 外）==="
-# 断言 1: [[slug|Title]] 建 wikilink 边
-# 断言 2: 重复 basename slug → 不建边 + ambiguous_wikilink insights
-# 断言 3: [[wiki/topics/foo|Foo]] 路径消歧建边
-# 断言 4: entity 别名 key == 某 slug 时 alias 优先（建别名页 + 同名 slug topic，[[name]] 解析到正名 entity）
-# >>> 见下方 fixture 脚本，trap 清理 <<<
+cleanup(){ rm -rf knowledge-gtest; }
+trap cleanup EXIT
+mkdir -p knowledge-gtest/wiki/entities knowledge-gtest/wiki/topics knowledge-gtest/wiki/sources knowledge-gtest/raw/sources knowledge-gtest/inbox knowledge-gtest/maps knowledge-gtest/.wiki
+for f in purpose index overview log; do printf '# %s\n' "$f" > "knowledge-gtest/$f.md"; done
+printf '{"version":1,"sources":[]}\n' > knowledge-gtest/raw/source_manifest.json
+printf '{"version":1,"items":[]}\n' > knowledge-gtest/.wiki/review_queue.json
+printf '{"version":1,"auto_capture":false,"exclude_patterns":[],"exclude_paths":[],"max_inbox_files":100,"updated_at":"2026-05-28T00:00:00+08:00"}\n' > knowledge-gtest/.wiki/capture_policy.json
+mkpage(){ # $1=path $2=id $3=type ; 读 stdin 作为额外 frontmatter+body
+  cat > "knowledge-gtest/$1" <<EOF
+---
+id: $2
+type: $3
+status: active
+confidence: medium
+created: 2026-05-28
+updated: 2026-05-28
+last_verified: 2026-05-28
+review: false
+$(cat)
+EOF
+}
+# 正名 entity attention，alias foo
+mkpage wiki/entities/attention.md ent_20260528_attention entity <<'EOF'
+aliases: [foo]
+canonical_id: null
+source_ids: []
+related_ids: []
+supersedes: []
+superseded_by: []
+evidence_count: 0
+---
+# Attention
+EOF
+# topic foo（slug 与 alias foo 同名 → 验 alias 优先）
+mkpage wiki/topics/foo.md top_20260528_foo topic <<'EOF'
+source_ids: []
+related_ids: []
+sources: []
+related: []
+supersedes: []
+superseded_by: []
+evidence_count: 0
+---
+# Foo Topic
+EOF
+# 重复 basename dup：topics/dup + sources/dup
+mkpage wiki/topics/dup.md top_20260528_dup topic <<'EOF'
+source_ids: []
+related_ids: []
+sources: []
+related: []
+supersedes: []
+superseded_by: []
+evidence_count: 0
+---
+# Dup Topic
+EOF
+mkpage wiki/sources/dup.md src_20260528_dup source <<'EOF'
+source_id: src_20260528_dup
+hash_sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+original_path: raw/sources/dup.pdf
+source_url: null
+imported_at: 2026-05-28T10:00:00+08:00
+source_ids: []
+related_ids: []
+sources: []
+related: []
+supersedes: []
+superseded_by: []
+evidence_count: 1
+---
+# Dup Source
+EOF
+# 链接页：[[foo]]（alias 优先）/ [[dup]]（ambiguous）/ [[wiki/topics/dup|Dup]]（路径消歧）/ [[foo|显示]]（管道建边已含在 [[foo]]）
+mkpage wiki/topics/linker.md top_20260528_linker topic <<'EOF'
+source_ids: []
+related_ids: []
+sources: []
+related: []
+supersedes: []
+superseded_by: []
+evidence_count: 0
+---
+# Linker
+[[foo|显示文本]] 与 [[dup]] 以及 [[wiki/topics/dup|路径消歧]]
+EOF
+# 先 lint 建 normalized_alias_index（alias foo → ent_attention），再 graph
+python scripts/wiki_lint.py --root knowledge-gtest >/dev/null 2>&1
+python scripts/wiki_graph.py --root knowledge-gtest --json 2>/dev/null > /tmp/g009_gtest.json
+python scripts/wiki_graph.py --root knowledge-gtest >/dev/null 2>&1   # 生成 insights
+python3 -c "
+import json
+g=json.load(open('/tmp/g009_gtest.json'))
+E=[(e['source'],e['target'],e['relation']) for e in g['edges'] if e['relation']=='wikilink']
+def edge(s,t): return any(x[0]==s and x[1]==t for x in E)
+# 断言 1+管道：[[foo|显示文本]] 建 wikilink 边
+# 断言 4：alias foo 优先 → linker --wikilink--> ent_attention（不是 top_foo）
+print('  断言1+4 alias优先 [[foo|..]]→ent_attention:', 'OK' if edge('top_20260528_linker','ent_20260528_attention') and not edge('top_20260528_linker','top_20260528_foo') else 'FAIL')
+# 断言 2：[[dup]] ambiguous → 不建边
+print('  断言2 [[dup]] ambiguous 不建边:', 'OK' if not (edge('top_20260528_linker','top_20260528_dup') or edge('top_20260528_linker','src_20260528_dup')) else 'FAIL')
+# 断言 3：[[wiki/topics/dup|路径消歧]] → 精确建边到 top_dup
+print('  断言3 路径消歧 →top_dup:', 'OK' if edge('top_20260528_linker','top_20260528_dup') else 'FAIL')
+"
+grep -A2 "Ambiguous Wikilinks\|ambiguous" knowledge-gtest/maps/graph-insights.md | grep -qi "dup" && echo "  断言2 ambiguous_wikilink 进 insights: OK" || echo "  断言2 ambiguous insights: 检查"
+cleanup; trap - EXIT
+
+echo "=== 5d 边界：白名单 + related_ids 未改 ==="
+extra=$(git status --porcelain -uall | cut -c4- | grep -Ev '^scripts/wiki_graph\.py$|^scripts/README\.md$|^wiki-design/01-architecture\.md$|^wiki-design/03-obsidian-graph\.md$|^wiki-design/05-contracts-and-next-steps\.md$|^wiki-design/02-workflows\.md$|^knowledge/\.wiki-schema\.md$|^knowledge/wiki/synthesis/llm-wiki-architecture\.md$|^knowledge/wiki/topics/rfc-task-protocol\.md$|^knowledge/wiki/topics/wiki-schema-rules\.md$|^knowledge/wiki/topics/toolchain-usage\.md$|^wiki-design/tasks/TASK-009-apply-rfc-009\.md$')
+[ -z "$extra" ] && echo "  OK: 白名单外无改动" || { echo "  FAIL:"; echo "$extra" | sed 's/^/    /'; PASS=0; }
+# related_ids 未改：4 页 diff 不应含 related_ids 行增删
+git diff -- knowledge/wiki/ | grep -E '^[-+]\s*related_ids:|^[-+]\s+- (syn|top|ent|src|cmp|dec|que|oq)_' | grep -q . && fail "related_ids 被改动" || echo "  OK: related_ids 未改（canonical 不变）"
 
 echo "=== PASS=$PASS ==="; [ "$PASS" = 1 ] || exit 1
 ```
 
-> 5a/5c 的完整脚本：5a 复制 TASK-007 Step7c + TASK-008 Step7a-1（不复制各自 F/白名单段）；5c 仿 TASK-008 7b 的临时实例 + trap 清理，建 4 个断言 fixture。executor 写死成可跑 shell，贴完整输出进 Execution log。
+预期：5a content_hash 不变 + RFC-007/008 回归过；5b 边数==baseline + lint exit0 + 0 dangling；5c 断言 1/2/3/4 全 OK + ambiguous 进 insights；5d 白名单外无改动 + related_ids 未改。
 
 ### Step 6~8：commit apply / RFC Applied / task done
 
@@ -216,3 +347,18 @@ echo "=== PASS=$PASS ==="; [ "$PASS" = 1 ] || exit 1
 - Step 5b 改为比较 baseline 边数，且先跑普通模式生成 fresh insights 再检查 0 dangling。
 - Step 5c 内嵌完整 shell fixture，覆盖四条 RFC-009 专项断言。
 - Step 5 末尾补白名单检查和 `related_ids` 未改检查。
+
+## Revision v2 by claude · 2026-05-28
+
+addressing codex spec review v1 的 5 个执行级问题。
+
+1. **Step 2 结构化 lookup**（review #1）：明确 `build_wikilink_lookup()` 返回结构化对象（alias/path/slug/ambiguous_slugs）或新增 `resolve_wikilink_target()` helper，解析顺序五步钉死，alias 先查不被覆盖。
+2. **Step 1 baseline 固化 + Step 5a 真实比对**（review #2）：Step 1 把 content_hash 写 `/tmp/g009_before_hash`、边数写 `/tmp/g009_before_counts`；Step 5a 读取并 diff；删掉未落地的 lint strip 假约束（RFC-008 回归段已覆盖 lint 结构等价）。
+3. **Step 5b 边数对 baseline 不写死 + fresh insights**（review #3）：边数与 Step 1 baseline 比（Codex 实测当前 8/8，非我误写的 6/6）；dangling 检查前先跑**普通模式**生成 fresh insights，不读 stale。
+4. **Step 5c 完整 fixture**（review #4）：内嵌临时实例 + `mkpage` + 4 断言（管道建边 / `[[dup]]` ambiguous 不建边 / `[[wiki/topics/dup|..]]` 路径消歧 / **alias `foo` 优先于同名 slug `topics/foo`** → 边指向正名 entity）；先 lint 建 alias index 再 graph；trap 清理。
+5. **Step 5d 白名单 + related_ids 未改**（review #5）：加 `git status` 白名单检查 + `git diff` 确认 4 页 related_ids 块未动。
+6. **空桩归人工**（review 执行前提）：前置条件明确 2 个 Obsidian 空桩由用户执行前删除，不纳入 task commit。
+
+未改动：9 条强约束主体、迁移 4 页清单、3 commit 拆分。Codex Spec review v1 段保留（append-only）。
+
+待 Codex re-review。
