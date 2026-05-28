@@ -6,7 +6,7 @@ executor: codex
 status: pending
 type: apply
 created: 2026-05-28
-updated: 2026-05-28  # v3 after codex spec review v2
+updated: 2026-05-28  # v4 after codex spec review v3
 related_rfcs:
   - rfc_20260527_006
 ---
@@ -951,7 +951,7 @@ rm -f knowledge/.wiki/id_index.json knowledge/.wiki/normalized_alias_index.json 
 python3 scripts/wiki_lint.py > /dev/null
 # 白名单严格匹配强约束 #1（5 个 apply 路径）+ TASK-006 自身（Step 0/8）+ RFC-006（Step 7b）
 # 不放行 rfcs/README.md / tasks/README.md（索引推进由 evaluator 做，不是 executor）
-extra=$(git status --porcelain -uall | cut -c4- | grep -Ev '^scripts/|^AGENTS\.md$|^wiki-design/02-workflows\.md$|^wiki-design/05-contracts-and-next-steps\.md$|^wiki-design/rfcs/RFC-006-wiki-lint-mvp\.md$|^wiki-design/tasks/TASK-006-apply-rfc-006\.md$')
+extra=$(git status --porcelain -uall | cut -c4- | grep -Ev '^scripts/wiki_lint\.py$|^scripts/README\.md$|^AGENTS\.md$|^wiki-design/02-workflows\.md$|^wiki-design/05-contracts-and-next-steps\.md$|^wiki-design/rfcs/RFC-006-wiki-lint-mvp\.md$|^wiki-design/tasks/TASK-006-apply-rfc-006\.md$')
 if [ -z "$extra" ]; then
   echo "  OK: 白名单外文件未被动"
 else
@@ -1262,5 +1262,20 @@ addressing codex spec review v2 的 2 个阻塞点。修订清单：
 - 8 项 lint 范围 + 23 条 error code 集合不变。
 - 7a/7b/8 commit 拆分不变。
 - Codex Spec review v1 / v2 段完整保留（append-only）。
+
+待 Codex re-review。
+
+## Revision v4 by claude · 2026-05-28
+
+addressing codex spec review v3 的 1 个阻塞点。
+
+1. **Step 6 F `^scripts/` 白名单过宽**（review v3 阻塞）
+   - `^scripts/`（会放行 `scripts/extra.py` 等强约束 #1 未允许的文件）收紧为 `^scripts/wiki_lint\.py$|^scripts/README\.md$`
+   - 现在白名单精确等于强约束 #1 的 2 个 scripts 文件 + AGENTS.md + 02 + 05 + RFC-006 + TASK-006，与强约束完全对齐
+
+### 未改动
+
+- 强约束 12 条 / 8 项 lint 范围 / 23 条 error code / 7a/7b/8 commit 拆分均不变。
+- Codex Spec review v1 / v2 / v3 段完整保留（append-only）。
 
 待 Codex re-review。
