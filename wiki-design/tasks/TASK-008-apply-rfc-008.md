@@ -6,7 +6,7 @@ executor: codex
 status: pending
 type: apply
 created: 2026-05-28
-updated: 2026-05-28  # v2 after codex spec review v1
+updated: 2026-05-28  # v3 after codex spec review v2
 related_rfcs:
   - rfc_20260528_008
 ---
@@ -252,6 +252,7 @@ rm_regress; trap - EXIT
 
 - page type / prefix：`TYPE_PREFIX`（8 类 → token，无下划线）+ 各 `dir`
 - id 正则：`WIKI_ID_RE` / `INBOX_ID_RE` / `INBOX_FILE_RE`（改由 `effective_id_regex(schema)` 动态生成，base 集合等价现有）
+- 格式正则：`DATE_RE`（`YYYY-MM-DD`）/ `ISO_RE`（ISO 8601 带时区）/ `HASH_RE`（64 hex）—— 一并纳入 BASE_SCHEMA（或由它引用），不漏
 - 页面 enum：core `status` / `confidence`
 - inbox：`INBOX_STATUSES` / `SUGGESTED_TYPES` / inbox required fields / `id_prefix: "inb"`
 - source manifest：`SOURCE_TYPES` / `SOURCE_STATUSES` / `SOURCE_ADAPTERS` + manifest required fields
@@ -261,6 +262,8 @@ rm_regress; trap - EXIT
 - context docs 四文件名（purpose/index/overview/log，无 frontmatter 反向校验）
 
 > **不进 BASE_SCHEMA 的**（保持代码常量即可）：纯算法常量（PII 正则来自 capture_policy 非 schema、label propagation 轮数、原子写临时名规则等）。executor 在 Execution log 列出"哪些进了 BASE_SCHEMA / 哪些保持代码常量"，便于 evaluator 核对无抄漏。
+
+> **ERROR_LEVEL 不变**（v3，解决 review）：现有 error code → 级别（error/warning）映射保持不变；新增的 10 个 `PROFILE_*` 全部为 `error`。BASE_SCHEMA 抽取**不得**改动任何既有 code 的级别。
 
 提供 `effective_id_regex(schema)`：由 schema 的 `id_prefix` 集合动态拼 `^(src|ent|...|<extra>)_\d{8}_...`；base-only 时必须与现有 `WIKI_ID_RE` 等价。
 
@@ -283,7 +286,7 @@ rm_regress; trap - EXIT
 ### Step 4：`--root` + 接 effective schema + graph
 
 - 两脚本加 `--root <instance>`（缺省 `<repo>/knowledge`）；**所有路径基准**从 `ROOT/"knowledge/..."` 迁到 `INSTANCE_ROOT/"..."`
-- 启动回显当前实例根 + profile 名
+- 启动回显当前实例根 + profile 名，**写 stderr**（v3，解决 review）：`--json` 模式 stdout **只能是纯 JSON**，root/profile 回显一律走 stderr，否则污染 `--json` 输出致下游 `json.load` 失败
 - `wiki_lint`：校验用 `merge_schema(BASE_SCHEMA, load_profile(root))`；profile 非法时先报 PROFILE_* 并 exit 1
 - `wiki_graph`：节点 type 集 / id_prefix 取自 effective schema；**未知 type 跳过 + 计 insights，不报错**（不重复 schema 校验）
 - `wiki_graph` 仍永不写 `.wiki/*`；写 `<root>/maps/*`
@@ -421,8 +424,9 @@ rm -f knowledge-gtest/wiki/topics/unk.md
 # --- 7b-4. 10 个 PROFILE_* 全覆盖（每个坏 profile 触发对应 code）---
 chk_profile(){ # $1=expected_code  (stdin = profile json)
   write_profile
-  r=$(python scripts/wiki_lint.py --root knowledge-gtest --json --check-only 2>/dev/null | has_code "$1")
-  [ "$r" = YES ] && echo "  OK: [$1]" || fail "[$1] 未触发"
+  out=$(python scripts/wiki_lint.py --root knowledge-gtest --json --check-only 2>/dev/null); ec=$?
+  r=$(echo "$out" | has_code "$1")
+  if [ "$r" = YES ] && [ "$ec" = 1 ]; then echo "  OK: [$1]"; else fail "[$1] code=$r exit=$ec（期望 YES/1）"; fi
 }
 chk_profile PROFILE_SCHEMA_VERSION <<'EOF'
 {"schema_version":999,"profile":"p","extra_page_types":[]}
@@ -449,7 +453,7 @@ chk_profile PROFILE_CORE_SHADOW <<'EOF'
 {"schema_version":1,"profile":"p","extra_page_types":[{"type":"x","id_prefix":"xx","dir":"wiki/x","required_fields":["status"],"optional_fields":[]}]}
 EOF
 chk_profile PROFILE_ENUM_UNKNOWN_FIELD <<'EOF'
-{"schema_version":1,"profile":"p","extra_page_types":[],"extra_field_enums":{"status":["a"]}}
+{"schema_version":1,"profile":"p","extra_page_types":[],"extra_field_enums":{"not_declared":["a"]}}
 EOF
 chk_profile PROFILE_OPTFIELD_UNKNOWN_TYPE <<'EOF'
 {"schema_version":1,"profile":"p","extra_page_types":[],"extra_optional_fields":{"no_such_type":["foo"]}}
@@ -462,6 +466,7 @@ echo "=== 白名单检查（Step 8a commit 前；RFC-008 在 8b 单独提交不�
 extra=$(git status --porcelain -uall | cut -c4- | grep -Ev '^scripts/wiki_common\.py$|^scripts/wiki_lint\.py$|^scripts/wiki_graph\.py$|^scripts/README\.md$|^knowledge/\.wiki-schema\.md$|^wiki-design/01-architecture\.md$|^wiki-design/05-contracts-and-next-steps\.md$|^wiki-design/tasks/TASK-008-apply-rfc-008\.md$')
 [ -z "$extra" ] && echo "  OK: 白名单外无改动" || { echo "  FAIL:"; echo "$extra" | sed 's/^/    /'; PASS=0; }
 echo "=== 验证结束：PASS=$PASS（1=全过）==="
+[ "$PASS" = 1 ] || { echo "验证未全过，禁止进入 Step 8 commit"; exit 1; }
 ```
 
 预期：7a-1 lint 结构等价 + graph content_hash 一致（零回归）；7a-2 默认==--root knowledge；7b-1~3 case 走通 lint+graph、required field 校验、unknown type 跳过+计 insights；7b-4 十个 PROFILE_* 全部触发；7c 清理后默认实例 exit 0、白名单外无改动。任一 fail → PASS=0 → 本 task 失败。
@@ -635,3 +640,17 @@ addressing codex spec review v1 的 5 阻塞点。
 - Step 4 钉死 `--json` stdout 只能输出 JSON；root/profile 回显不得污染 stdout。
 - Step 7b 把 `PROFILE_ENUM_UNKNOWN_FIELD` 用例从 `status` 改成 `not_declared`，并让 `chk_profile` 同时断言 exit code = 1。
 - Step 7 最后加 `PASS=1` 才算通过，否则退出失败。
+
+## Revision v3 by claude · 2026-05-28
+
+addressing codex spec review v2 的 5 个执行级问题。
+
+1. **BASE_SCHEMA 补 DATE_RE/ISO_RE/HASH_RE + ERROR_LEVEL 不变**（review #1）：Step 1 封闭清单补三个格式正则；新增"ERROR_LEVEL 不变"约束（既有 code 级别不动，10 个 PROFILE_* 全为 error）。
+2. **回显写 stderr**（review #2）：Step 4 钉死 `--json` 模式 stdout 只能是纯 JSON，root/profile 回显走 stderr，防污染下游 json.load。
+3. **PROFILE_ENUM_UNKNOWN_FIELD 用例修正**（review #3）：`status`（core，应归 CORE_SHADOW）改为 `not_declared`（非 core 非新字段），才真正触发 ENUM_UNKNOWN_FIELD。
+4. **chk_profile 加 exit code 断言**（review #4）：同时断言 `exit=1`，不只看 code 命中。
+5. **Step 7 末尾 PASS gate**（review #5）：`[ "$PASS" = 1 ] || exit 1`，验证未全过禁止进入 Step 8 commit。
+
+未改动：BASE_SCHEMA 封闭清单主体、Step 1.0 baseline、7a 结构等价、7b 十个 PROFILE_* 用例集（仅修 ENUM_UNKNOWN_FIELD 一条）。Codex Spec review v1/v2 段保留（append-only）。
+
+待 Codex re-review。
