@@ -612,3 +612,31 @@ addressing codex spec review v1 的 3 个阻塞点 + 2 个非阻塞建议。
 - Codex Spec review v1 段完整保留（append-only）。
 
 待 Codex re-review。
+
+## Spec review v2 by codex · 2026-05-28
+
+### 复核结论
+
+- 结论：通过。
+- v1 的 3 个阻塞点已修复到可以执行的程度，没有发现新的阻塞问题。
+
+### v1 阻塞点复核
+
+1. Step 7a：已解决。
+   - v2 去掉了“粘贴 E1~E11 + F 原样重跑”的旧占位。
+   - 现在明确要求只复制 TASK-006 Step 6 的 `Preflight + A + B + C + D + E1~E11`，并明确不要复制 TASK-006 的 F 段。
+   - F 白名单误用风险已消除：TASK-007 自己的白名单检查在 7c 末尾，列的是 TASK-007 的 7 个 apply 路径 + 本 task 文件。
+
+2. Step 7c `.wiki/*` 只读验证：已解决。
+   - v2 用 `wiki_snapshot()` 对整个 `knowledge/.wiki` 做 before/after 快照，覆盖 `id_index`、`normalized_alias_index`、`inbox_index`、`review_queue`、`capture_policy` 以及其它 `.wiki` 文件。
+   - 额外的 `git status` 检查能捕获新增未跟踪 `.wiki/` 文件；这已经能机械验证 `wiki_graph.py` 永不写 `.wiki/*`。
+
+3. Step 7c trap 清理：已解决。
+   - 已加入 `cleanup_graph_fixture` 和 `trap cleanup_graph_fixture EXIT`，末尾显式清理并 `trap - EXIT`。
+   - 中断或异常退出时 fixture 残留风险明显降低。
+
+### 其它复核
+
+- `content_hash` 的 canonical JSON 序列化参数已钉死为 `sort_keys=True`、`ensure_ascii=False`、`separators=(",", ":")`，避免 hash 因空格漂移。
+- Step 7c 已加入 `source_kind in {'canonical','wikilink','computed'}` 断言。
+- v2 没有引入新的边界矛盾；执行时只需要把 TASK-006 的 A~E 输出完整贴进 Execution log，确保 lint refactor 回归证据可追溯。
