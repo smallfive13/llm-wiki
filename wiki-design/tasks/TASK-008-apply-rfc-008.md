@@ -6,7 +6,7 @@ executor: codex
 status: pending
 type: apply
 created: 2026-05-28
-updated: 2026-05-28
+updated: 2026-05-28  # v2 after codex spec review v1
 related_rfcs:
   - rfc_20260528_008
 ---
@@ -61,7 +61,10 @@ related_rfcs:
 
 ```
 Step 0  Codex spec review + 单独 commit
-        │ 通过 → Step 1
+        │ 通过 → Step 1.0
+        ▼
+Step 1.0 抓 baseline（改代码前！）：用未改的 lint/graph 跑回归 fixture，
+         存 /tmp/lint_before.json + /tmp/graph_before.json（去时间字段）
         ▼
 Step 1  wiki_common: 加 BASE_SCHEMA（抽取 wiki_lint 内联 schema 常量）
         ▼
@@ -120,17 +123,146 @@ Step 9  task status done + Execution log + commit [task]
 
 commit：`[task] TASK-008 spec review by codex (conclusion: <...>)`。
 
-### Step 1：`wiki_common.BASE_SCHEMA`
+### Step 1.0：抓 baseline（**改任何代码前必跑**）
 
-把 `wiki_lint.py` 现有内联 schema 常量**逐一**收拢到 `wiki_common.py` 的 `BASE_SCHEMA`（结构见 RFC-008 #1），**内容不增不删**。至少覆盖：
+用**未改动**的 lint/graph 对一套确定性回归 fixture 抓基线，供 Step 7a 做 before/after 结构等价对比。
 
-- 8 类 page type → `id_prefix`（token，无下划线）+ `dir`
-- inbox：`id_prefix: "inb"`（秒级时间戳格式另存）
-- core 必填字段 / `status` / `confidence` core enum
-- source / entity 专属字段（source_id/hash_sha256/aliases/canonical_id...）
-- 三个 JSON 契约 enum（source_manifest / review_queue / capture_policy）
+```bash
+conda activate py312
+set +e
+# 回归 fixture 注入 knowledge/（改代码前用默认 knowledge/，因为此时还没 --root）
+mk_regress() {
+  mkdir -p knowledge/wiki/entities knowledge/wiki/topics knowledge/wiki/sources
+  cat > knowledge/wiki/entities/rg-a.md <<'EOF'
+---
+id: ent_20260528_rg-a
+type: entity
+status: active
+confidence: medium
+created: 2026-05-28
+updated: 2026-05-28
+last_verified: 2026-05-28
+review: false
+aliases: [RgAlias]
+canonical_id: null
+source_ids: []
+related_ids: []
+supersedes: []
+superseded_by: []
+evidence_count: 0
+---
+# Rg A
+EOF
+  cat > knowledge/wiki/sources/rg-c.md <<'EOF'
+---
+id: src_20260528_rg-c
+type: source
+status: active
+confidence: high
+created: 2026-05-28
+updated: 2026-05-28
+last_verified: 2026-05-28
+review: false
+source_id: src_20260528_rg-c
+hash_sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+original_path: raw/sources/rg-c.pdf
+source_url: null
+imported_at: 2026-05-28T10:00:00+08:00
+source_ids: []
+related_ids: []
+supersedes: []
+superseded_by: []
+evidence_count: 1
+---
+# Rg C
+EOF
+  cat > knowledge/wiki/topics/rg-b.md <<'EOF'
+---
+id: top_20260528_rg-b
+type: topic
+status: active
+confidence: medium
+created: 2026-05-28
+updated: 2026-05-28
+last_verified: 2026-05-28
+review: false
+source_ids: [src_20260528_rg-c]
+related_ids: [ent_20260528_rg-a]
+sources: []
+related: []
+supersedes: []
+superseded_by: []
+evidence_count: 1
+---
+# Rg B
+正文 [[RgAlias]] 与 [[Ghost]]
+EOF
+  # 一个 ENUM_INVALID（坏 status）触发错误路径
+  cat > knowledge/wiki/topics/rg-bad.md <<'EOF'
+---
+id: top_20260528_rg-bad
+type: topic
+status: not_a_status
+confidence: medium
+created: 2026-05-28
+updated: 2026-05-28
+last_verified: 2026-05-28
+review: false
+source_ids: []
+related_ids: []
+sources: []
+related: []
+supersedes: []
+superseded_by: []
+evidence_count: 0
+---
+# Rg Bad
+EOF
+}
+rm_regress() { rm -f knowledge/wiki/entities/rg-a.md knowledge/wiki/sources/rg-c.md knowledge/wiki/topics/rg-b.md knowledge/wiki/topics/rg-bad.md; }
+# 去时间字段后存 JSON（结构等价基准）
+strip_json() { python3 -c "
+import json,sys,re
+d=json.load(open(sys.argv[1]))
+def strip(o):
+    if isinstance(o,dict): return {k:strip(v) for k,v in o.items() if k not in ('ran_at','updated_at','generated_at')}
+    if isinstance(o,list): return [strip(x) for x in o]
+    return o
+json.dump(strip(d),open(sys.argv[2],'w'),sort_keys=True,ensure_ascii=False,indent=2)
+" "$1" "$2"; }
 
-提供 `effective_id_regex(schema)`：由 schema 的 `id_prefix` 集合动态拼 `^(src|ent|...|<extra>)_\d{8}_...`。
+trap rm_regress EXIT
+mk_regress
+python scripts/wiki_lint.py --json --check-only > /tmp/lint_before_raw.json 2>/dev/null
+strip_json /tmp/lint_before_raw.json /tmp/lint_before.json
+python scripts/wiki_graph.py --json > /tmp/graph_before_raw.json 2>/dev/null
+strip_json /tmp/graph_before_raw.json /tmp/graph_before.json
+echo "baseline content_hash: $(python3 -c "import json;print(json.load(open('/tmp/graph_before_raw.json')).get('content_hash'))")"
+rm_regress; trap - EXIT
+# 把 mk_regress/rm_regress/strip_json 三个函数原样保留到 Step 7a 复用
+```
+
+> Step 1.0 与 Step 7a 用**完全相同的 fixture**（`mk_regress`）。Step 7a 在 refactor 后重跑并和 `/tmp/lint_before.json` / `/tmp/graph_before.json` 比对。
+
+### Step 1：`wiki_common.BASE_SCHEMA`（封闭清单）
+
+把 `wiki_lint.py` 现有内联 schema / 契约常量**逐一**收拢到 `wiki_common.py` 的 `BASE_SCHEMA`（结构见 RFC-008 #1），**内容不增不删**。
+
+**封闭清单**（v2，解决 review #4——必须全覆盖，不是"至少"）。下列现有 lint 常量逐一纳入 BASE_SCHEMA（或由它派生）：
+
+- page type / prefix：`TYPE_PREFIX`（8 类 → token，无下划线）+ 各 `dir`
+- id 正则：`WIKI_ID_RE` / `INBOX_ID_RE` / `INBOX_FILE_RE`（改由 `effective_id_regex(schema)` 动态生成，base 集合等价现有）
+- 页面 enum：core `status` / `confidence`
+- inbox：`INBOX_STATUSES` / `SUGGESTED_TYPES` / inbox required fields / `id_prefix: "inb"`
+- source manifest：`SOURCE_TYPES` / `SOURCE_STATUSES` / `SOURCE_ADAPTERS` + manifest required fields
+- review queue：`REVIEW_TYPES` / `REVIEW_STATUSES` / `PRIORITIES` + review item required fields
+- capture policy：required fields + version 约束
+- core 必填字段、canonical list fields、source 专属 required fields（source_id/hash_sha256/...）、entity 专属（aliases/canonical_id）
+- context docs 四文件名（purpose/index/overview/log，无 frontmatter 反向校验）
+
+> **不进 BASE_SCHEMA 的**（保持代码常量即可）：纯算法常量（PII 正则来自 capture_policy 非 schema、label propagation 轮数、原子写临时名规则等）。executor 在 Execution log 列出"哪些进了 BASE_SCHEMA / 哪些保持代码常量"，便于 evaluator 核对无抄漏。
+
+提供 `effective_id_regex(schema)`：由 schema 的 `id_prefix` 集合动态拼 `^(src|ent|...|<extra>)_\d{8}_...`；base-only 时必须与现有 `WIKI_ID_RE` 等价。
 
 ### Step 2：`wiki_lint` 读 BASE_SCHEMA（纯抽取，逻辑不变）
 
@@ -145,6 +277,8 @@ commit：`[task] TASK-008 spec review by codex (conclusion: <...>)`。
 - `merge_schema(base, profile)`：profile 自校验通过后产出 effective schema（page_types ∪ extra；新字段 enum；extra optional fields）
 
 10 个 PROFILE_* 严格按 RFC-008 #4 表实现（SCHEMA_VERSION / PREFIX_FORMAT / PREFIX_COLLISION / TYPE_COLLISION / DIR_INVALID / FIELD_INVALID / FIELD_OVERLAP / CORE_SHADOW / ENUM_UNKNOWN_FIELD / OPTFIELD_UNKNOWN_TYPE）。任一 error → lint exit 1，不产出 effective schema。
+
+**merge 顺序钉死**（v2，解决 review 风险）：① `validate_profile`（10 个 PROFILE_* 全跑）→ 有 error 即 exit 1 停止 ② merge `page_types`（base ∪ extra）③ 计算 `effective_id_regex` / prefix→type map ④ 合并新字段 enum + extra optional fields ⑤ 再做页面/文档校验。
 
 ### Step 4：`--root` + 接 effective schema + graph
 
@@ -166,43 +300,54 @@ commit：`[task] TASK-008 spec review by codex (conclusion: <...>)`。
 ```bash
 conda activate py312
 set +e
+PASS=1; fail(){ echo "  FAIL: $1"; PASS=0; }
 
 echo "=== Preflight ==="
 python --version
 python -c "import yaml; print('PyYAML', yaml.__version__)" || { echo FAIL; exit 2; }
 
-echo "=== 7a. 零回归（无 profile，默认 knowledge/）==="
-echo "--- lint 空库 --check-only exit 0 ---"
-python scripts/wiki_lint.py --check-only >/dev/null 2>&1; echo "  exit: $? (期望 0)"
-echo "--- 重跑 RFC-006 E1~E11：复制 TASK-006 Step 6 的 Preflight + A~E（不复制 F）"
-echo "    结构等价口径：human 输出去时间行 / --json 去 ran_at 后比对；E1~E11 code 全 HIT ---"
-# >>> 粘贴 TASK-006 Step6 的 Preflight+A~E（E1~E11 注入→验 code→还原）<<<
-echo "--- 重跑 RFC-007 fixture：复制 TASK-007 Step 7c（含 trap + 全 .wiki 快照 + content_hash）"
-echo "    断言 redirect 折叠/5 类边/alias 解析/co_source/content_hash 确定性/永不写 .wiki ---"
-# >>> 粘贴 TASK-007 Step7c <<<
-echo "  （E1~E11 + RFC-007 fixture 全 OK = base 行为零回归；任一 FAIL = 失败）"
+echo "=== 7a-1. 零回归：refactor 后重跑 baseline fixture，与 Step 1.0 before 结构等价 ==="
+# 复用 Step 1.0 的 mk_regress / rm_regress / strip_json（原样保留）
+trap rm_regress EXIT
+mk_regress
+python scripts/wiki_lint.py --json --check-only > /tmp/lint_after_raw.json 2>/dev/null
+strip_json /tmp/lint_after_raw.json /tmp/lint_after.json
+python scripts/wiki_graph.py --json > /tmp/graph_after_raw.json 2>/dev/null
+strip_json /tmp/graph_after_raw.json /tmp/graph_after.json
+diff -q /tmp/lint_before.json /tmp/lint_after.json >/dev/null && echo "  OK: lint --json 结构等价（去时间字段）" || fail "lint 结构不等价（回归！）"
+HB=$(python3 -c "import json;print(json.load(open('/tmp/graph_before_raw.json')).get('content_hash'))")
+HA=$(python3 -c "import json;print(json.load(open('/tmp/graph_after_raw.json')).get('content_hash'))")
+[ "$HB" = "$HA" ] && echo "  OK: graph content_hash 一致（$HB）" || fail "graph content_hash 漂移（回归！）"
+rm_regress; trap - EXIT
+
+echo "=== 7a-2. --root knowledge 与默认调用等价 ==="
+python scripts/wiki_lint.py --json --check-only > /tmp/def_raw.json 2>/dev/null
+python scripts/wiki_lint.py --root knowledge --json --check-only > /tmp/root_raw.json 2>/dev/null
+strip_json /tmp/def_raw.json /tmp/def.json; strip_json /tmp/root_raw.json /tmp/root.json
+diff -q /tmp/def.json /tmp/root.json >/dev/null && echo "  OK: 默认 == --root knowledge（去时间字段）" || fail "--root knowledge 与默认不等价（路径迁移 bug）"
 
 echo "=== 7b. profile 专项（临时实例 knowledge-gtest/，建在 knowledge/ 外）==="
-cleanup_gtest() { rm -rf knowledge-gtest /tmp/g8*.json 2>/dev/null; }
+cleanup_gtest(){ rm -rf knowledge-gtest /tmp/g8*.json 2>/dev/null; }
 trap cleanup_gtest EXIT
-mkdir -p knowledge-gtest/wiki/cases knowledge-gtest/wiki/entities knowledge-gtest/raw/sources knowledge-gtest/inbox knowledge-gtest/maps knowledge-gtest/.wiki
-printf '{"version":1,"sources":[]}\n' > knowledge-gtest/raw/source_manifest.json
-printf '{"version":1,"items":[]}\n' > knowledge-gtest/.wiki/review_queue.json
-printf '{"version":1,"auto_capture":false,"exclude_patterns":[],"exclude_paths":[],"max_inbox_files":100,"updated_at":"2026-05-28T00:00:00+08:00"}\n' > knowledge-gtest/.wiki/capture_policy.json
-# 合法 profile：extra type case
-cat > knowledge-gtest/.wiki-profile.json <<'EOF'
-{
-  "schema_version": 1,
-  "profile": "gtest",
-  "extra_page_types": [
-    { "type": "case", "id_prefix": "case", "dir": "wiki/cases",
-      "required_fields": ["case_id"], "optional_fields": [] }
-  ],
-  "extra_field_enums": {},
-  "extra_optional_fields": {}
+setup_gtest(){
+  rm -rf knowledge-gtest
+  mkdir -p knowledge-gtest/wiki/cases knowledge-gtest/wiki/topics knowledge-gtest/raw/sources knowledge-gtest/inbox knowledge-gtest/maps knowledge-gtest/.wiki
+  # 上下文层四文件（验证 instance-root 路径迁移）
+  for f in purpose index overview log; do printf '# %s\n' "$f" > "knowledge-gtest/$f.md"; done
+  printf '{"version":1,"sources":[]}\n' > knowledge-gtest/raw/source_manifest.json
+  printf '{"version":1,"items":[]}\n' > knowledge-gtest/.wiki/review_queue.json
+  printf '{"version":1,"auto_capture":false,"exclude_patterns":[],"exclude_paths":[],"max_inbox_files":100,"updated_at":"2026-05-28T00:00:00+08:00"}\n' > knowledge-gtest/.wiki/capture_policy.json
 }
+write_profile(){ cat > knowledge-gtest/.wiki-profile.json; }
+has_code(){ python3 -c "import json,sys;d=json.load(sys.stdin);print('YES' if any(e['code']=='$1' for e in d['errors']) else 'NO')"; }
+
+# --- 7b-1. 合法 profile：extra type case 走通 lint + graph ---
+setup_gtest
+write_profile <<'EOF'
+{ "schema_version":1, "profile":"gtest",
+  "extra_page_types":[ {"type":"case","id_prefix":"case","dir":"wiki/cases","required_fields":["case_id"],"optional_fields":[]} ],
+  "extra_field_enums":{}, "extra_optional_fields":{} }
 EOF
-# case 页（合法）
 cat > knowledge-gtest/wiki/cases/c1.md <<'EOF'
 ---
 id: case_20260528_c1
@@ -222,38 +367,104 @@ evidence_count: 0
 ---
 # Case 1
 EOF
-echo "--- lint 接受 extra type case 页（无 ID_FORMAT/ENUM_INVALID）---"
-python scripts/wiki_lint.py --root knowledge-gtest --json --check-only 2>/dev/null | python3 -c "
-import json,sys; d=json.load(sys.stdin)
-bad=[e for e in d['errors'] if e['code'] in ('ID_FORMAT','ENUM_INVALID') and 'c1.md' in (e.get('file') or '')]
-print('  OK: case 页被接受' if not bad else f'  FAIL: {bad}')
-"
-echo "--- graph 把 case 投影为节点 ---"
-python scripts/wiki_graph.py --root knowledge-gtest --json 2>/dev/null | python3 -c "
-import json,sys; g=json.load(sys.stdin)
-print('  OK: case 节点在图中' if any(n['id']=='case_20260528_c1' for n in g['nodes']) else '  FAIL: case 未进图')
-"
-echo "--- 坏 profile 触发 PROFILE_*（prefix 撞 base 'ent'）---"
-cat > knowledge-gtest/.wiki-profile.json <<'EOF'
-{ "schema_version": 1, "profile": "bad",
-  "extra_page_types": [ { "type": "x", "id_prefix": "ent", "dir": "wiki/x", "required_fields": [], "optional_fields": [] } ] }
-EOF
-python scripts/wiki_lint.py --root knowledge-gtest --json --check-only 2>/dev/null | python3 -c "
-import json,sys; d=json.load(sys.stdin)
-print('  OK: PROFILE_PREFIX_COLLISION 触发' if any(e['code']=='PROFILE_PREFIX_COLLISION' for e in d['errors']) else '  FAIL: 未触发')
-"
+python scripts/wiki_lint.py --root knowledge-gtest --check-only >/dev/null 2>&1
+[ $? = 0 ] && echo "  OK: 合法 case 页 lint exit 0" || fail "合法 case 页未通过 lint"
+python scripts/wiki_graph.py --root knowledge-gtest --json 2>/dev/null | python3 -c "import json,sys;g=json.load(sys.stdin);sys.exit(0 if any(n['id']=='case_20260528_c1' for n in g['nodes']) else 1)" && echo "  OK: case 节点进图" || fail "case 未进图"
 
-echo "=== 7c. --root 清理无残留 ==="
+# --- 7b-2. case 缺 required field case_id → MISSING_FIELD ---
+cat > knowledge-gtest/wiki/cases/c1.md <<'EOF'
+---
+id: case_20260528_c1
+type: case
+status: active
+confidence: medium
+created: 2026-05-28
+updated: 2026-05-28
+last_verified: 2026-05-28
+review: false
+source_ids: []
+related_ids: []
+supersedes: []
+superseded_by: []
+evidence_count: 0
+---
+# Case 1
+EOF
+r=$(python scripts/wiki_lint.py --root knowledge-gtest --json --check-only 2>/dev/null | has_code MISSING_FIELD)
+[ "$r" = YES ] && echo "  OK: case 缺 case_id → MISSING_FIELD" || fail "profile required_field 未校验"
+rm -f knowledge-gtest/wiki/cases/c1.md
+
+# --- 7b-3. unknown type 跳过 + 计 insights ---
+cat > knowledge-gtest/wiki/topics/unk.md <<'EOF'
+---
+id: zzz_20260528_unk
+type: zzz_unknown
+status: active
+confidence: low
+created: 2026-05-28
+updated: 2026-05-28
+last_verified: 2026-05-28
+review: false
+source_ids: []
+related_ids: []
+supersedes: []
+superseded_by: []
+evidence_count: 0
+---
+# Unknown
+EOF
+python scripts/wiki_graph.py --root knowledge-gtest --json 2>/dev/null | python3 -c "import json,sys;g=json.load(sys.stdin);sys.exit(0 if not any(n.get('type')=='zzz_unknown' for n in g['nodes']) else 1)" && echo "  OK: unknown type 未进图节点" || fail "unknown type 误进图"
+python scripts/wiki_graph.py --root knowledge-gtest >/dev/null 2>&1
+grep -q "unknown" knowledge-gtest/maps/graph-insights.md && echo "  OK: unknown type 计入 insights" || fail "unknown type 未计 insights"
+rm -f knowledge-gtest/wiki/topics/unk.md
+
+# --- 7b-4. 10 个 PROFILE_* 全覆盖（每个坏 profile 触发对应 code）---
+chk_profile(){ # $1=expected_code  (stdin = profile json)
+  write_profile
+  r=$(python scripts/wiki_lint.py --root knowledge-gtest --json --check-only 2>/dev/null | has_code "$1")
+  [ "$r" = YES ] && echo "  OK: [$1]" || fail "[$1] 未触发"
+}
+chk_profile PROFILE_SCHEMA_VERSION <<'EOF'
+{"schema_version":999,"profile":"p","extra_page_types":[]}
+EOF
+chk_profile PROFILE_PREFIX_FORMAT <<'EOF'
+{"schema_version":1,"profile":"p","extra_page_types":[{"type":"x","id_prefix":"BAD_","dir":"wiki/x","required_fields":[],"optional_fields":[]}]}
+EOF
+chk_profile PROFILE_PREFIX_COLLISION <<'EOF'
+{"schema_version":1,"profile":"p","extra_page_types":[{"type":"x","id_prefix":"ent","dir":"wiki/x","required_fields":[],"optional_fields":[]}]}
+EOF
+chk_profile PROFILE_TYPE_COLLISION <<'EOF'
+{"schema_version":1,"profile":"p","extra_page_types":[{"type":"entity","id_prefix":"xe","dir":"wiki/x","required_fields":[],"optional_fields":[]}]}
+EOF
+chk_profile PROFILE_DIR_INVALID <<'EOF'
+{"schema_version":1,"profile":"p","extra_page_types":[{"type":"x","id_prefix":"xx","dir":"../escape","required_fields":[],"optional_fields":[]}]}
+EOF
+chk_profile PROFILE_FIELD_INVALID <<'EOF'
+{"schema_version":1,"profile":"p","extra_page_types":[{"type":"x","id_prefix":"xx","dir":"wiki/x","required_fields":["Bad-Field"],"optional_fields":[]}]}
+EOF
+chk_profile PROFILE_FIELD_OVERLAP <<'EOF'
+{"schema_version":1,"profile":"p","extra_page_types":[{"type":"x","id_prefix":"xx","dir":"wiki/x","required_fields":["foo"],"optional_fields":["foo"]}]}
+EOF
+chk_profile PROFILE_CORE_SHADOW <<'EOF'
+{"schema_version":1,"profile":"p","extra_page_types":[{"type":"x","id_prefix":"xx","dir":"wiki/x","required_fields":["status"],"optional_fields":[]}]}
+EOF
+chk_profile PROFILE_ENUM_UNKNOWN_FIELD <<'EOF'
+{"schema_version":1,"profile":"p","extra_page_types":[],"extra_field_enums":{"status":["a"]}}
+EOF
+chk_profile PROFILE_OPTFIELD_UNKNOWN_TYPE <<'EOF'
+{"schema_version":1,"profile":"p","extra_page_types":[],"extra_optional_fields":{"no_such_type":["foo"]}}
+EOF
+
+echo "=== 7c. 清理 + 默认实例回归确认 ==="
 cleanup_gtest; trap - EXIT
-echo "--- 默认 knowledge/ 仍正常（回归确认）---"
-python scripts/wiki_lint.py --check-only >/dev/null 2>&1; echo "  默认 exit: $? (期望 0)"
-echo "=== 白名单检查 ==="
+python scripts/wiki_lint.py --check-only >/dev/null 2>&1; [ $? = 0 ] && echo "  OK: 默认 knowledge/ 仍 exit 0" || fail "默认实例被搞挂"
+echo "=== 白名单检查（Step 8a commit 前；RFC-008 在 8b 单独提交不在此白名单）==="
 extra=$(git status --porcelain -uall | cut -c4- | grep -Ev '^scripts/wiki_common\.py$|^scripts/wiki_lint\.py$|^scripts/wiki_graph\.py$|^scripts/README\.md$|^knowledge/\.wiki-schema\.md$|^wiki-design/01-architecture\.md$|^wiki-design/05-contracts-and-next-steps\.md$|^wiki-design/tasks/TASK-008-apply-rfc-008\.md$')
-if [ -z "$extra" ]; then echo "  OK: 白名单外无改动"; else echo "  FAIL:"; echo "$extra" | sed 's/^/    /'; fi
-echo "=== 验证结束 ==="
+[ -z "$extra" ] && echo "  OK: 白名单外无改动" || { echo "  FAIL:"; echo "$extra" | sed 's/^/    /'; PASS=0; }
+echo "=== 验证结束：PASS=$PASS（1=全过）==="
 ```
 
-预期：7a 零回归全 OK（E1~E11 + RFC-007 fixture）；7b case 被接受 + 进图 + 坏 profile 报 PROFILE_PREFIX_COLLISION；7c 清理后白名单外无改动、默认实例仍 exit 0。
+预期：7a-1 lint 结构等价 + graph content_hash 一致（零回归）；7a-2 默认==--root knowledge；7b-1~3 case 走通 lint+graph、required field 校验、unknown type 跳过+计 insights；7b-4 十个 PROFILE_* 全部触发；7c 清理后默认实例 exit 0、白名单外无改动。任一 fail → PASS=0 → 本 task 失败。
 
 ### Step 8a：commit apply
 
@@ -360,3 +571,19 @@ frontmatter status → done + 追加 Execution log + `git commit -m "[task] TASK
 ## Evaluation by claude · YYYY-MM-DD
 
 （待评估者填写）
+
+## Revision v2 by claude · 2026-05-28
+
+addressing codex spec review v1 的 5 阻塞点。
+
+1. **Step 1 BASE_SCHEMA 封闭清单**（review #4）：用 Codex 给的实际常量清单（TYPE_PREFIX / WIKI_ID_RE / INBOX_ID_RE / INBOX_FILE_RE / INBOX_STATUSES / SUGGESTED_TYPES / SOURCE_TYPES·STATUSES·ADAPTERS / REVIEW_TYPES·STATUSES·PRIORITIES / 各 required fields / context docs 四文件名）列成**封闭清单**，并要求 executor 在 log 列"哪些进 BASE_SCHEMA / 哪些保持代码常量"。
+2. **Step 1.0 baseline + Step 7a 结构等价落成命令**（review #1/#2）：新增 Step 1.0（改代码前抓 baseline），定义确定性回归 fixture（mk_regress）+ strip_json（递归删 ran_at/updated_at/generated_at）。Step 7a refactor 后重跑同 fixture，`diff` lint 结构 + 比 graph content_hash。去"粘贴 TASK-006/007"占位。
+3. **Step 7a-2 --root knowledge 等价**（review #5）：默认调用 vs `--root knowledge` 去时间字段后 `diff` 等价，守路径基准迁移。
+4. **Step 7b 十个 PROFILE_* 全覆盖**（review #3）：`chk_profile` + 10 个坏 profile，逐个触发 SCHEMA_VERSION/PREFIX_FORMAT/PREFIX_COLLISION/TYPE_COLLISION/DIR_INVALID/FIELD_INVALID/FIELD_OVERLAP/CORE_SHADOW/ENUM_UNKNOWN_FIELD/OPTFIELD_UNKNOWN_TYPE。
+5. **Step 7b unknown type + case required field + 上下文层路径**（review #5/边界）：临时实例补 purpose/index/overview/log 四文件（验路径迁移）；case 缺 case_id → MISSING_FIELD；unknown type 断言不进图节点 + 计 insights。
+6. **merge 顺序钉死**（review 风险）：Step 3 加 validate→merge page_types→算 id regex→合并字段→文档校验五步。
+7. **白名单时机**（review 边界）：注明白名单检查在 Step 8a 前；RFC-008 在 8b 单独提交不在此白名单。
+
+未改动：12 条强约束主体、9 步工作流骨架。Codex Spec review v1 段保留（append-only）。
+
+待 Codex re-review。
