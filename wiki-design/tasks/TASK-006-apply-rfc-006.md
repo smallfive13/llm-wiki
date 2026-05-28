@@ -1005,3 +1005,50 @@ git commit -m "[task] TASK-006 done by codex"
 ## Evaluation by claude · YYYY-MM-DD
 
 （待评估者填写）
+
+## Spec review by codex · 2026-05-28
+
+### 完整性
+
+- 8 项 lint 范围总体齐全：schema / ID / canonical / source / alias / inbox / PII / 跨流程一致性都已覆盖。
+- enum 表基本完整，也吸收了 RFC-006 v2 review 的补充：inbox status/confidence/review、JSON `version == 1`、`resolved_action` 来源都已写入。
+- 但还有 3 个冻结约束需要在 spec 中显式钉死，否则实现者可能漏掉：
+  1. `id` prefix 必须与 `type` 对应（如 `entity -> ent_`、`topic -> top_`），否则仅校验 `<prefix>_YYYYMMDD_<slug>` 还不够。
+  2. `status: redirect` 只能用于 entity；非 entity 页面不应允许 `redirect`。
+  3. entity 页只要 `canonical_id != null`，就必须是薄重定向页，即 `status: redirect`，且目标必须是 `canonical_id: null` 的正名页。当前 spec 写了 `status: redirect` 必须有 `canonical_id`，但反向约束不够明确。
+- 三个派生层 JSON 模板基本可用：
+  - `normalized_alias_index.json` 与 05 冻结格式一致。
+  - `inbox_index.json` 与 05 冻结格式一致，但 `captured_at` 优先 frontmatter `created` 时，需要说明如何把 `YYYY-MM-DD` 转成带时区 ISO 8601（例如本地时区 00:00:00+08:00），否则输出格式和输入字段粒度不一致。
+  - `id_index.json` 的 `version + updated_at + entries` 是 RFC-006 accepted 后的兼容扩展，不阻塞。
+- 23 条 error code 覆盖大类，但上述 redirect / canonical_id 反向约束应明确复用 `REDIRECT_INVALID`，prefix/type 不匹配应明确复用 `ID_FORMAT` 或新增规则说明（不一定新增 code）。
+
+### 可执行性
+
+- Step 6 的 heredoc、`inject_and_check` 函数和 JSON 解析整体是机械可跑的；E1~E11 覆盖了主要 error code。
+- 阻塞点：`ALIAS_CONFLICT` 的处理与强约束冲突。1.4 写“同时写入 `review_queue.json type: duplicate`”，但强约束 #4 又写“不动 `knowledge/**` 数据文件（lint 只读它们）”，Step 6 E9 还用 `--check-only` 注入测试。需要二选一：
+  - MVP lint 只报告 `ALIAS_CONFLICT`，不写 `review_queue.json`；或
+  - 明确允许非 `--check-only` 写 `review_queue.json`，并修改强约束、Step 6 还原逻辑和 commit 范围。
+  以当前 RFC-006 “lint 只读源数据 + 派生层可重建”的边界，我建议采用第一种。
+- 阻塞点：当前环境 `python3` 是 3.9.6，且没有安装 PyYAML。spec 只说“PyYAML 可装”，但 Step 6 没有安装 / preflight 步骤。需要在 Step 1 或 Step 6 前加入明确检查，例如 `python3 -c "import yaml" || pip3 install --user pyyaml`，或要求执行者先安装后再进入验证。
+- Python 版本风险需收紧：前置条件写 Python 3.9+，但日期段写“3.9~3.10 需自行处理或要求 Python 3.11”。这会让执行边界摇摆。建议固定为“必须兼容 Python 3.9，手动处理 `Z` 或只接受 `+HH:MM` 时区格式并写清楚”。
+- PyYAML 会把未加引号的 YAML 日期 / 时间戳解析成 `date` / `datetime` 对象，而模板里大量日期未加引号。spec 应要求 lint 归一化这些对象后再做日期校验，否则实现容易误报。
+- Step 7a / 7b / 8 commit 拆分清晰。
+
+### 边界
+
+- 强约束 #1 的 5 个 apply 路径清晰，外加 TASK-006 自身 Step 0/8 与 RFC-006 Step 7b 的例外也清楚。
+- 阻塞点：Step 6 F 的白名单验证比强约束更宽，额外放行了 `wiki-design/rfcs/README.md` 和 `wiki-design/tasks/README.md`。这会掩盖误改索引文件，和强约束 #5“不动其它 RFC、其它 task”不一致。建议从 grep 白名单中移除这两个 README，或在强约束中明确允许修改它们。
+- 派生层 `.gitignore` 已存在，`git status --porcelain -uall` 默认不会显示 ignored 派生层，边界合理；若原子写残留 `.tmp`，当前 F 能捕获。
+- RFC-006 文件只追加 `## Applied in <Step 7a sha>`，语义明确。
+
+### 风险
+
+- PyYAML 缺失是当前本机可复现风险，需要 spec 加安装 / preflight。
+- Python 3.9 的 ISO 8601 支持边界要写死，尤其是 `Z` 后缀与带时区要求。
+- UTF-8 IO 已在 spec 中明确，风险可控。
+- `source_manifest.json` / `review_queue.json` 当前 TASK-005 初始化文件没有顶层 `updated_at`。如果 lint 按 05 顶层示例把它当必填，Step 6 A“空 knowledge 全 OK”会失败。spec 应明确这两个 JSON 顶层 `updated_at` 是可选字段（若存在则校验格式），或先通过本 task 修改初始化契约；按当前强约束不应修改 `knowledge/**`，所以建议写成可选。
+
+### 结论
+
+- 需修改。
+- 修完以上阻塞点后，核心设计可以进入 Step 1~8；不需要推翻 RFC-006 的方向。
