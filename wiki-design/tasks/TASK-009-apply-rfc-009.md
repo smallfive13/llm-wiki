@@ -173,3 +173,46 @@ echo "=== PASS=$PASS ==="; [ "$PASS" = 1 ] || exit 1
 ## Evaluation by claude · YYYY-MM-DD
 
 （待评估者填写）
+
+## Spec review by codex · 2026-05-28
+
+### 结论
+
+- 需修改。
+- RFC-009 的核心实现方向已经进入 task：`wiki_graph` lookup、4 页迁移、文档同步、旧回归 + RFC-009 专项验证都有步骤。但 Step 5 的验证脚本还不够机械，且有两个会导致执行阶段误判的验证 bug。
+
+### 重点问题
+
+1. Step 2 lookup 改法方向正确，但返回结构不够明确。
+   - 当前 `build_wikilink_lookup()` 返回单个 `Dict[str, str]`，`build_edges()` 也只做 `wikilink_lookup.get(...)`。要支持“alias 优先 + basename 重复 ambiguous + path 精确匹配”，实现很可能需要返回 alias lookup、path lookup、slug lookup、ambiguous slug 集合，或新增一个 resolver helper。
+   - Step 2 已把规则写清楚，但没有明确函数边界和调用点。建议 spec 明确：新增 `resolve_wikilink_target(raw_target, lookups)` 或让 `build_wikilink_lookup()` 返回结构化对象，避免 executor 继续用单 dict 硬塞 ambiguity。
+
+2. Step 5a “迁移后 content_hash 不变”这个断言原则上成立，但 baseline 捕获方式不够机械。
+   - 标题 target 改成 slug target 后，只要解析到同一 id，`wikilink` 边的 `source/target/relation/source_kind/weight` 不变，`content_hash` 应不变。
+   - 但 Step 1 目前只把当前 graph hash 打印到 stdout，没有写入固定文件或变量；Step 5a 也没有给出实际 compare 命令。建议 Step 1 写 `/tmp/g009_graph_before_hash`，Step 5a 明确读取并比较。
+   - Step 1 标题写“graph content_hash + lint”，但代码块没有实际保存 lint `--json` 去时间字段结果；如果要保留 lint 结构等价，应补完整命令，否则删掉这项避免假约束。
+
+3. Step 5b 的边数预期与当前仓库实际不符，并且 dangling 检查会读 stale 文件。
+   - 我本地对当前 `knowledge/` 跑 `wiki_graph.py --json`，结果是 `related=8`、`wikilink=8`，不是 spec 写的期望 `6/6`。4 页迁移只改显示层 target，不应改变这两个数量；Step 5b 期望应改为当前 baseline 值，或直接与 Step 1 baseline 的 related/wikilink 数比较。
+   - Step 5b 先跑的是 `wiki_graph.py --json`，不会写 `knowledge/maps/graph-insights.md`；随后 grep `knowledge/maps/graph-insights.md` 可能读到旧的 ignored 派生文件。应先跑普通模式 `python scripts/wiki_graph.py`，或让 `--json` 输出携带可验证 meta；按 RFC-009 口径，建议普通模式生成 insights 后再 grep。
+
+4. Step 5c 四个断言没有给出可直接执行的 fixture。
+   - 当前只有注释“断言 1/2/3/4”，没有 `setup_gtest`、profile/source manifest/review_queue/capture_policy、页面内容、python 断言和 trap 清理脚本。
+   - 尤其断言 4 “alias 优先于同名 slug”需要精确构造：一个正名 entity 带 alias `foo`，同时存在 `wiki/topics/foo.md`，另一个页面写 `[[foo]]`；期望边指向正名 entity 而不是 topic。这个构造必须写死，否则很容易测不到真实优先级。
+   - 建议按 TASK-008 7b 风格内嵌完整临时实例 fixture，且最终检查 `knowledge-gtest/` 已清理。
+
+5. 边界验证还缺两项。
+   - “不碰 `wiki_lint.py` / `wiki_common.py`”目前只在强约束里写了，Step 5 没有白名单检查；建议 commit 前加入 `git status --porcelain -uall` 白名单，明确只允许 task/RFC 外的 apply targets。
+   - “`related_ids` 不变”目前只靠文字约束和 related 边数间接守，不够直接。建议加 `git diff -- knowledge/wiki/... | grep '^[-+]  - .*_20260528_'` 或更稳的 before/after frontmatter check，确认 4 页 `related_ids` 块未改。
+
+### 其它执行前提问题
+
+- 前置条件要求 working tree clean，并要求先手动删两个 Obsidian 空桩；当前本地仍有这两个 untracked 文件。强约束白名单又没有包含它们。建议 spec 明确这是“用户/人工在执行前完成，不纳入本 task commit”，或把 cleanup 作为 Step 0 前置检查，不由 executor 在 apply commit 中处理。
+
+### 最小修改建议
+
+- Step 1 固化 baseline 文件：graph hash、related/wikilink 边数、可选 lint strip JSON。
+- Step 5a 写出真实 hash compare 命令；content_hash 不变可以保留。
+- Step 5b 改为比较 baseline 边数，且先跑普通模式生成 fresh insights 再检查 0 dangling。
+- Step 5c 内嵌完整 shell fixture，覆盖四条 RFC-009 专项断言。
+- Step 5 末尾补白名单检查和 `related_ids` 未改检查。
