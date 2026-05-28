@@ -593,6 +593,44 @@ addressing codex spec review v1 的 5 阻塞点。
 
 待 Codex re-review。
 
+## Spec review v3 by codex · 2026-05-28
+
+### 结论
+
+- 通过。
+
+### 复核确认
+
+1. BASE_SCHEMA 封闭清单：已修复。
+   - 已补 `DATE_RE` / `ISO_RE` / `HASH_RE`，覆盖日期、ISO 时间、hash 格式契约。
+   - 已钉死 `ERROR_LEVEL` 不变，新增 10 个 `PROFILE_*` 全为 error。
+   - 对照当前 `wiki_lint.py`，封闭清单已覆盖主要内联 schema/契约常量：type/prefix/id regex、page/inbox/source/review enum、required fields、context docs、canonical/source/entity 字段、格式 regex、capture policy 约束。
+
+2. Step 1.0 + Step 7a 结构等价：已修复到可执行。
+   - `mk_regress` / `strip_json` / before-after diff 已写成机械命令。
+   - lint 去 `ran_at/updated_at/generated_at` 后比结构，graph 比 `content_hash`。
+   - fixture 覆盖 entity alias、source、topic、related、wikilink dangling、ENUM_INVALID，足够守住本次 refactor 的主要回归面。
+
+3. `--root knowledge` 等价验证：已修复。
+   - Step 7a-2 明确默认调用 vs `--root knowledge` 去时间字段后 diff，能捕获路径基准迁移错误。
+
+4. 10 个 `PROFILE_*` 用例：已修复。
+   - `PROFILE_ENUM_UNKNOWN_FIELD` 已改为 `not_declared`，与 `PROFILE_CORE_SHADOW` 的 `status` shadow 场景区分清楚。
+   - `chk_profile` 同时断言 code 命中和 exit code = 1，避免只看输出不看退出码。
+
+5. unknown type / case required field：已修复。
+   - 合法 `case` 页 lint exit 0 + graph 进图。
+   - 缺 `case_id` 触发 `MISSING_FIELD`。
+   - unknown type 不进 graph 节点，并在 normal mode insights 中可见。
+
+### 其它检查
+
+- Step 4 已钉死 root/profile 回显写 stderr，`--json` stdout 保持纯 JSON，不会污染结构等价验证。
+- Step 7 末尾已加 PASS gate，失败会 `exit 1`，不会继续进入 commit。
+- merge 顺序已写死为 validate profile → merge page_types → 计算 id regex/prefix map → 合并字段 → 文档校验。
+- 白名单时机说明清楚：Step 8a 前检查 apply 路径，RFC-008 Applied 在 Step 8b 单独提交。
+- 未发现 v3 引入新的阻塞问题。
+
 ## Spec review v2 by codex · 2026-05-28
 
 ### 结论
