@@ -301,6 +301,58 @@ frontmatter status → done + 追加 Execution log + `git commit -m "[task] TASK
 
 （待 Codex 填写）
 
+## Spec review by codex · 2026-05-28
+
+### 完整性
+
+- 结论：需修改。
+- RFC-008 的主路径（BASE_SCHEMA、profile overlay、`--root` 实例根、文档同步、apply/RFC/task 三段提交）都有对应步骤。
+- BASE_SCHEMA 抽取范围写得还不够全。当前 `wiki_lint.py` 内联 schema 不只包括 8 类 page type、core enum、source/entity 字段和“三个 JSON 契约 enum”，还包括：
+  - `INBOX_STATUSES`、`SUGGESTED_TYPES`
+  - `SOURCE_TYPES`、`SOURCE_STATUSES`、`SOURCE_ADAPTERS`
+  - `REVIEW_TYPES`、`REVIEW_STATUSES`、`PRIORITIES`
+  - `TYPE_PREFIX`、`WIKI_ID_RE`、`INBOX_ID_RE`、`INBOX_FILE_RE`
+  - source manifest / review queue / capture policy 的 required field 列表
+  - context docs 四文件名、canonical list fields、source 专属 required fields、inbox required fields
+  这些都属于“schema 常量或契约常量”。Spec 的“至少覆盖”容易让 executor 只抽一部分，建议列成封闭清单或明确哪些保持代码常量不进 BASE_SCHEMA。
+- 10 个 `PROFILE_*` 在实现步骤里都列到了，但 Step 7b 只验证了 `PROFILE_PREFIX_COLLISION`。这不满足 Step 0 自己要求的“10 个 PROFILE_* 是否都有触发用例”，也无法发现 profile 自校验漏实现。
+
+### 可执行性
+
+- Step 7a 仍不可机械执行：它要求“粘贴 TASK-006 Step 6 的 Preflight+A~E”和“粘贴 TASK-007 Step 7c”，但没有内嵌脚本，也没有说明怎么把旧脚本里的 `knowledge/` 路径、`python3`/py312、白名单段、fixture 清理和 TASK-008 当前白名单结合起来。TASK-007 已经因为类似复制方式出现过白名单/环境偏差，建议把 7a 需要跑的脚本直接写死到 TASK-008，或至少给出可复制的完整 shell block。
+- “结构等价口径”没有真正落成命令。当前 7a 只回归了 E1~E11 code 命中，并没有保存 refactor 前 baseline，也没有去掉 `ran_at` / `updated_at` 后做 JSON 结构比较。若目标是证明无 profile 等价，spec 需要给出机械命令，例如：
+  - apply 前先生成 `/tmp/before_lint_check.json`、`/tmp/before_id_index.json` 等；
+  - apply 后生成对应 after；
+  - 用 Python 递归删除 `ran_at` / `updated_at` 后比较。
+  否则“结构等价”只是口头约束。
+- Step 7b 临时实例 fixture 有可跑通的雏形，但断言逻辑偏弱：
+  - `python scripts/wiki_lint.py --root knowledge-gtest --json --check-only ... | python3 -c ...` 只检查没有 `ID_FORMAT/ENUM_INVALID`，没有检查 exit code 是否为 0，也没有检查 `case_id` required field 真被校验。
+  - 坏 profile 测试只覆盖 prefix collision；缺少 `SCHEMA_VERSION / PREFIX_FORMAT / TYPE_COLLISION / DIR_INVALID / FIELD_INVALID / FIELD_OVERLAP / CORE_SHADOW / ENUM_UNKNOWN_FIELD / OPTFIELD_UNKNOWN_TYPE`。
+  - 临时实例没有 `purpose.md/index.md/overview.md/log.md`，这对当前 lint 没问题，但如果 Step 4 后 context docs path 迁移有 bug，7b 不会捕捉；可以在 fixture 里补这四个无 frontmatter文件，顺带验证 instance-root 基准。
+- `--root` 对临时实例理论上能跑通，但 spec 没有要求验证默认 `knowledge/` 与 `--root knowledge` 两种调用等价。路径基准迁移风险很高，建议 7a/7c 加一项：默认调用和 `--root knowledge` 在去时间字段后结构等价。
+
+### 边界
+
+- 临时实例建在 `knowledge-gtest/` 且有 `trap` 清理，方向正确。
+- 白名单漏了 RFC-008 文件本身。Step 8b 会追加 `wiki-design/rfcs/RFC-008-schema-profiles.md`，而 Step 7 白名单在 Step 8a 前跑可以不放行 RFC；但如果 executor 复跑验证或日志整理时机不同会误报。建议说明白名单检查只在 Step 8a 前执行，或把 Step 8b 前后检查拆开。
+- core 不变量“profile 碰不到”没有在验证体现。至少应有坏 profile 用例覆盖：
+  - `PROFILE_CORE_SHADOW`：给 `status` / `confidence` / `id` 加 enum 或 required/optional shadow
+  - `PROFILE_ENUM_UNKNOWN_FIELD`：enum 指向 base 字段或未知字段
+  - `PROFILE_DIR_INVALID`：dir 逃逸 `../` 或不在 `wiki/`
+  这样才能证明 profile 不能改 core / 不能越界。
+- `wiki_graph` 未知 type 跳过 + 计 insights 在 Step 4 写了，但 Step 7 没有验证 unknown type 被跳过，也没有验证 “计入 insights”。建议新增一个未声明 type 页，断言 graph 不含该节点，`graph-insights.md` 或 JSON meta 中有 unknown type 记录；否则实现可能直接忽略而没有 insights。
+
+### 风险
+
+- BASE_SCHEMA 抄漏是最大风险；当前 spec 还没把 lint 中所有内联契约列成封闭清单。
+- 路径基准迁移风险高；`wiki_lint.py` 当前至少有 `ROOT / "knowledge/wiki"`、`ROOT / "knowledge/inbox"`、`ROOT / "knowledge/raw/source_manifest.json"`、`ROOT / "knowledge/.wiki/*.json"`、`ROOT / "knowledge" / summary_path` 等多处硬编码，`wiki_graph.py` 也有 `.wiki` 和 `maps` 硬编码。Spec 应要求用 `INSTANCE_ROOT` 统一替换，并验证默认调用、`--root knowledge`、`--root knowledge-gtest` 三路。
+- profile 合并顺序建议写死：先 validate profile → merge page_types → 计算 id regex/prefix map → 再校验文档。现在方向有，但顺序没有足够机械。
+
+### 结论
+
+- 需修改。
+- 建议修订 Step 1 的 BASE_SCHEMA 封闭清单、Step 7a 的完整可执行零回归脚本、Step 7b 的 10 个 PROFILE_* 触发用例，以及 `--root knowledge` 等价验证后再进入执行。
+
 ## Execution log by codex · YYYY-MM-DD
 
 （待执行者填写）
