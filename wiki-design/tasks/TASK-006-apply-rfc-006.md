@@ -3,7 +3,7 @@ id: task_20260528_006
 title: Apply RFC-006 — 实现 wiki-lint MVP（scripts/wiki_lint.py + 文档同步）
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-05-28
 updated: 2026-05-28  # v4 after codex spec review v3
@@ -1294,3 +1294,93 @@ addressing codex spec review v3 的 1 个阻塞点。
 - Codex Spec review v1 / v2 / v3 段完整保留（append-only）。
 
 待 Codex re-review。
+
+## Execution log by codex · 2026-05-28
+
+### 步骤完成情况
+
+- Step 0 Spec review: 通过
+- Step 1 scripts/wiki_lint.py: done (864 行)
+- Step 2 scripts/README.md: done
+- Step 3 AGENTS.md: done
+- Step 4 wiki-design/02-workflows.md: done (替换 1 处)
+- Step 5 wiki-design/05-contracts-and-next-steps.md: done
+- Step 6 验证: 输出见下
+
+### 验证输出
+
+```
+=== Preflight: Python 3.9+ + PyYAML ===
+Python 3.9.6
+PyYAML 6.0.3
+=== A. 基线：空 knowledge/ 跑 lint 应全 OK ===
+wiki-lint v0.1.0
+================
+扫描: knowledge/wiki/ (0 文件) · knowledge/inbox/ (0 draft) · knowledge/raw/ (0 source)
+
+[OK]    schema 校验: 0 页扫描
+[OK]    ID 唯一性: 0 个 id
+[OK]    canonical 引用 + supersedes 对称
+[OK]    source 单主键
+[OK]    entity 别名（含链式跳转 / status:redirect）: 0 entries
+[OK]    inbox: 0 draft
+[OK]    PII 扫描（inbox-only）: 0 命中
+
+派生层已重建（原子写入）:
+  .wiki/id_index.json (0 entries)
+  .wiki/normalized_alias_index.json (0 entries)
+  .wiki/inbox_index.json (0 drafts)
+
+错误: 0 · 警告: 0
+  exit code: 0  (期望 0)
+=== B. 派生层 JSON 合法 + 顶层 schema ===
+  OK: knowledge/.wiki/id_index.json (version=1, 应 = 1)
+  OK: knowledge/.wiki/normalized_alias_index.json (version=1, 应 = 1)
+  OK: knowledge/.wiki/inbox_index.json (version=1, 应 = 1)
+=== C. --check-only 不写派生层 ===
+wiki-lint v0.1.0
+================
+扫描: knowledge/wiki/ (0 文件) · knowledge/inbox/ (0 draft) · knowledge/raw/ (0 source)
+
+[OK]    schema 校验: 0 页扫描
+[OK]    ID 唯一性: 0 个 id
+[OK]    canonical 引用 + supersedes 对称
+[OK]    source 单主键
+[OK]    entity 别名（含链式跳转 / status:redirect）: 0 entries
+[OK]    inbox: 0 draft
+[OK]    PII 扫描（inbox-only）: 0 命中
+
+派生层未重建（--check-only）
+
+错误: 0 · 警告: 0
+  OK: --check-only 未写派生层
+=== D. --json 输出固定结构 ===
+  OK: 顶层 6 字段齐全
+  OK: errors/warnings 6 字段齐全（空数组也通过）
+=== E. 11 项错误注入测试（每项注入 → 验 exit=1 + 期望 code → 还原） ===
+  OK: [MISSING_FIELD] 缺 id
+  OK: [ID_FORMAT] id 格式不对
+  OK: [ENUM_INVALID] type 不在 enum
+  OK: [DATE_FORMAT] created 日期非 YYYY-MM-DD
+  OK: [HASH_FORMAT] hash 非 64 位 hex
+  OK: [SOURCE_KEY_MISMATCH] source id != source_id
+  OK: [CANONICAL_DANGLING] related_ids 断引
+  OK: [SUPERSEDES_ASYMMETRY] supersedes 单向
+  OK: [ALIAS_CONFLICT] 两 entity 同 alias 规范化冲突
+  OK: [CANONICAL_CHAIN] canonical_id 链式 A→B→C
+  OK: [PII_HIT_DRAFT] inbox draft 含 PII 手机号
+=== F. 还原 + 重新 baseline ===
+  OK: 白名单外文件未被动
+=== 全部验证结束 ===
+```
+
+### Commit
+
+- Step 7a commit sha: 8b22a1a611239f3a54562e6fd9b22e0f8a06ae9e
+- Step 7b commit sha: 0eee5d0f8ab5d58b94dad9ebd052876323e06aae
+- Step 8 commit sha: 本 commit（实际 sha 由提交后回复报告）
+
+### 偏离 / 异常
+
+- Preflight 初次执行发现 PyYAML 未安装，已按 Step 1.0 指令执行 `pip3 install --user pyyaml` 安装；随后 Preflight 与 Step 6 全部通过。
+- `scripts/` 受根 `.gitignore` 的 `*` 规则影响，Step 7a 对 `scripts/wiki_lint.py` 和 `scripts/README.md` 使用 `git add -f` 纳入 apply commit；未修改 `.gitignore`，派生层 JSON 仍保持 ignored 且未提交。
