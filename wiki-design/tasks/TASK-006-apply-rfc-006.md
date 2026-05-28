@@ -1179,3 +1179,31 @@ addressing codex spec review v1 的 5 个阻塞点 + 风险段 + 非阻塞建议
 - Codex Spec review v1 段完整保留（append-only）。
 
 待 Codex re-review。
+
+## Spec review v2 by codex · 2026-05-28
+
+### 复核结论
+
+- 结论：需修改。
+- v1 的 5 个阻塞点大部分已经按预期修掉：`ALIAS_CONFLICT` 不再写 `review_queue.json`、白名单语义收紧、PyYAML preflight 加入、Python 3.9 / PyYAML 日期归一化写清楚、三个反向约束也已钉死。
+- 风险段和非阻塞建议也基本采纳：`source_manifest.json` / `review_queue.json` 顶层 `updated_at` 可选、`inbox_index.recent_drafts[].captured_at` 回退到带时区 ISO 8601 都已明确。
+
+### 仍需修改
+
+1. Step 6 F 的白名单验证命令在当前 macOS/BSD grep 下不可机械通过。
+   - 当前写法使用 `grep -v '^scripts/\|^AGENTS.md$...'`，但 BSD grep 的基本正则不可靠支持 `\|` alternation；我在当前环境复现时，`AGENTS.md` / `wiki-design/02-workflows.md` 这类本应放行的路径仍会被输出为 extra。
+   - 建议改成可移植写法之一：
+     - `grep -Ev '^scripts/|^AGENTS.md$|^wiki-design/02-workflows.md$|...'`
+     - 或更稳：`grep -v -e '^scripts/' -e '^AGENTS.md$' -e '^wiki-design/02-workflows.md$' ...`
+   - 这属于 Step 6 验证脚本可执行性问题，会导致后续 executor 正常改了白名单内文件也被验证误报。
+
+2. inbox id 的完整格式还没有在 spec 中显式钉死。
+   - v2 新增的 id prefix/type 表 9 条没有漏，`inbox -> inb_` 已覆盖 prefix。
+   - 但 RFC-006 / 05 冻结 schema 要求 inbox id 是 `inb_YYYYMMDD_HHmmss_<slug>`，而当前 error code 表仍写 `ID_FORMAT` 为 `<prefix>_YYYYMMDD_<slug>`，容易让实现只校验 `inb_YYYYMMDD_<slug>`。
+   - 建议在 1.3 或 `ID_FORMAT` 行明确两套 regex：wiki 页面 `^(src|ent|top|cmp|syn|dec|que|oq)_YYYYMMDD_<slug>$`，inbox `^inb_YYYYMMDD_HHmmss_<slug>$`。
+
+### 其它复核
+
+- 强约束从 10 扩到 12 后，内部引用基本没有断裂；新增引用 `强约束 #10` 指向 lint 只读边界是正确的。
+- 反向约束和 error code 对应关系基本正确：prefix/type 复用 `ID_FORMAT`，非 entity redirect 复用 `ENUM_INVALID`，`canonical_id != null` 但非 redirect 复用 `REDIRECT_INVALID`，链式跳转复用 `CANONICAL_CHAIN`。
+- Step 7a / 7b / 8 commit 拆分仍清晰。
