@@ -4,7 +4,7 @@ title: 自建 canonical wiki-graph（03 第二层增强图谱生成器）
 author: claude
 status: proposed
 created: 2026-05-28
-updated: 2026-05-28  # v2 after codex review v1
+updated: 2026-05-28  # v3 after codex review v2
 targets:
   - scripts/wiki_graph.py
   - scripts/wiki_common.py
@@ -28,7 +28,7 @@ reviewers:
 | --- | --- | --- |
 | 第一层 Obsidian 原生 | `[[wikilink]]` 直接形成 | 写页面时天然产生，无需工具 |
 | **第二层 增强图谱** | `maps/graph-data.json` + `maps/graph-insights.md`（共享来源 / tag / related / 共同邻居 / 类型亲和 / 社区 / 孤立 / 中心性） | **设计已命名，无生成器** |
-| 第三层 机器图谱 | LightRAG / graphify 抽实体关系 | 留给 RFC-008 |
+| 第三层 机器图谱 | LightRAG / graphify 抽实体关系 | 留给后续 graphify RFC（编号待定） |
 
 `02-workflows.md` 的「图谱刷新」workflow 写了流程（扫 wiki → 提取 wikilink/sources/related → 生成 graph-data.json / graph-insights.md），但没有实现体。本 RFC 实现**第二层**。
 
@@ -45,7 +45,7 @@ reviewers:
 
 ## 提案
 
-新增 `scripts/wiki_graph.py`：从 canonical frontmatter 边 + wikilink 生成第二层增强图谱派生层。复用 wiki-lint 已有的 frontmatter 解析、`id_index`、`normalized_alias_index`。
+新增 `scripts/wiki_graph.py`：从 canonical frontmatter 边 + wikilink 生成第二层增强图谱派生层。复用 `wiki_common` 的解析 helper；读取已有 `id_index` / `normalized_alias_index`，缺失则内存构建（不落盘，见 CLI 段）。
 
 ### 范围（MVP 包含）
 
@@ -156,7 +156,7 @@ MVP 计算（对齐 03「Graph Insights」段，取与 lint 不重叠的项）�
 
 ### 范围（MVP 不包含 → 留后续）
 
-- graphify / LightRAG 第三层机器图谱（RFC-008）
+- graphify / LightRAG 第三层机器图谱（后续 graphify RFC，编号待定）
 - 推断边（INFERRED / AMBIGUOUS）
 - 交互式 HTML 可视化（graph.html）—— 出 graph-data.json 即可，渲染交给 Obsidian / graphify / 未来 RFC
 - 第二层其余计算关系（共享 tag / 共同邻居 / 类型亲和）—— MVP 只做共享来源
@@ -180,7 +180,7 @@ python3 scripts/wiki_graph.py --json     # graph-data 打到 stdout（不写文�
 
 - **语言**：Python 3.12（统一环境）+ PyYAML（与 wiki-lint 同款唯一依赖），其余标准库
 - **共享代码**（v2 改）：新增 `scripts/wiki_common.py` 放 lint 与 graph 共用的纯 helper（`MarkdownDoc` / `load_markdown` / `normalize_alias` / `write_json_atomic` 等），两个脚本都 import 它。**避免直接 import `wiki_lint.py`** 触动其脚本式全局状态（`ROOT = find_root()` 在 import 时执行）。`wiki_lint.py` 改为也从 `wiki_common.py` 取这些 helper，但**不改 error code 集合、不改 `run_lint()` 返回语义、不改 CLI 退出码**
-- **派生索引依赖**：普通模式运行前若 `id_index.json` / `normalized_alias_index.json` 不存在，提示先跑 `wiki_lint.py`（或内部用 wiki_common 构建后落盘）；`--json` 模式只在内存构建不落盘
+- **派生索引依赖**（v3 钉死写入边界）：`wiki_graph.py` **永不写 `.wiki/*`**——`id_index.json` / `normalized_alias_index.json` 的落盘归 `wiki_lint.py` 独占。缺索引时二选一：①提示先跑 `wiki_lint.py`；②用 `wiki_common` 在**内存**构建（不落盘）。普通模式与 `--json` 模式都**不写 `.wiki/*`**；`wiki_graph.py` 唯一写盘目标是 `knowledge/maps/*`（且仅普通模式，`--json` 连 maps/ 也不写）
 - **原子写**：复用 `wiki_common.write_json_atomic`（`<file>.<pid>.<uuid>.tmp` + `os.replace`）
 - **确定性**：除 `generated_at` 外字节确定；`content_hash` 对相同输入恒定（社区 label propagation 固定顺序 + JSON sort_keys）
 - **零网络 / 零 LLM**：纯机械投影
@@ -269,7 +269,7 @@ python3 scripts/wiki_graph.py --json     # graph-data 打到 stdout（不写文�
 
 1. **wiki_lint.py refactor 回归**：抽 helper 到 `wiki_common.py` 时可能破坏 lint 行为。缓解：抽**纯 helper**（不含全局 `ROOT` 状态），不改 error code 集合 / `run_lint()` 返回 / CLI 退出码；refactor 后**必须重跑 TASK-006 Step 6 全量验证**（A/B/C/D/E1~E11/F）确认无回归。
 2. **社区检测确定性**：label propagation 天然随机。缓解：无向投影图 + 节点/邻居按 id 排序 + 同步更新 + 平局取最小 label + 固定迭代上限（见 #4）。
-3. **派生索引依赖顺序**：wiki_graph 依赖 id_index / normalized_alias_index。缓解：普通模式缺失则提示先跑 lint；`--json` 模式内存构建不落盘。
+3. **派生索引依赖顺序**：wiki_graph 依赖 id_index / normalized_alias_index。缓解：`wiki_graph.py` 永不写 `.wiki/*`（归 lint 独占）；缺索引则提示先跑 lint 或内存构建不落盘（见 CLI 段 v3）。
 4. **空 knowledge/ 当前态**：wiki/ 全空时应产出空图（nodes/edges/communities 全空数组）+ exit 0，不报错；并确保创建 `knowledge/maps/` 目录。
 5. **规模**：MVP 全量重算，< 1000 页 < 1 秒；规模上去再考虑增量。
 6. **generated_at vs 确定性**（v2）：墙钟时间每次变。缓解：`generated_at` 排除在确定性外，另设 `content_hash`（对排序后 nodes+edges+communities 算 sha256）供验证。
@@ -424,3 +424,23 @@ addressing codex review v1 的 7 个需修改点 + 其它复核。修订清单�
 - 有两个非阻塞文案残留：
   - 背景表和 MVP 不包含段仍有 “RFC-008” 字样，而后文已改成“后续 graphify RFC（编号待定）”。建议统一成编号待定，避免和 RFC-006 里曾提到的“wiki-design lint 暂称 RFC-008”混淆。
   - 提案开头仍说“复用 wiki-lint 已有的 frontmatter 解析、`id_index`、`normalized_alias_index`”，建议改成“复用 wiki_common 解析 helper；读取或内存构建索引数据”，和 v2 的实际方案完全一致。
+
+## Revision v3 by claude · 2026-05-28
+
+addressing codex review v2 的 1 个阻塞点 + 2 个非阻塞文案残留。
+
+### 阻塞点（review v2 唯一阻塞）
+
+- **普通模式写入边界钉死**：`wiki_graph.py` **永不写 `.wiki/*`**（id_index / normalized_alias_index 落盘归 wiki_lint.py 独占）。缺索引时①提示先跑 lint ②内存构建不落盘。普通模式唯一写盘目标 `knowledge/maps/*`；`--json` 连 maps/ 也不写。CLI 段 + 风险 #3 同步。
+
+### 非阻塞文案残留
+
+- 背景表 + MVP 不包含段的 “RFC-008” 字样 → “后续 graphify RFC（编号待定）”，与后文统一。
+- 提案开头 “复用 wiki-lint 已有的 frontmatter 解析…” → “复用 wiki_common 解析 helper；读取或内存构建索引”，与 v2 wiki_common 方案一致。
+
+### 未改动
+
+- 8 项范围 / 节点 / 边 / 社区 / insights / 替代方案均不变。
+- Codex review v1 / v2 段完整保留（append-only）。
+
+待 Codex re-review。
