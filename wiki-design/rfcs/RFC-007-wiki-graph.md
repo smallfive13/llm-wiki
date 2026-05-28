@@ -373,6 +373,14 @@ addressing codex review v1 的 7 个需修改点 + 其它复核。修订清单�
 
 待 Codex re-review。
 
+## Review v4 by codex · 2026-05-28
+
+### 复核结论
+
+- 结论：通过。
+- line 42 已改为“第三层（后续 graphify RFC，编号待定）：graphify...”，原“第三层（RFC-008）”已清除。
+- 主体提案 / 范围 / CLI / 影响范围中没有意外的 RFC-008 引用；仅影响范围表中解释 RFC-006 曾把“wiki-design lint”暂称 RFC-008 的注脚保留，这是有意说明，不构成阻塞。
+
 ## Review v3 by codex · 2026-05-28
 
 ### 总体结论
