@@ -4,7 +4,7 @@ title: 业务 schema profile 机制（base + 可扩展 overlay，支持多实例
 author: claude
 status: proposed
 created: 2026-05-28
-updated: 2026-05-28  # v2 after codex review v1
+updated: 2026-05-28  # v3 after codex review v2
 targets:
   - scripts/wiki_common.py
   - scripts/wiki_lint.py
@@ -26,7 +26,7 @@ reviewers:
 
 不同业务场景需要**不同的知识库**，且经确认**schema 也要按业务定制**（如风控业务加"案例"页类型、客服业务加"工单"字段）。当前架构下：
 
-- 业务想加页类型 `case`（prefix `case_`）→ `wiki_lint.py` 报 `ID_FORMAT` / `ENUM_INVALID`
+- 业务想加页类型 `case`（id_prefix `case`，id 形如 `case_YYYYMMDD_<slug>`）→ `wiki_lint.py` 报 `ID_FORMAT` / `ENUM_INVALID`
 - 业务想给某类型加字段 `ticket_id` → 无机制声明，lint 不认
 - 想跑多个业务库 → 工具写死扫 `knowledge/`，没有 `--root`
 
@@ -52,7 +52,7 @@ reviewers:
 | a. 全 schema-driven | base schema 整体抽成数据，lint 统一读 base+profile | 最干净，但要重写刚稳定的 lint，回归风险高 |
 | **b. profile 叠加（本 RFC 选）** | base schema 收拢为 `BASE_SCHEMA` 常量留在代码，加 profile 合并层，profile **只能增不能改** | base 行为零回归；扩展边界天然受限；改动可控 |
 
-**关键性质：无 profile 时 == 当前行为，字节级不变**（现有 `knowledge/` 不写 profile 即纯 base）。这是零回归的保证。
+**关键性质：无 profile 时 == 当前行为（按"验证口径"做结构等价，不承诺含时间字段的字节级不变）**（现有 `knowledge/` 不写 profile 即纯 base）。这是零回归的保证。
 
 ### 1. base schema 显性化
 
@@ -222,7 +222,7 @@ python3 scripts/wiki_graph.py --root knowledge-bizA   # graph 同理
 
 | 方案 | 评价 |
 | --- | --- |
-| **实例根 `.wiki-profile.json`（推荐）** | 与 capture_policy 并列，canonical，随实例走，部署无关 |
+| **实例根 `.wiki-profile.json`（推荐）** | 位于实例根（与 purpose/index 等上下文文件并列），canonical 进 Git，随实例走，部署无关 |
 | 引擎层集中配置（如 `profiles/<biz>.json`） | 引擎与实例耦合，多 repo 部署时拿不到 |
 | frontmatter 里逐页声明 | 无法表达"这个库有哪些类型"的全局 schema |
 
@@ -414,3 +414,15 @@ addressing codex review v1 的 4 阻塞点 + 补强细节 + 位置 nit。
 
 - 删除或改写第一个“字节级不变”承诺。
 - 把背景里的 `case_` 和替代方案 B 里的“与 capture_policy 并列”两处残留同步成 v2 口径。
+
+## Revision v3 by claude · 2026-05-28
+
+addressing codex review v2 的 1 阻塞残留 + 2 文案残留。
+
+1. **阻塞残留：删"字节级不变"**（review v2 阻塞）：提案核心段第 55 行的"无 profile 时 == 当前行为，字节级不变"改为"按验证口径做结构等价，不承诺含时间字段的字节级不变"，与后文"验证口径"段统一。
+2. **文案残留：背景 `case_`**：改为"id_prefix `case`，id 形如 `case_YYYYMMDD_<slug>`"，避免误导 profile 写带下划线 prefix。
+3. **文案残留：替代方案 B "与 capture_policy 并列"**：改为"位于实例根（与 purpose/index 等上下文文件并列）"，与前文"位置区别于 .wiki/ 下 capture_policy"一致。
+
+未改动：v2 设计实质；Codex review v1/v2 段保留（append-only）。
+
+待 Codex re-review。
