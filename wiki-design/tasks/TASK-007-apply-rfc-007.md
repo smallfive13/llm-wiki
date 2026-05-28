@@ -546,9 +546,56 @@ git commit -m "[rfc-007] applied in <Step 8 sha>"
 
 （待执行者在 Step 10 填写）
 
-## Evaluation by claude · YYYY-MM-DD
+## Evaluation by claude · 2026-05-28
 
-（待评估者填写）
+evaluator 在 py312 下**独立重跑 lint 回归 + 自建 wiki_graph fixture**（不只信 executor 自报）。
+
+### 1. 协议合规 — PASS
+
+- Step 8 `7732ced` 恰好动 7 个白名单文件（wiki_graph.py / wiki_common.py / wiki_lint.py / README / 02 / 03 / .gitignore）。
+- Step 9 `efc1cf4` 仅 RFC-007；Step 10 `033a986` 仅 TASK-007。
+- `maps/*` 派生层未进任何 commit（.gitignore 挡住）；working tree clean。
+
+### 2. lint 零回归（最高优先级关）— PASS
+
+- `wiki_common.py` import 无副作用（导出 MarkdownDoc / first_h1 等纯 helper，不触发 find_root/扫描）。
+- 空库 `--check-only` + 全跑均 exit 0。
+- **独立注入 4 类错误，code 全部仍正确触发**：`MISSING_FIELD` / `SOURCE_KEY_MISMATCH` / `CANONICAL_CHAIN` / `PII_HIT_DRAFT`。证明 refactor 抽 helper 到 wiki_common 后 lint 检测逻辑完好无回归。
+
+### 3. wiki_graph 正确性（独立 fixture）— PASS
+
+自建 fixture（正名 A+alias Bar / redirect R→A / source D / topic C 带 related+source+`[[Bar]]`+`[[Evr]]`+`[[Ghost]]` / topic F 共享 source）验证：
+
+- redirect 页 R **不成节点**（折叠）✓
+- 5 类边：`source_ref` / `related` / `wikilink` / `co_source` 全部正确 ✓
+- `[[Bar]]`（alias）与 `[[Evr]]`（redirect）**都解析到正名 ent_eva** ✓
+- `[[Ghost]]` 进 graph-insights dangling ✓
+- 边不合并（relation 单值字符串）+ source_kind ∈ {canonical,wikilink,computed} ✓
+- **content_hash 两次运行一致**（确定性）✓
+- 空库产空图 + exit 0 ✓
+
+### 4. spec 保真 — PASS
+
+- content_hash 序列化参数钉死：`json.dumps(canonical, sort_keys=True, ensure_ascii=False, separators=(",", ":"))`（line 296）。
+- **wiki_graph 永不写 `.wiki/*`**：全 `.wiki/` 目录快照在普通模式 + `--json` 跑后**字节不变**；line 111 仅**读** normalized_alias_index，写函数 write_maps/write_text_atomic 只 target maps/。
+- `--json` 全程只读：maps/ 快照前后不变。
+- 边不合并 / redirect 折叠 / wikilink 内存解析均与 RFC-007 一致。
+
+### 5. 文档同步 + commit 卫生 — PASS
+
+- `02-workflows.md`：图谱刷新流程 → `python3 scripts/wiki_graph.py`。
+- `03-obsidian-graph.md`：第二层 MVP 落地标注（canonical+wikilink+co_source，其余计算关系标后续）。
+- `scripts/README.md`：新增 wiki-graph 段（用法 / 输出 / 边类型 / MVP 不覆盖）。
+- `.gitignore`：+`knowledge/maps/knowledge-graph.md` +`knowledge/maps/graph-insights.md`。
+- 三 commit 拆分规范，RFC-007 `Applied in 7732ced` 与 Step 8 sha 对齐。
+
+### 小瑕疵（不阻塞，建议跟进）
+
+- **`scripts/__pycache__/` 未被 .gitignore**：根 `.gitignore` 用 `!scripts/**` 放行 scripts/ 全部，跑脚本生成的 `__pycache__/*.pyc` 会显示为 untracked，有被误 commit 风险。Codex 未误提交（working tree 干净），但建议补 `scripts/__pycache__/` 到 .gitignore（独立小修）。
+
+### 结论
+
+**PASS**。wiki-graph MVP 落地，03 第二层增强图谱有了生成器。最关键的 lint 零回归关独立复跑确认无回归。knowledge/ 一旦有真实页面，`wiki_graph.py` 即可投影 canonical 图谱 + insights。遗留的 `scripts/__pycache__/` gitignore 建议作为独立小修跟进。
 
 ## Spec review by codex · 2026-05-28
 
