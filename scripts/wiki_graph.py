@@ -15,7 +15,19 @@ from itertools import combinations
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
-from wiki_common import MarkdownDoc, first_h1, load_markdown, normalize_alias, now_iso, write_json_atomic
+from wiki_common import (
+    BASE_SCHEMA,
+    MarkdownDoc,
+    first_h1,
+    load_markdown,
+    load_profile,
+    merge_schema,
+    normalize_alias,
+    now_iso,
+    profile_name,
+    validate_profile,
+    write_json_atomic,
+)
 
 
 VERSION = 1
@@ -27,10 +39,31 @@ Edge = Dict[str, Any]
 
 def find_root() -> Path:
     root = Path.cwd().resolve()
-    if not (root / "knowledge").is_dir():
-        print("wiki-graph config error: must run from repo root containing knowledge/", file=sys.stderr)
+    if not (root / "scripts").is_dir():
+        print("wiki-graph config error: must run from repo root containing scripts/", file=sys.stderr)
         sys.exit(2)
     return root
+
+
+def instance_root(repo_root: Path, raw_root: Optional[str]) -> Path:
+    path = Path(raw_root) if raw_root else repo_root / "knowledge"
+    if not path.is_absolute():
+        path = repo_root / path
+    path = path.resolve()
+    if not path.is_dir():
+        print(f"wiki-graph config error: instance root not found: {path}", file=sys.stderr)
+        sys.exit(2)
+    return path
+
+
+def load_effective_schema(root: Path) -> Tuple[Dict[str, Any], str]:
+    profile = load_profile(root)
+    issues = validate_profile(profile, BASE_SCHEMA)
+    if issues:
+        for item in issues:
+            print(f"wiki-graph config error: {item.code} {item.field}: {item.message}", file=sys.stderr)
+        sys.exit(2)
+    return merge_schema(BASE_SCHEMA, profile), profile_name(profile)
 
 
 def rel_to_repo(path: Path, root: Path) -> str:
@@ -49,7 +82,7 @@ def read_json(path: Path) -> Dict[str, Any]:
 
 
 def scan_wiki_docs(root: Path) -> List[MarkdownDoc]:
-    wiki_root = root / "knowledge/wiki"
+    wiki_root = root / "wiki"
     if not wiki_root.exists():
         return []
     return [load_markdown(path, root) for path in sorted(wiki_root.glob("**/*.md"))]
@@ -90,25 +123,31 @@ def fold_target(target: str, redirects: Dict[str, str]) -> str:
     return redirects.get(target, target)
 
 
-def build_nodes(docs: Iterable[MarkdownDoc]) -> Dict[str, Node]:
+def build_nodes(docs: Iterable[MarkdownDoc], schema: Dict[str, Any]) -> Tuple[Dict[str, Node], List[Dict[str, str]]]:
     nodes: Dict[str, Node] = {}
+    unknown_types: List[Dict[str, str]] = []
+    known_types = set(schema.get("page_types", {}).keys())
     for doc in docs:
         pid = page_id(doc)
         if not pid or is_redirect(doc):
             continue
+        page_type = str(doc.fm.get("type"))
+        if page_type not in known_types:
+            unknown_types.append({"id": pid, "type": page_type, "file": doc.rel})
+            continue
         nodes[pid] = {
             "id": pid,
             "label": node_label(doc),
-            "type": doc.fm.get("type"),
+            "type": page_type,
             "status": doc.fm.get("status"),
             "degree": 0,
             "community": None,
         }
-    return dict(sorted(nodes.items()))
+    return dict(sorted(nodes.items())), unknown_types
 
 
 def read_alias_index(root: Path, redirects: Dict[str, str]) -> Dict[str, str]:
-    path = root / "knowledge/.wiki/normalized_alias_index.json"
+    path = root / ".wiki/normalized_alias_index.json"
     data = read_json(path)
     entries = data.get("entries", {})
     lookup: Dict[str, str] = {}
@@ -280,10 +319,10 @@ def detect_communities(nodes: Dict[str, Node], edges: List[Edge]) -> List[Dict[s
     return communities
 
 
-def build_graph(root: Path) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+def build_graph(root: Path, schema: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     docs = scan_wiki_docs(root)
     redirects = build_redirect_map(docs)
-    nodes = build_nodes(docs)
+    nodes, unknown_types = build_nodes(docs, schema)
     wikilink_lookup = build_wikilink_lookup(root, docs, redirects)
     edges, dangling = build_edges(docs, nodes, redirects, wikilink_lookup)
     assign_degree(nodes, edges)
@@ -311,6 +350,7 @@ def build_graph(root: Path) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     meta = {
         "dangling_wikilinks": dangling,
         "type_counts": Counter(str(node.get("type")) for node in sorted_nodes),
+        "unknown_type_pages": unknown_types,
     }
     return graph, meta
 
@@ -374,6 +414,10 @@ def render_insights(graph: Dict[str, Any], meta: Dict[str, Any]) -> str:
         f"- {item['target']} (from {item['source']}, {item['file']})"
         for item in meta["dangling_wikilinks"]
     ]
+    unknown = [
+        f"- unknown type {item['type']} (id {item['id']}, {item['file']})"
+        for item in meta.get("unknown_type_pages", [])
+    ]
 
     lines = [
         "# Graph Insights",
@@ -399,12 +443,16 @@ def render_insights(graph: Dict[str, Any], meta: Dict[str, Any]) -> str:
         "## Dangling Wikilinks",
         "",
         *table_or_none(dangling),
+        "",
+        "## Unknown Types",
+        "",
+        *table_or_none(unknown),
     ]
     return "\n".join(lines) + "\n"
 
 
 def write_maps(root: Path, graph: Dict[str, Any], meta: Dict[str, Any]) -> None:
-    maps_root = root / "knowledge/maps"
+    maps_root = root / "maps"
     write_json_atomic(maps_root / "graph-data.json", graph)
     write_text_atomic(maps_root / "knowledge-graph.md", render_graph_overview(graph, meta))
     write_text_atomic(maps_root / "graph-insights.md", render_insights(graph, meta))
@@ -412,10 +460,13 @@ def write_maps(root: Path, graph: Dict[str, Any], meta: Dict[str, Any]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build llm-wiki graph projection")
+    parser.add_argument("--root", help="实例根目录；缺省为 ./knowledge")
     parser.add_argument("--json", action="store_true", dest="json_output")
     args = parser.parse_args()
-    root = find_root()
-    graph, meta = build_graph(root)
+    root = instance_root(find_root(), args.root)
+    schema, active_profile = load_effective_schema(root)
+    print(f"wiki-graph instance root: {root} · profile: {active_profile}", file=sys.stderr)
+    graph, meta = build_graph(root, schema)
     if args.json_output:
         print(json.dumps(graph, ensure_ascii=False, indent=2, sort_keys=True))
     else:

@@ -24,77 +24,52 @@ except Exception as exc:  # pragma: no cover - exercised by environment
     sys.exit(2)
 
 from wiki_common import (
+    BASE_SCHEMA,
     LOCAL_TZ,
     MarkdownDoc,
+    PROFILE_ERROR_CODES,
+    ProfileIssue,
+    effective_id_regex,
     first_h1,
     load_markdown as common_load_markdown,
+    load_profile,
+    merge_schema,
     normalize_alias,
     now_iso,
+    profile_name,
     rel_to_knowledge as common_rel_to_knowledge,
+    type_prefix,
+    validate_profile,
     write_json_atomic,
 )
 
 
 VERSION = "0.1.0"
+ROOT = Path.cwd().resolve()
+INSTANCE_ROOT = ROOT / "knowledge"
+SCHEMA = BASE_SCHEMA
+PROFILE_NAME = "base"
+PROFILE_ISSUES: List[ProfileIssue] = []
 
-PAGE_TYPES = {
-    "source",
-    "entity",
-    "topic",
-    "comparison",
-    "synthesis",
-    "decision",
-    "query",
-    "open-question",
-}
-PAGE_STATUSES = {"draft", "active", "stale", "archived", "redirect"}
-CONFIDENCES = {"low", "medium", "high"}
-INBOX_STATUSES = {"draft", "promoted", "dropped"}
-SUGGESTED_TYPES = {
-    "topic",
-    "entity",
-    "comparison",
-    "synthesis",
-    "decision",
-    "query",
-    "open-question",
-}
-SOURCE_TYPES = {"pdf", "markdown", "web", "chat", "image", "manual", "code"}
-SOURCE_STATUSES = {"new", "triaged", "ingested", "skipped", "failed", "deleted"}
-SOURCE_ADAPTERS = {"local_file", "web_clipper", "manual", "llm_wiki_app", "custom"}
-REVIEW_TYPES = {
-    "contradiction",
-    "duplicate",
-    "missing_page",
-    "confirm",
-    "suggestion",
-    "source_gap",
-    "stale_claim",
-}
-REVIEW_STATUSES = {"pending", "resolved", "dismissed"}
-PRIORITIES = {"low", "medium", "high"}
+PAGE_TYPES: set = set()
+PAGE_STATUSES: set = set()
+CONFIDENCES: set = set()
+INBOX_STATUSES: set = set()
+SUGGESTED_TYPES: set = set()
+SOURCE_TYPES: set = set()
+SOURCE_STATUSES: set = set()
+SOURCE_ADAPTERS: set = set()
+REVIEW_TYPES: set = set()
+REVIEW_STATUSES: set = set()
+PRIORITIES: set = set()
 
-TYPE_PREFIX = {
-    "source": "src",
-    "entity": "ent",
-    "topic": "top",
-    "comparison": "cmp",
-    "synthesis": "syn",
-    "decision": "dec",
-    "query": "que",
-    "open-question": "oq",
-    "inbox": "inb",
-}
-WIKI_ID_RE = re.compile(
-    r"^(src|ent|top|cmp|syn|dec|que|oq)_(\d{8})_([a-z0-9][a-z0-9-]*)(?:_(\d{2,3}))?$"
-)
-INBOX_ID_RE = re.compile(r"^inb_(\d{8})_(\d{6})_([a-z0-9][a-z0-9-]*)(?:-(\d{2,3}))?$")
-INBOX_FILE_RE = re.compile(r"^(\d{8})-(\d{6})-([a-z0-9][a-z0-9-]*)(?:-\d{2,3})?\.md$")
-DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-ISO_RE = re.compile(
-    r"^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(\.\d+)?(Z|[+-]\d{2}:?\d{2})$"
-)
-HASH_RE = re.compile(r"^[0-9a-f]{64}$")
+TYPE_PREFIX: Dict[str, str] = {}
+WIKI_ID_RE = re.compile(r"^$")
+INBOX_ID_RE = re.compile(r"^$")
+INBOX_FILE_RE = re.compile(r"^$")
+DATE_RE = re.compile(r"^$")
+ISO_RE = re.compile(r"^$")
+HASH_RE = re.compile(r"^$")
 
 ERROR_CODES = {
     "MISSING_FIELD",
@@ -120,14 +95,9 @@ ERROR_CODES = {
     "PII_HIT_DRAFT",
     "PII_HIT_ARCHIVE",
     "PII_HIT_WIKI",
-}
+} | PROFILE_ERROR_CODES
 
-ERROR_LEVEL = {
-    "REVIEW_QUEUE_PATH_DRIFT": "warning",
-    "STATUS_NOT_ARCHIVED": "warning",
-    "PII_HIT_ARCHIVE": "warning",
-    "PII_HIT_WIKI": "warning",
-}
+ERROR_LEVEL = dict(BASE_SCHEMA["error_level"])
 
 
 @dataclass
@@ -151,11 +121,66 @@ class Issue:
 
 
 def rel_to_knowledge(path: Path) -> str:
-    return common_rel_to_knowledge(path, ROOT)
+    return common_rel_to_knowledge(path, INSTANCE_ROOT)
 
 
 def rel_to_repo(path: Path) -> str:
     return path.relative_to(ROOT).as_posix()
+
+
+def _repo_root() -> Path:
+    root = Path.cwd().resolve()
+    if not (root / "scripts").is_dir():
+        print("wiki-lint config error: must run from repo root containing scripts/", file=sys.stderr)
+        sys.exit(2)
+    return root
+
+
+def _instance_root(repo_root: Path, raw_root: Optional[str]) -> Path:
+    path = Path(raw_root) if raw_root else repo_root / "knowledge"
+    if not path.is_absolute():
+        path = repo_root / path
+    path = path.resolve()
+    if not path.is_dir():
+        print(f"wiki-lint config error: instance root not found: {path}", file=sys.stderr)
+        sys.exit(2)
+    return path
+
+
+def configure(args: argparse.Namespace) -> None:
+    global ROOT, INSTANCE_ROOT, SCHEMA, PROFILE_NAME, PROFILE_ISSUES
+    global PAGE_TYPES, PAGE_STATUSES, CONFIDENCES, INBOX_STATUSES, SUGGESTED_TYPES
+    global SOURCE_TYPES, SOURCE_STATUSES, SOURCE_ADAPTERS, REVIEW_TYPES, REVIEW_STATUSES, PRIORITIES
+    global TYPE_PREFIX, WIKI_ID_RE, INBOX_ID_RE, INBOX_FILE_RE, DATE_RE, ISO_RE, HASH_RE, ERROR_LEVEL
+
+    ROOT = _repo_root()
+    INSTANCE_ROOT = _instance_root(ROOT, args.root)
+    profile = load_profile(INSTANCE_ROOT)
+    PROFILE_NAME = profile_name(profile)
+    PROFILE_ISSUES = validate_profile(profile, BASE_SCHEMA)
+    SCHEMA = BASE_SCHEMA if PROFILE_ISSUES else merge_schema(BASE_SCHEMA, profile)
+
+    PAGE_TYPES = set(SCHEMA["page_types"].keys())
+    PAGE_STATUSES = set(SCHEMA["core_enums"]["status"])
+    CONFIDENCES = set(SCHEMA["core_enums"]["confidence"])
+    INBOX_STATUSES = set(SCHEMA["inbox"]["statuses"])
+    SUGGESTED_TYPES = set(SCHEMA["inbox"]["suggested_types"])
+    source_contract = SCHEMA["json_contracts"]["source_manifest"]
+    review_contract = SCHEMA["json_contracts"]["review_queue"]
+    SOURCE_TYPES = set(source_contract["source_types"])
+    SOURCE_STATUSES = set(source_contract["statuses"])
+    SOURCE_ADAPTERS = set(source_contract["adapters"])
+    REVIEW_TYPES = set(review_contract["types"])
+    REVIEW_STATUSES = set(review_contract["statuses"])
+    PRIORITIES = set(review_contract["priorities"])
+    TYPE_PREFIX = type_prefix(SCHEMA)
+    WIKI_ID_RE = effective_id_regex(SCHEMA)
+    INBOX_ID_RE = re.compile(SCHEMA["inbox"]["id_pattern"])
+    INBOX_FILE_RE = re.compile(SCHEMA["inbox"]["file_pattern"])
+    DATE_RE = re.compile(SCHEMA["format_patterns"]["date"])
+    ISO_RE = re.compile(SCHEMA["format_patterns"]["iso"])
+    HASH_RE = re.compile(SCHEMA["format_patterns"]["hash"])
+    ERROR_LEVEL = dict(SCHEMA["error_level"])
 
 
 def is_valid_date(value: Any) -> bool:
@@ -207,7 +232,7 @@ def read_json(path: Path, errors: List[Issue]) -> Dict[str, Any]:
 
 
 def load_markdown(path: Path) -> MarkdownDoc:
-    return common_load_markdown(path, ROOT)
+    return common_load_markdown(path, INSTANCE_ROOT)
 
 
 def issue(code: str, file: Optional[str], line: Optional[int], field: Optional[str], message: str, hint: str) -> Issue:
@@ -343,9 +368,9 @@ def check_date_json(value: Any, rel: str, field: str, issues: Dict[str, List[Iss
 
 
 def scan_markdown_files() -> Tuple[List[MarkdownDoc], List[MarkdownDoc], List[MarkdownDoc]]:
-    wiki_docs = [load_markdown(p) for p in sorted((ROOT / "knowledge/wiki").glob("**/*.md"))]
-    inbox_docs = [load_markdown(p) for p in sorted((ROOT / "knowledge/inbox").glob("*.md"))]
-    inbox_archived = [load_markdown(p) for p in sorted((ROOT / "knowledge/inbox/archive").glob("**/*.md"))]
+    wiki_docs = [load_markdown(p) for p in sorted((INSTANCE_ROOT / "wiki").glob("**/*.md"))]
+    inbox_docs = [load_markdown(p) for p in sorted((INSTANCE_ROOT / "inbox").glob("*.md"))]
+    inbox_archived = [load_markdown(p) for p in sorted((INSTANCE_ROOT / "inbox/archive").glob("**/*.md"))]
     return wiki_docs, inbox_docs, inbox_archived
 
 
@@ -365,16 +390,7 @@ def build_id_index(wiki_docs: List[MarkdownDoc], issues: Dict[str, List[Issue]])
 
 
 def validate_wiki_docs(wiki_docs: List[MarkdownDoc], issues: Dict[str, List[Issue]]) -> None:
-    required_common = [
-        "id",
-        "type",
-        "status",
-        "confidence",
-        "created",
-        "updated",
-        "last_verified",
-        "review",
-    ]
+    required_common = SCHEMA["core_required_fields"]
     for doc in wiki_docs:
         if not doc.has_frontmatter:
             add_issue(issues, issue("MISSING_FIELD", doc.rel, 1, None, "wiki 页面缺少 frontmatter", "补齐标准 frontmatter"))
@@ -390,10 +406,15 @@ def validate_wiki_docs(wiki_docs: List[MarkdownDoc], issues: Dict[str, List[Issu
             add_issue(issues, issue("ID_FORMAT", doc.rel, line_for(doc, "id"), "id", "wiki 页面 id 格式不符或 prefix 与 type 不匹配", "使用 <prefix>_YYYYMMDD_<slug>"))
         if doc.fm.get("status") == "redirect" and doc.fm.get("type") != "entity":
             add_issue(issues, issue("ENUM_INVALID", doc.rel, line_for(doc, "status"), "status", "redirect 只能用于 entity 页", "改为合法状态或改为 entity"))
-        for field in ("source_ids", "related_ids", "supersedes", "superseded_by", "aliases"):
+        for field in SCHEMA["canonical_list_fields"] + ["aliases"]:
             check_list_type(doc, field, issues)
+        page_type_cfg = SCHEMA["page_types"].get(str(doc.fm.get("type")), {})
+        require_fields(doc, page_type_cfg.get("required_fields", []), issues)
+        for field, allowed in SCHEMA.get("field_enums", {}).items():
+            if field in doc.fm:
+                check_enum(doc, field, set(allowed), issues)
         if doc.fm.get("type") == "source":
-            for field in ("source_id", "hash_sha256", "original_path", "source_url", "imported_at"):
+            for field in SCHEMA["source_required_fields"]:
                 if field not in doc.fm:
                     add_issue(issues, issue("MISSING_FIELD", doc.rel, None, field, f"source 页缺少 {field}", "补齐 source 字段"))
             if doc.fm.get("id") != doc.fm.get("source_id"):
@@ -409,7 +430,7 @@ def validate_wiki_docs(wiki_docs: List[MarkdownDoc], issues: Dict[str, List[Issu
 
 
 def validate_inbox_docs(docs: List[MarkdownDoc], archived: List[MarkdownDoc], issues: Dict[str, List[Issue]]) -> None:
-    required = ["id", "type", "status", "confidence", "review", "suggested_target_type", "suggested_target_title", "created"]
+    required = SCHEMA["inbox"]["required_fields"]
     for doc in docs + archived:
         if not doc.has_frontmatter:
             add_issue(issues, issue("MISSING_FIELD", doc.rel, 1, None, "inbox 文件缺少 frontmatter", "补齐 capture item frontmatter"))
@@ -423,7 +444,7 @@ def validate_inbox_docs(docs: List[MarkdownDoc], archived: List[MarkdownDoc], is
         check_date_field(doc, "created", issues)
         if "id" in doc.fm and not validate_inbox_id(doc.fm.get("id")):
             add_issue(issues, issue("ID_FORMAT", doc.rel, line_for(doc, "id"), "id", "inbox id 必须是 inb_YYYYMMDD_HHmmss_<slug>", "补齐秒级时间戳"))
-        if doc.path.parent == ROOT / "knowledge/inbox" and not validate_inbox_filename(doc.path.name):
+        if doc.path.parent == INSTANCE_ROOT / "inbox" and not validate_inbox_filename(doc.path.name):
             add_issue(issues, issue("ID_FORMAT", doc.rel, None, "filename", "inbox 文件名必须是 YYYYMMDD-HHmmss-<slug>.md", "使用秒级文件名"))
         if "/archive/promoted/" in doc.rel and doc.fm.get("status") != "promoted":
             add_issue(issues, issue("INBOX_STATUS_PATH_MISMATCH", doc.rel, line_for(doc, "status"), "status", "archive/promoted 下 status 必须是 promoted", "修正 status"))
@@ -432,16 +453,16 @@ def validate_inbox_docs(docs: List[MarkdownDoc], archived: List[MarkdownDoc], is
 
 
 def validate_context_docs(issues: Dict[str, List[Issue]]) -> None:
-    for name in ("purpose.md", "index.md", "overview.md", "log.md"):
-        path = ROOT / "knowledge" / name
+    for name in SCHEMA["context_docs"]:
+        path = INSTANCE_ROOT / name
         if path.exists() and path.read_text(encoding="utf-8").startswith("---\n"):
             add_issue(issues, issue("EXTRA_FRONTMATTER", rel_to_knowledge(path), 1, None, "上下文层 markdown 不应有 frontmatter", "移除 frontmatter"))
 
 
 def validate_json_contracts(id_index: Dict[str, MarkdownDoc], issues: Dict[str, List[Issue]]) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
-    source_manifest_path = ROOT / "knowledge/raw/source_manifest.json"
-    review_queue_path = ROOT / "knowledge/.wiki/review_queue.json"
-    capture_policy_path = ROOT / "knowledge/.wiki/capture_policy.json"
+    source_manifest_path = INSTANCE_ROOT / SCHEMA["json_contracts"]["source_manifest"]["path"]
+    review_queue_path = INSTANCE_ROOT / SCHEMA["json_contracts"]["review_queue"]["path"]
+    capture_policy_path = INSTANCE_ROOT / SCHEMA["json_contracts"]["capture_policy"]["path"]
     source_manifest = read_json(source_manifest_path, issues)
     review_queue = read_json(review_queue_path, issues)
     capture_policy = read_json(capture_policy_path, issues)
@@ -468,7 +489,7 @@ def validate_json_contracts(id_index: Dict[str, MarkdownDoc], issues: Dict[str, 
 
     for idx, src in enumerate(source_manifest.get("sources", []) if isinstance(source_manifest.get("sources", []), list) else []):
         rel = "raw/source_manifest.json"
-        for field in ("source_id", "title", "source_type", "hash_sha256", "original_path", "source_url", "imported_at", "last_ingested_at", "status", "summary_page_id", "summary_page_path", "adapter"):
+        for field in SCHEMA["json_contracts"]["source_manifest"]["required_fields"]:
             if field not in src:
                 add_issue(issues, issue("MISSING_FIELD", rel, None, field, f"sources[{idx}] 缺少 {field}", "补齐字段"))
         if src.get("source_type") not in SOURCE_TYPES:
@@ -486,7 +507,7 @@ def validate_json_contracts(id_index: Dict[str, MarkdownDoc], issues: Dict[str, 
             add_issue(issues, issue("SOURCE_KEY_MISMATCH", rel, None, "summary_page_id", "summary_page_id 必须等于 source_id 或 null", "统一 source_id"))
         summary_path = src.get("summary_page_path")
         if summary_path is not None:
-            full = ROOT / "knowledge" / str(summary_path)
+            full = INSTANCE_ROOT / str(summary_path)
             if not full.exists():
                 add_issue(issues, issue("SUMMARY_PATH_MISSING", rel, None, "summary_page_path", "summary_page_path 文件不存在", "修正路径或置 null"))
             elif summary_id:
@@ -663,6 +684,30 @@ def scan_pii(inbox_docs: List[MarkdownDoc], archived: List[MarkdownDoc], wiki_do
 
 def run_lint(args: argparse.Namespace) -> Tuple[int, Dict[str, Any], str]:
     issues: Dict[str, List[Issue]] = {"errors": [], "warnings": []}
+    for item in PROFILE_ISSUES:
+        add_issue(issues, issue(item.code, ".wiki-profile.json", None, item.field, item.message, item.hint))
+    if PROFILE_ISSUES:
+        data = {
+            "wiki_lint_version": VERSION,
+            "ran_at": now_iso(),
+            "scanned": {
+                "wiki_pages": 0,
+                "inbox_drafts": 0,
+                "inbox_archived": 0,
+                "sources": 0,
+                "review_queue_items": 0,
+            },
+            "errors": [i.as_json() for i in issues["errors"]],
+            "warnings": [i.as_json() for i in issues["warnings"]],
+            "derived_layers": {
+                "id_index_entries": 0,
+                "normalized_alias_index_entries": 0,
+                "inbox_index_drafts": 0,
+                "written": False,
+            },
+        }
+        return 1, data, human_output(data, 0, args)
+
     validate_context_docs(issues)
     wiki_docs, inbox_docs, archived_docs = scan_markdown_files()
     validate_wiki_docs(wiki_docs, issues)
@@ -685,9 +730,9 @@ def run_lint(args: argparse.Namespace) -> Tuple[int, Dict[str, Any], str]:
         "written": not args.check_only,
     }
     if not args.check_only:
-        write_json_atomic(ROOT / "knowledge/.wiki/id_index.json", {"version": 1, "updated_at": now_iso(), "entries": id_entries})
-        write_json_atomic(ROOT / "knowledge/.wiki/normalized_alias_index.json", {"version": 1, "updated_at": now_iso(), "entries": alias_entries})
-        write_json_atomic(ROOT / "knowledge/.wiki/inbox_index.json", inbox_index)
+        write_json_atomic(INSTANCE_ROOT / ".wiki/id_index.json", {"version": 1, "updated_at": now_iso(), "entries": id_entries})
+        write_json_atomic(INSTANCE_ROOT / ".wiki/normalized_alias_index.json", {"version": 1, "updated_at": now_iso(), "entries": alias_entries})
+        write_json_atomic(INSTANCE_ROOT / ".wiki/inbox_index.json", inbox_index)
 
     scanned = {
         "wiki_pages": len(wiki_docs),
@@ -719,7 +764,8 @@ def human_output(data: Dict[str, Any], pii_hits: int, args: argparse.Namespace) 
     lines = [
         f"wiki-lint v{VERSION}",
         "================",
-        f"扫描: knowledge/wiki/ ({scanned['wiki_pages']} 文件) · knowledge/inbox/ ({scanned['inbox_drafts']} draft) · knowledge/raw/ ({scanned['sources']} source)",
+        f"实例: {INSTANCE_ROOT} · profile: {PROFILE_NAME}",
+        f"扫描: {INSTANCE_ROOT.name}/wiki/ ({scanned['wiki_pages']} 文件) · {INSTANCE_ROOT.name}/inbox/ ({scanned['inbox_drafts']} draft) · {INSTANCE_ROOT.name}/raw/ ({scanned['sources']} source)",
         "",
         f"{status(not any(e['code'] in {'MISSING_FIELD','EXTRA_FRONTMATTER','ENUM_INVALID','DATE_FORMAT','HASH_FORMAT','JSON_VERSION','TYPE_MISMATCH','ID_FORMAT'} for e in errors))}schema 校验: {scanned['wiki_pages'] + scanned['inbox_drafts']} 页扫描",
         f"{status(not any(e['code'] in {'ID_DUPLICATE','ID_FORMAT'} for e in errors))}ID 唯一性: {derived['id_index_entries']} 个 id",
@@ -759,30 +805,21 @@ def format_issue(level: str, item: Dict[str, Any]) -> str:
     return f"  [{level}] {item['code']} {loc} {field}: {item['message']}\n                 hint: {item.get('hint')}"
 
 
-def find_root() -> Path:
-    root = Path.cwd().resolve()
-    if not (root / "knowledge").is_dir():
-        print("wiki-lint config error: must run from repo root containing knowledge/", file=sys.stderr)
-        sys.exit(2)
-    return root
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="wiki-lint MVP")
+    parser.add_argument("--root", help="实例根目录；缺省为 ./knowledge")
     parser.add_argument("--check-only", action="store_true")
     parser.add_argument("--json", action="store_true", dest="json_output")
     parser.add_argument("--scan-wiki-pii", action="store_true")
     args = parser.parse_args()
+    configure(args)
+    print(f"wiki-lint instance root: {INSTANCE_ROOT} · profile: {PROFILE_NAME}", file=sys.stderr)
     code, data, text = run_lint(args)
     if args.json_output:
         print(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True))
     else:
         print(text)
     return code
-
-
-ROOT = find_root()
-
 
 if __name__ == "__main__":
     sys.exit(main())

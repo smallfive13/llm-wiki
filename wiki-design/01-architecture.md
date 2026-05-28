@@ -80,6 +80,20 @@ knowledge/.wiki/normalized_alias_index.json
 | query | `wiki/queries/` | 值得沉淀的问题和回答 |
 | open-question | `wiki/open-questions/` | 待验证、冲突、空白 |
 
+## 多实例与 Schema Profile
+
+引擎层（`scripts/`、`wiki-design/`、`AGENTS.md`、base schema）可以服务多个知识库实例。实例根是包含 `wiki/`、`raw/`、`inbox/`、`.wiki/`、`maps/` 和上下文 markdown 的目录；默认实例根是 `knowledge/`，工具也可用 `--root knowledge-bizA` 指向其它实例。
+
+`scripts/wiki_common.py` 中的 `BASE_SCHEMA` 是 RFC-002~007 冻结契约的单一来源。实例根可选放 `.wiki-profile.json`，通过 profile overlay 增加业务页类型或新字段；没有 profile 时就是纯 base，现有 `knowledge/` 行为保持结构等价。
+
+profile 只允许“增量”：
+
+- 新增页面类型（新 `type`、新 `id_prefix`、新 `wiki/...` 目录、额外 required/optional 字段）。
+- 给 profile 引入的新字段声明 enum。
+- 给已知类型追加额外 optional 字段。
+
+profile 不允许改稳定 ID 格式、canonical 引用、source 单主键、entity alias/redirect 语义、inbox 缓冲、core 字段 enum、JSON 契约、PII 下限或派生层是否进 Git。`wiki_lint.py` 使用 effective schema 做校验；`wiki_graph.py` 使用 effective schema 决定哪些 type 可投影，未声明 type 会跳过并计入 insights。
+
 ## Frontmatter
 
 页面应尽量使用 Obsidian 友好的 properties。

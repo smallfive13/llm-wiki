@@ -22,6 +22,7 @@ python -c "import yaml" || pip install pyyaml
 
 ```bash
 python3 scripts/wiki_lint.py                  # 校验 + 重建派生层
+python3 scripts/wiki_lint.py --root knowledge # 指定实例根；缺省为 knowledge/
 python3 scripts/wiki_lint.py --check-only     # 只校验，不写派生层
 python3 scripts/wiki_lint.py --json           # 机器可读输出
 python3 scripts/wiki_lint.py --scan-wiki-pii  # 加扫 wiki/ PII（默认只扫 inbox）
@@ -73,6 +74,29 @@ python3 scripts/wiki_lint.py --scan-wiki-pii  # 加扫 wiki/ PII（默认只扫 
 | `PII_HIT_DRAFT` | error | inbox draft 命中 PII |
 | `PII_HIT_ARCHIVE` | warning | inbox archive 命中 PII |
 | `PII_HIT_WIKI` | warning | wiki/ 命中 PII（仅 `--scan-wiki-pii`） |
+| `PROFILE_SCHEMA_VERSION` | error | `.wiki-profile.json` schema_version 与引擎不兼容 |
+| `PROFILE_PREFIX_FORMAT` | error | profile `id_prefix` 不是 2-5 位小写字母 |
+| `PROFILE_PREFIX_COLLISION` | error | profile `id_prefix` 撞 base/inbox/其它 profile prefix |
+| `PROFILE_TYPE_COLLISION` | error | profile 新 type 撞 base/其它 profile type |
+| `PROFILE_DIR_INVALID` | error | profile type 目录不在 `wiki/` 下、逃逸或冲突 |
+| `PROFILE_FIELD_INVALID` | error | profile 字段名或字段结构非法 |
+| `PROFILE_FIELD_OVERLAP` | error | 同一 profile type 的 required/optional 字段重复 |
+| `PROFILE_CORE_SHADOW` | error | profile 尝试覆盖 core/base 字段 |
+| `PROFILE_ENUM_UNKNOWN_FIELD` | error | profile enum 指向未声明的新字段 |
+| `PROFILE_OPTFIELD_UNKNOWN_TYPE` | error | profile optional fields 指向未知 type |
+
+### Schema profile 与多实例
+
+`wiki_lint.py` 使用 `wiki_common.BASE_SCHEMA` 作为 RFC-002~007 的冻结 base schema。实例根可放 `.wiki-profile.json` 叠加只增扩展；缺省没有 profile 时等价纯 base。
+
+`--root` 指向实例根，而不是仓库根：
+
+```bash
+python3 scripts/wiki_lint.py --root knowledge-bizA --check-only
+python3 scripts/wiki_lint.py --root /abs/path/to/knowledge --json
+```
+
+实例根应包含 `wiki/`、`raw/`、`inbox/`、`.wiki/`、`maps/` 和上下文 markdown。profile 只能新增页面类型、新字段 enum、某类型额外可选字段；不能改 core 字段、ID 格式、source 单主键、entity alias/redirect、inbox、JSON 契约或派生层规则。
 
 ### 派生层
 
@@ -110,6 +134,7 @@ python3 scripts/wiki_lint.py --scan-wiki-pii  # 加扫 wiki/ PII（默认只扫 
 
 ```bash
 python3 scripts/wiki_graph.py         # 生成 knowledge/maps/ 三个派生文件
+python3 scripts/wiki_graph.py --root knowledge-bizA
 python3 scripts/wiki_graph.py --json  # 只输出 graph-data，不落盘
 ```
 
@@ -118,6 +143,8 @@ python3 scripts/wiki_graph.py --json  # 只输出 graph-data，不落盘
 - `knowledge/maps/graph-data.json`
 - `knowledge/maps/knowledge-graph.md`
 - `knowledge/maps/graph-insights.md`
+
+`--root` 与 wiki-lint 一致，指向实例根。`--json` 全程只读；普通模式只写 `<root>/maps/*`，永不写 `<root>/.wiki/*`。graph 读取 effective schema 的页面类型集合；base/profile 声明的类型会进图，完全未声明的 type 会跳过并写入 insights。
 
 ### 边类型
 

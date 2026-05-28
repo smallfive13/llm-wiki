@@ -321,6 +321,83 @@ suggested_target_title: "Attention 复杂度讨论"
 
 > **`exclude_patterns` 中的默认正则仅是初始规则，不代表完整 PII 检测**。生产用法必须由 lint 规则、人工 review 规则和组织安全规范共同保障。Agent 不得把这套正则当作唯一 PII 兜底。
 
+## Wiki Profile Schema
+
+路径：`<instance-root>/.wiki-profile.json`
+
+用途：给某个知识库实例声明 base schema 之外的业务扩展。它是实例级 canonical config，进 Git；不放在 `<instance-root>/.wiki/`，因为 `.wiki/` 主要承载派生层和工具状态。
+
+不存在 `.wiki-profile.json` 时，实例使用纯 base schema；缺省实例根是 `knowledge/`。
+
+### 顶层格式
+
+```json
+{
+  "schema_version": 1,
+  "profile": "risk-control",
+  "description": "风控业务知识库（可选）",
+  "extra_page_types": [
+    {
+      "type": "case",
+      "id_prefix": "case",
+      "dir": "wiki/cases",
+      "description": "风险案例（可选）",
+      "required_fields": ["case_id", "severity"],
+      "optional_fields": ["resolved_at"]
+    }
+  ],
+  "extra_field_enums": {
+    "severity": ["low", "medium", "high", "critical"]
+  },
+  "extra_optional_fields": {
+    "topic": ["business_line"]
+  }
+}
+```
+
+### 字段约束
+
+| 字段 | 规则 |
+| --- | --- |
+| `schema_version` | 必填；必须等于引擎 `BASE_SCHEMA.schema_version`，当前为 `1` |
+| `profile` | 可读 profile 名，`^[a-z][a-z0-9-]*$` |
+| `description` | 可选说明 |
+| `extra_page_types[].type` | 新页面类型，`^[a-z][a-z0-9-]*$`，不得撞 base 类型或同 profile 其它类型 |
+| `extra_page_types[].id_prefix` | 2-5 位小写字母，不含下划线；不得撞 base prefix、`inb` 或同 profile 其它 prefix |
+| `extra_page_types[].dir` | 必须在 `wiki/` 下，不含 `..`，不得撞 base 目录或同 profile 其它目录 |
+| `extra_page_types[].required_fields` | 新增必填字段名数组，字段名 `^[a-z][a-z0-9_]*$` |
+| `extra_page_types[].optional_fields` | 新增可选字段名数组；不得与同 type required 字段重复 |
+| `extra_field_enums` | 只允许给 profile 引入的新字段声明 enum |
+| `extra_optional_fields` | key 必须是 base type 或 profile extra type；value 是新增可选字段名数组 |
+
+### 不可改写的核心不变量
+
+profile 只能新增，不能覆盖或收窄 base：
+
+- 稳定 ID 格式 `<id_prefix>_YYYYMMDD_<slug>`；inbox 固定 `inb_YYYYMMDD_HHmmss_<slug>`。
+- canonical 引用语义：`source_ids`、`related_ids`、`supersedes`、`superseded_by`、`canonical_id`。
+- source 单主键：`id == source_id == summary_page_id`。
+- entity alias/redirect 语义：`status: redirect` 仅 entity，不允许 canonical 链式跳转。
+- inbox 必经缓冲、派生层不进 Git。
+- core 必填字段、`status` / `confidence` enum。
+- JSON 契约：`source_manifest`、`review_queue`、`capture_policy`、`id_index`、`normalized_alias_index`、`inbox_index`、`graph-data`。
+- PII 兜底下限。
+
+### Lint 错误码
+
+| code | 触发 |
+| --- | --- |
+| `PROFILE_SCHEMA_VERSION` | profile schema_version 与 base 不兼容 |
+| `PROFILE_PREFIX_FORMAT` | `id_prefix` 格式非法 |
+| `PROFILE_PREFIX_COLLISION` | `id_prefix` 与 base/inbox/其它 profile prefix 冲突 |
+| `PROFILE_TYPE_COLLISION` | extra type 与 base/其它 profile type 冲突 |
+| `PROFILE_DIR_INVALID` | `dir` 不在 `wiki/` 下、逃逸或冲突 |
+| `PROFILE_FIELD_INVALID` | 字段名或字段结构非法 |
+| `PROFILE_FIELD_OVERLAP` | required/optional 字段重复 |
+| `PROFILE_CORE_SHADOW` | profile 尝试覆盖 core/base 字段 |
+| `PROFILE_ENUM_UNKNOWN_FIELD` | enum 指向未声明的新字段 |
+| `PROFILE_OPTFIELD_UNKNOWN_TYPE` | optional fields 指向未知 type |
+
 ### PII 降级流程
 
 ```text
