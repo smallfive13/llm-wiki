@@ -2,9 +2,9 @@
 id: rfc_20260528_008
 title: 业务 schema profile 机制（base + 可扩展 overlay，支持多实例复用）
 author: claude
-status: proposed
+status: accepted
 created: 2026-05-28
-updated: 2026-05-28  # v3 after codex review v2
+updated: 2026-05-28  # accepted; decision by claude (Path A)
 targets:
   - scripts/wiki_common.py
   - scripts/wiki_lint.py
@@ -338,9 +338,42 @@ TASK 落地后必须：重跑 RFC-006 Step 6 全量（E1~E11，按上述口径�
 - 但 “每实例 `.wiki-profile.json` 类比 capture_policy” 这一句不准：`capture_policy.json` 当前在 `knowledge/.wiki/` 下，是实例内部配置；`.wiki-profile.json` 若放实例根，则与其位置不同。建议明确它是“实例根 canonical config，进 Git”，并说明为何不放 `knowledge/.wiki/`，避免和“`.wiki/ 派生/缓存不是正本”的既有规则混淆。
 - 与 RFC-002~007 的方向不冲突；真正的兼容风险主要在 `ID_FORMAT`、source 单主键、redirect 语义、派生 JSON schema 和 RFC-007 `content_hash`/`generated_at` 验证口径，上面几点修掉后可以继续推进。
 
-## Decision
+## Decision by claude · 2026-05-28（用户授权 Path A 代写）
 
-（待用户填写或授权 Agent 代写）
+**Accepted**。RFC-008 经 4 轮 review 收敛（v1 4 阻塞 → v2 1 阻塞+2 文案 → v3 fixup → v3 通过），Codex 最终结论"通过"。本 Decision 锁定替代方案选择，并把实现约束移交 TASK-008 spec。
+
+### 关键决策点（替代方案最终选择）
+
+| 决策点 | 选择 | 替代记录 |
+| --- | --- | --- |
+| A. 实现路线 | **路线 b（profile 叠加，base 留代码）** | 拒绝路线 a 全 schema-driven（重写 lint 回归风险高）/ 拒绝"只多实例同 schema"（不满足需求） |
+| B. profile 位置 | **实例根 `.wiki-profile.json`（canonical 进 Git）** | 拒绝引擎层集中配置（多 repo 拿不到）/ 拒绝 frontmatter 逐页声明 |
+| C. 扩展边界 | **只增不改 + 锁死核心不变量** | 拒绝任意覆盖（schema 发散，复用价值失） |
+| D. 多实例形态 | **每业务独立实例 + profile** | 拒绝单 knowledge 内 domain 分区（隔离弱） |
+
+### 锁定的实现约束（移交 TASK-008 spec 钉死）
+
+1. **BASE_SCHEMA 抽取**：把 wiki_lint 内联 schema 常量收拢到 `wiki_common.BASE_SCHEMA`，内容 = RFC-002~007 冻结现状，**不增不删**。
+2. **id_prefix 不含下划线**：base/profile 都存 token（`src`/`case`），完整 id = `<id_prefix>_YYYYMMDD_<slug>`；effective id regex 由 base+profile token 集合动态拼成。
+3. **`--root` = 实例根**：缺省 `<repo>/knowledge`；所有路径基准从"repo 根/knowledge"迁到"实例根"（`<root>/wiki` 等）；缺省行为靠结构等价验证守住。
+4. **profile 只增不改**：`extra_page_types` / `extra_field_enums`（仅新字段）/ `extra_optional_fields`；无 `enabled_base_types`（已移除）。
+5. **10 个 PROFILE_* 自校验**（merge 前跑）：SCHEMA_VERSION / PREFIX_FORMAT / PREFIX_COLLISION / TYPE_COLLISION / DIR_INVALID / FIELD_INVALID / FIELD_OVERLAP / CORE_SHADOW / ENUM_UNKNOWN_FIELD / OPTFIELD_UNKNOWN_TYPE。
+6. **核心不变量锁死**（profile 碰不到）：ID 格式 / canonical 语义 / source 单主键 / RFC-004 别名（redirect 仅 entity 不链式）/ inbox 缓冲 / 派生层 gitignore / core 字段+enum / 7 类 JSON 契约 / PII 下限。
+7. **验证口径 = 结构等价 + 时间字段归一**（非字节级）：lint human 去时间行 / `--json` 去 `ran_at` / `.wiki/*.json` 去 `updated_at` 结构等价 / graph 用 content_hash。
+8. **零回归硬关**：重跑 RFC-006 Step 6 全量（E1~E11，按上述口径）+ RFC-007 fixture（content_hash），确认**无 profile 等价**；再加 **profile 专项 fixture**（含一个 extra type 走通 lint + graph）。
+9. **wiki_graph 未知 type**：不重复 schema 校验，只投影 lint 合法页面，未声明 type 跳过 + 计 insights。
+10. **运行环境**：conda py312；PyYAML 唯一外部依赖。
+
+### Apply 触发
+
+- targets 尚未改动（BASE_SCHEMA / profile 机制 / `--root` 都还不存在）
+- 立即开 **TASK-008: apply RFC-008 — implement schema profile mechanism**（type: apply，executor: codex）
+- 这是工具链**执行风险最高**的 task（BASE_SCHEMA 抽取 + 路径基准迁移 + profile 层三合一），零回归验证关写最严
+- TASK-008 done 后回本 RFC 末尾追加 `## Applied in <commit-sha>`
+
+## Applied in working tree · 2026-05-28 · claude
+
+RFC accepted，targets 待 TASK-008 落地。本登记仅记录 Decision 时间点，apply 真正完成后由 TASK-008 evaluator 追加 commit sha。
 
 ## Revision v2 by claude · 2026-05-28
 
