@@ -2,9 +2,9 @@
 id: rfc_20260528_007
 title: 自建 canonical wiki-graph（03 第二层增强图谱生成器）
 author: claude
-status: proposed
+status: accepted
 created: 2026-05-28
-updated: 2026-05-28  # v3 after codex review v2
+updated: 2026-05-28  # accepted; decision by claude (per user authorization, Path A)
 targets:
   - scripts/wiki_graph.py
   - scripts/wiki_common.py
@@ -278,9 +278,43 @@ python3 scripts/wiki_graph.py --json     # graph-data 打到 stdout（不写文�
 
 （待 Codex 追加）
 
-## Decision
+## Decision by claude · 2026-05-28（用户授权 Path A 代写）
 
-（待用户填写或授权 Agent 代写）
+**Accepted**。RFC-007 经 4 轮 review 收敛（v1 7 阻塞 → v2 1 阻塞 → v3 1 文案 → v4 通过），Codex 最终结论"通过"。本 Decision 锁定替代方案的最终选择，并把 review 沉淀的实现约束移交 TASK-007 spec。
+
+### 关键决策点（替代方案最终选择）
+
+| 决策点 | 选择 | 替代记录 |
+| --- | --- | --- |
+| A. 实现位置 | **独立 `scripts/wiki_graph.py`** + 共享 `scripts/wiki_common.py` | 拒绝 `wiki_lint.py --graph` 子命令（职责膨胀） |
+| B. 社区检测 | **标准库确定性 label propagation**（无向投影 / id 排序 / 同步更新 / 平局取最小 label / 固定轮数上限） | networkx + Louvain 留后续可选 |
+| C. 边来源 | **canonical 引用 + wikilink + co_source（共享来源）** | 拒绝仅 canonical / 拒绝全量计算关系（边爆炸） |
+| D. 语义关系类型 | **MVP 推迟**（无 frontmatter 字段承载） | 留给 evidence 结构化相关 RFC |
+| E. 可视化 | **只出 graph-data.json + 2 个 md** | 不自建 HTML，渲染交 Obsidian / graphify |
+
+### 锁定的实现约束（移交 TASK-007 spec 钉死）
+
+来自 RFC v2/v3 + Codex review，TASK-007 spec 必须逐条落实：
+
+1. **边不合并**：每条边单值 `relation` + 单值 `source_kind`（`canonical` | `wikilink` | `computed`），多关系多条边。`edges[].relation` 是字符串非数组。
+2. **确定性**：`generated_at` 排除在确定性外；加 `content_hash`（对排序后 nodes+edges+communities 算 sha256）；验证比 content_hash / 结构，不做整文件字节 diff。
+3. **wikilink 解析**：先查 `normalized_alias_index`，再查**内存自建** `title/slug→id`，**不扩展 `id_index.json` schema**；都未命中记 dangling。
+4. **redirect 折叠**（4b 三规则）：target 是 redirect→重写 canonical_id；source 是 redirect→丢弃（wikilink 入口除外）；self-loop→丢弃；折叠后按 `(source,target,relation,source_kind)` 去重。
+5. **写入边界**：`wiki_graph.py` **永不写 `.wiki/*`**（索引落盘归 wiki_lint.py 独占）；普通模式唯一写 `knowledge/maps/*`；`--json` 全程只读（连 maps/ 也不写）；两模式都不写 `knowledge/**` 源数据。
+6. **wiki_common.py 拆分**：lint 与 graph 共享纯 helper（`MarkdownDoc` / `load_markdown` / `normalize_alias` / `write_json_atomic`）；`wiki_lint.py` 改为 import wiki_common，但**不改 error code 集合 / `run_lint()` 返回 / CLI 退出码**。
+7. **lint 零回归（最高优先级验证关）**：refactor 后**必须重跑 TASK-006 Step 6 全量验证（Preflight / A / B / C / D / E1~E11 / F）**，全 OK 才算通过；任一项回归即执行失败。
+8. **空 knowledge/**：wiki/ 全空产空图（nodes/edges/communities 全空数组）+ exit 0，并确保创建 `knowledge/maps/` 目录。
+9. **运行环境**：conda py312（Python 3.12）；PyYAML 唯一外部依赖。
+
+### Apply 触发
+
+- targets 尚未改动（wiki_graph.py / wiki_common.py 都不存在）
+- 立即开 **TASK-007: apply RFC-007 — implement wiki-graph MVP**（type: apply，executor: codex）
+- TASK-007 done 后回本 RFC 末尾追加 `## Applied in <commit-sha>`
+
+## Applied in working tree · 2026-05-28 · claude
+
+RFC accepted，targets 待 TASK-007 落地。本登记仅记录 Decision 时间点，apply 真正完成后由 TASK-007 evaluator 追加 commit sha。
 
 ## Review by codex · 2026-05-28
 
