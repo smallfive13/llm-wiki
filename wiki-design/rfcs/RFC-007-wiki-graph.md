@@ -250,3 +250,72 @@ python3 scripts/wiki_graph.py --json     # graph-data 打到 stdout（不写文�
 ## Decision
 
 （待用户填写或授权 Agent 代写）
+
+## Review by codex · 2026-05-28
+
+### 总体结论
+
+- 结论：需修改。
+- 我同意核心方向：第二层 canonical wiki-graph 应该自建，作为已策展关系的机械投影；graphify / LightRAG 应保留在第三层，作为发现层而不是正本层。
+- RFC 已经把节点、显式边、社区、insights、输出文件和替代方案大体讲清楚，但还有几处会直接影响实现正确性和后续 RFC 边界，需要在 Decision 前修掉。
+
+### 需修改
+
+1. `graph-data.json` 的 edge schema 目前表达力不够。
+   - RFC 写“同一对节点多关系取最大权重并合并 relation 列表”，schema 里 `relation` 是数组，但 `source_kind` 仍是单值。
+   - 如果同一对节点同时有 `related`（canonical）、`wikilink`（wikilink）和 `co_source`（computed），单个 `source_kind` 无法保留来源边界。
+   - 建议改为：
+     - 要么不合并边，每条边是一条 `{source,target,relation,source_kind,weight}`；
+     - 要么合并后用 `relations: [{type, source_kind, weight}]` 或 `source_kinds: []`，并明确总 `weight` 如何计算。
+   - 另外 RFC 前面把 `source_kind` 枚举写成 `canonical | wikilink`，后面又引入 `computed`，需要同步。
+
+2. “第二层落地”与 03 的第二层描述需要更精确。
+   - `03-obsidian-graph.md` 第二层列了共享来源、共享 tag、共享 related、共同邻居、页面类型亲和、同一 synthesis / decision 中共同出现。
+   - RFC-007 MVP 只做共享来源，并把其它计算关系留后续。这可以接受，但不能在 03 里简单标成“第二层已落地”，否则会让读者误以为 03 的第二层完整实现了。
+   - 建议把目标表述为“第二层 MVP：canonical + wikilink + co_source”，并在 03 中把 tag / common-neighbor / type-affinity / co-occur 明确标为后续增强。
+
+3. “同样输入多次运行产出字节一致”与 `generated_at` 冲突。
+   - schema 要求 `generated_at` 是当前 ISO 8601 时间；这会导致每次运行 JSON 字节不同。
+   - 需要二选一：
+     - 改成“除 `generated_at` 外确定性”，并在验证里只比较结构；
+     - 或让 `generated_at` 派生自输入，例如所有 wiki 页 `updated` 的 max，再加 `content_hash`。
+   - 如果后续 TASK 要做字节级 diff 验证，这个点必须先钉死。
+
+4. wikilink 解析依赖的 `id_index` 能力与当前 RFC-006 产物不一致。
+   - RFC 写“未命中 alias index → 查 `id_index` 的 label / slug 匹配”。
+   - 但 RFC-006/TASK-006 落地后的 `id_index.json` 只有 `path/type/status`，没有 `label` 或 `slug` 字段。
+   - 建议不要扩展 `id_index.json` schema；由 `wiki_graph.py` 在内存中通过读取 wiki docs 构建 `title/slug -> id` 查找表。否则这会变成新的派生层 schema 修改，需要另行写清兼容性。
+
+5. redirect 折叠规则还需要写到可执行粒度。
+   - 方向是对的：`status: redirect` 薄页不作为主图节点，符合 RFC-004。
+   - 但要补清楚三类情况：
+     - 边的 target 是 redirect 页：target 重写为其 `canonical_id`。
+     - 边的 source 是 redirect 页：这类薄页自身不进图，通常应丢弃，除非是 wikilink 解析入口。
+     - 折叠后产生 self-loop：默认丢弃，避免正名页指向自己。
+   - 这几条不写清，后续实现容易把 redirect alias 页又悄悄带回主图。
+
+6. `--json` 与派生层依赖顺序需要明确“是否写文件”。
+   - RFC 写 `wiki_graph.py --json` 把 graph-data 打到 stdout，不写文件；但又写若 `id_index.json` / `normalized_alias_index.json` 不存在，先内部调用 lint 构建逻辑生成。
+   - 这会让 `--json` 预览模式也可能写 `.wiki/*.json`，语义冲突。
+   - 建议规定：`--json` 全程只读，缺索引时在内存中复用 parser 构建，不落盘；普通模式才写 `knowledge/maps/*`，且不写 `knowledge/**` 源数据。
+
+7. `wiki_lint.py` refactor 风险需要比“重跑 Step 6”再具体一点。
+   - 当前 `wiki_lint.py` 是脚本式结构，`ROOT = find_root()` 在 import 时执行，很多 helper 依赖全局 `ROOT` 和 `Issue`。
+   - 轻量 refactor 可以做，但 TASK spec 应限制为“抽纯解析 helper，不改 error code 集合、不改 `run_lint()` 返回语义、不改 CLI exit code”；并要求重跑 TASK-006 Step 6 全量验证。
+   - 更稳的替代方案是新增 `scripts/wiki_common.py` 放 `MarkdownDoc / load_markdown / normalize_alias / write_json_atomic`，让 lint 和 graph 共同 import；这会多一个 target，但能减少对 lint CLI 的扰动。
+
+### 其它复核
+
+- 边界上，RFC 已经清楚排除了 graphify / LightRAG、推断边、语义关系类型和 HTML 可视化；与“第三层 graphify 负责发现候选关系”这个边界基本清楚。
+- 但 RFC-006 曾把后续“wiki-design lint”暂称为 RFC-008；本 RFC 又把 RFC-008 写成 graphify。既然当前还没有 RFC-008 文件，建议后续文案写“后续 graphify RFC（暂称 RFC-008）”，避免编号语义和旧文档残留互相打架。
+- label propagation 方案可行，但建议补两点实现约束：社区检测在无向投影图上跑；每轮用上一轮 label 同步更新，节点和邻居都按 id 排序，平局取最小 label。这样才是真正可复现。
+- 空 `knowledge/wiki/` 产空图且 exit 0 的要求是对的；后续 TASK 应验证 nodes/edges/communities 都是空数组，并确认会创建 `knowledge/maps/` 目录。
+- insights 范围合理：孤立、hub、社区、跨类型连接、dangling wikilink 都和 lint 不重叠；合并 / 拆分建议推迟是正确的。
+
+### 替代方案判断
+
+- A 独立 `scripts/wiki_graph.py` 比 `wiki_lint.py --graph` 更好，职责清楚，退出码也不互相污染。
+- B 标准库确定性 label propagation 可以作为 MVP；networkx/Louvain 后续可选。
+- C canonical 引用 + wikilink + 共享来源作为 MVP 合理，但要把 `co_source` 说成“由显式 `source_ids` 计算出的结构边”，不是语义推断。
+- D 语义关系类型推迟合理；当前没有 frontmatter 字段承载，硬做会变成隐式推断。
+- E 不自建 HTML 合理；先产 `graph-data.json` 和两个 md 派生物，渲染交给 Obsidian / 未来工具即可。
