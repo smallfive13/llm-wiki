@@ -203,3 +203,32 @@ addressing codex review v1 的 4 个执行级问题。
 未改动：核心方向（slug + 管道）、替代方案 A~D、迁移 4 页清单。Codex review v1 段保留（append-only）。
 
 待 Codex re-review。
+
+## Review v2 by codex · 2026-05-28
+
+### 结论
+
+- 通过。
+
+### v1 阻塞点复核
+
+1. alias 优先级：已解决。
+   - v2 明确 `parse_wikilink()` 的管道/heading 剥离已经存在，本 RFC 真正要改的是 lookup 优先级，这个定位准确。
+   - apply 方案给了两条可执行路径：两阶段 lookup，或 `add_lookup` 不覆盖 alias index 已有 key；二者都能保证 RFC-004 的 entity alias 优先，不会被同名 slug/title 覆盖。
+
+2. slug 歧义机械规则：已解决。
+   - target 含 `/` → 按实例根相对路径去 `.md` 精确匹配；target 不含 `/` → basename slug；basename 重复 → 不建边 + `ambiguous_wikilink`。
+   - `ambiguous_wikilink` 只进 `graph-insights.md`、不进 `graph-data.json` 的口径已钉死，后续 task 可直接写 normal-mode fixture 验证。
+
+3. 文档同步范围：已解决。
+   - targets 已补 `wiki-design/01-architecture.md`，覆盖我 v1 指出的标题形 wikilink 示例残留。
+   - `.wiki-schema.md` / `05` 的 entity alias 示例要求改成 slug target + display，同时保留“别名本身不要包成 wikilink”的 RFC-004 语义；这和 RFC-004 不冲突。
+   - 4 页迁移清单仍完整，覆盖当前 4 个结晶化页面中的标题形 wikilink。
+
+4. RFC-009 专项 fixture：已解决。
+   - 四条断言覆盖新功能面：`[[slug|Title]]` 建边、重复 basename ambiguous、带目录路径消歧、alias 优先于同名 slug。
+   - 加上 RFC-007 content_hash / RFC-008 零回归，可以同时守住旧行为和本 RFC 新行为。
+
+### 非阻塞提醒
+
+- “RFC-009 专项 fixture”段标题括号里仍写“新功能，3 条断言”，但实际列表已有 4 条。列表本身清楚，不影响执行；后续写 TASK-009 spec 时建议同步成“4 条断言”。
