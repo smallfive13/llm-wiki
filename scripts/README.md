@@ -1,6 +1,6 @@
 # scripts/
 
-仓库工具脚本。当前仅 wiki-lint MVP。
+仓库工具脚本。当前包含 wiki-lint / wiki-graph MVP。
 
 ## wiki-lint
 
@@ -100,3 +100,38 @@ python3 scripts/wiki_lint.py --scan-wiki-pii  # 加扫 wiki/ PII（默认只扫 
 - 健康度评分 / overview.md 自动更新
 - wiki-design/rfcs/** / tasks/** 流程层 lint
 - hash_sha256 实际值比对
+
+## wiki-graph
+
+实现：见 [`wiki_graph.py`](wiki_graph.py)
+设计：见 [`../wiki-design/rfcs/RFC-007-wiki-graph.md`](../wiki-design/rfcs/RFC-007-wiki-graph.md)
+
+### 用法
+
+```bash
+python3 scripts/wiki_graph.py         # 生成 knowledge/maps/ 三个派生文件
+python3 scripts/wiki_graph.py --json  # 只输出 graph-data，不落盘
+```
+
+输出文件：
+
+- `knowledge/maps/graph-data.json`
+- `knowledge/maps/knowledge-graph.md`
+- `knowledge/maps/graph-insights.md`
+
+### 边类型
+
+MVP 只投影显式 canonical 数据、wikilink，以及由显式 source 字段计算出的共享来源边：
+
+- `source_ref`：`source_ids[]`，`source_kind: canonical`
+- `related`：`related_ids[]`，`source_kind: canonical`
+- `supersedes`：`supersedes[]`，`source_kind: canonical`
+- `wikilink`：正文 `[[...]]` 解析，`source_kind: wikilink`
+- `co_source`：两个页面共享 `source_ids[]`，`source_kind: computed`
+
+### MVP 不覆盖
+
+- graphify / LightRAG 第三层机器图谱
+- 推断边或语义关系类型
+- 交互式 HTML 可视化
+- 共享 tag、共同邻居、类型亲和、共现等后续计算关系

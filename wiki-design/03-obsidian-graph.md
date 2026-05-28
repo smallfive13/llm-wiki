@@ -45,6 +45,10 @@ Agent 负责摄入、整理、补链、生成 insight；Obsidian 负责人类理
 
 ### 第二层：增强图谱
 
+> 状态（2026-05-28）：第二层 MVP 由 RFC-007 + TASK-007 落地为 scripts/wiki_graph.py，
+> 实现 canonical 引用 + wikilink + co_source（共享来源）三类边 + 社区检测 + insights。
+> 共享 tag / 共同邻居 / 类型亲和 / 共现 等计算关系留后续增强。第三层（graphify）待后续 RFC。
+
 在 wikilink 之外，额外计算关系：
 
 - 共享来源。
@@ -123,4 +127,3 @@ dashboards/decisions.base
 - 缺少来源的关键结论。
 
 Agent 生成 insight 时只提出建议，不应自动大规模重构页面。
-

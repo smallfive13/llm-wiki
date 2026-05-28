@@ -17,6 +17,8 @@ knowledge/.wiki/cache.json
 knowledge/.wiki/search_index/
 knowledge/.wiki/lightrag/
 knowledge/maps/graph-data.json
+knowledge/maps/knowledge-graph.md
+knowledge/maps/graph-insights.md
 knowledge/.wiki/id_index.json
 knowledge/.wiki/inbox_index.json
 knowledge/.wiki/normalized_alias_index.json

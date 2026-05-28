@@ -10,12 +10,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
-import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -25,9 +23,19 @@ except Exception as exc:  # pragma: no cover - exercised by environment
     print(f"wiki-lint config error: PyYAML unavailable: {exc}", file=sys.stderr)
     sys.exit(2)
 
+from wiki_common import (
+    LOCAL_TZ,
+    MarkdownDoc,
+    first_h1,
+    load_markdown as common_load_markdown,
+    normalize_alias,
+    now_iso,
+    rel_to_knowledge as common_rel_to_knowledge,
+    write_json_atomic,
+)
+
 
 VERSION = "0.1.0"
-LOCAL_TZ = timezone(timedelta(hours=8))
 
 PAGE_TYPES = {
     "source",
@@ -142,26 +150,12 @@ class Issue:
         }
 
 
-@dataclass
-class MarkdownDoc:
-    path: Path
-    rel: str
-    fm: Dict[str, Any]
-    body: str
-    line_map: Dict[str, int]
-    has_frontmatter: bool
-
-
 def rel_to_knowledge(path: Path) -> str:
-    return path.relative_to(ROOT / "knowledge").as_posix()
+    return common_rel_to_knowledge(path, ROOT)
 
 
 def rel_to_repo(path: Path) -> str:
     return path.relative_to(ROOT).as_posix()
-
-
-def now_iso() -> str:
-    return datetime.now(LOCAL_TZ).replace(microsecond=0).isoformat()
 
 
 def is_valid_date(value: Any) -> bool:
@@ -203,18 +197,6 @@ def parse_iso_tz(value: Any) -> bool:
         return False
 
 
-def normalize_yaml_dates(value: Any) -> Any:
-    if isinstance(value, datetime):
-        return value.isoformat() if value.tzinfo is not None else value
-    if isinstance(value, date):
-        return value.strftime("%Y-%m-%d")
-    if isinstance(value, list):
-        return [normalize_yaml_dates(v) for v in value]
-    if isinstance(value, dict):
-        return {k: normalize_yaml_dates(v) for k, v in value.items()}
-    return value
-
-
 def read_json(path: Path, errors: List[Issue]) -> Dict[str, Any]:
     try:
         with path.open("r", encoding="utf-8") as f:
@@ -225,26 +207,7 @@ def read_json(path: Path, errors: List[Issue]) -> Dict[str, Any]:
 
 
 def load_markdown(path: Path) -> MarkdownDoc:
-    text = path.read_text(encoding="utf-8")
-    rel = rel_to_knowledge(path)
-    if not text.startswith("---\n"):
-        return MarkdownDoc(path, rel, {}, text, {}, False)
-    end = text.find("\n---", 4)
-    if end == -1:
-        return MarkdownDoc(path, rel, {}, text, {}, False)
-    fm_text = text[4:end]
-    body_start = text.find("\n", end + 4)
-    body = "" if body_start == -1 else text[body_start + 1 :]
-    parsed = yaml.safe_load(fm_text) or {}
-    if not isinstance(parsed, dict):
-        parsed = {}
-    parsed = normalize_yaml_dates(parsed)
-    line_map: Dict[str, int] = {}
-    for i, line in enumerate(fm_text.splitlines(), start=2):
-        m = re.match(r"^([A-Za-z0-9_]+)\s*:", line)
-        if m and m.group(1) not in line_map:
-            line_map[m.group(1)] = i
-    return MarkdownDoc(path, rel, parsed, body, line_map, True)
+    return common_load_markdown(path, ROOT)
 
 
 def issue(code: str, file: Optional[str], line: Optional[int], field: Optional[str], message: str, hint: str) -> Issue:
@@ -344,36 +307,6 @@ def check_list_type(doc: MarkdownDoc, field: str, issues: Dict[str, List[Issue]]
         add_issue(issues, issue("TYPE_MISMATCH", doc.rel, line_for(doc, field), field, f"{field} 必须是数组", "使用 YAML list 或 []"))
 
 
-def first_h1(doc: MarkdownDoc) -> str:
-    for line in doc.body.splitlines():
-        if line.startswith("# "):
-            return line[2:].strip()
-    return Path(doc.rel).stem
-
-
-def normalize_alias(text: str) -> str:
-    trans = str.maketrans(
-        {
-            "，": ",",
-            "。": ".",
-            "（": "(",
-            "）": ")",
-            "！": "!",
-            "？": "?",
-            "：": ":",
-            "；": ";",
-            "“": '"',
-            "”": '"',
-            "‘": "'",
-            "’": "'",
-        }
-    )
-    text = text.translate(trans).lower().strip()
-    text = re.sub(r"\s+", " ", text)
-    text = re.sub(r"[\s_-]+", "-", text)
-    return text
-
-
 def canonical_fields(doc: MarkdownDoc) -> List[Tuple[str, str]]:
     result: List[Tuple[str, str]] = []
     for field in ("source_ids", "related_ids", "supersedes", "superseded_by"):
@@ -407,15 +340,6 @@ def check_date_json(value: Any, rel: str, field: str, issues: Dict[str, List[Iss
         return
     if not parse_iso_tz(value):
         add_issue(issues, issue("DATE_FORMAT", rel, None, field, f"{field} 必须是带时区 ISO 8601", "使用 YYYY-MM-DDTHH:MM:SS+08:00"))
-
-
-def write_json_atomic(path: Path, data: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = Path(f"{path}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2, sort_keys=True)
-        f.write("\n")
-    os.replace(tmp, path)
 
 
 def scan_markdown_files() -> Tuple[List[MarkdownDoc], List[MarkdownDoc], List[MarkdownDoc]]:

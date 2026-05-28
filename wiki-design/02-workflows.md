@@ -211,12 +211,8 @@ lint 一下 Wiki
 
 流程：
 
-```text
-扫描 wiki/**/*.md
--> 提取 wikilink、sources、related、tags
--> 生成 graph-data.json
--> 生成 knowledge-graph.md
--> 生成 graph-insights.md
+```bash
+python3 scripts/wiki_graph.py
 ```
 
 ## 推荐命令形态
