@@ -233,6 +233,57 @@ python3 scripts/wiki_lint.py                              # 缺省 knowledge/（
 
 （待 Codex 追加）
 
+## Review by codex · 2026-05-28
+
+### 结论
+
+- 需修改。
+- 我同意核心方向：`base + profile overlay` 比路线 a 的全 schema-driven 更适合作为 MVP，尤其适合在 RFC-006/007 刚落地后控制回归面；profile 只增不改、锁核心不变量也是对的。
+- 但当前提案有 4 个 apply 前需要钉死的阻塞点，否则后续 task 很容易在 `--root`、prefix、回归验证和 profile 合并语义上走偏。
+
+### 阻塞点
+
+1. `--root <instance>` 的语义和现有目录布局冲突，需要改清楚。
+   - 当前工具默认在仓库根运行，读写路径是 `<repo>/knowledge/...`。
+   - RFC 写 `python3 scripts/wiki_lint.py --root knowledge-bizA`，同时又写 effective schema = `merge(BASE_SCHEMA, <root>/.wiki-profile.json)`；这意味着 `--root` 是实例根。
+   - 如果 `--root` 是实例根，那么现有所有路径拼接不能再写 `ROOT / "knowledge/wiki"`，而应变为 `INSTANCE_ROOT / "wiki"`；但默认兼容 `knowledge/` 时，脚本从 repo 根运行又要把 default instance root 设为 `<repo>/knowledge`。
+   - 如果 `--root` 是仓库根，那么多实例示例就应是 `--root . --instance knowledge-bizA` 或类似形态。
+   - 建议选择一种并写死。我建议：`--root` 表示实例根，缺省为 `knowledge/`；所有 rel path 仍以实例根为基准输出成现有 `wiki/...`、`.wiki/...`、`raw/...`。这样单仓多实例和多 repo 都比较直。
+
+2. prefix 表述不一致，会直接导致 ID_FORMAT 设计歧义。
+   - RFC 的 `BASE_SCHEMA.page_types.source.prefix` 示例是 `"src_"`，profile 示例的 `case` prefix 是 `"case_"`，但稳定 ID 格式仍写 `<prefix>_YYYYMMDD_<slug>`。
+   - 如果 prefix 已含 `_`，ID 就应是 `<prefix>YYYYMMDD_<slug>`；如果 prefix 不含 `_`，schema 里就应存 `"src"` / `"case"`。
+   - 现有 RFC-002~007 和 lint regex 实际是 prefix token 不含下划线：`src|ent|top|...`，再拼 `_YYYYMMDD_...`。
+   - 建议 `BASE_SCHEMA` 和 profile 都存不含下划线的 `id_prefix`（如 `src`、`case`），profile prefix regex 改为 `^[a-z]{2,5}$`；或者明确字段名叫 `id_prefix_with_sep` 并同步所有格式说明。否则 `PROFILE_PREFIX_FORMAT` 和 `ID_FORMAT` 会互相打架。
+
+3. “无 profile 字节级不变”作为验收口径不现实，需要换成结构等价 + 可控字段归一。
+   - `wiki_lint.py` 默认模式会重建 `.wiki/*`，其中 `updated_at` / `ran_at` 是运行时间；RFC-007 的 graph 也有 `generated_at`。这些天然不可能整文件字节级一致。
+   - 更稳的验证口径应是：
+     - lint human 输出在固定空库/fixture 下去掉时间相关行后完全一致；
+     - `--json` 输出去掉 `ran_at` 后结构等价；
+     - 三个 `.wiki/*.json` 去掉 `updated_at` 后结构等价；
+     - graph 输出用 RFC-007 已钉死的 `content_hash` 和结构断言验证，不比对 `generated_at`。
+   - 可以保留“无 profile 时行为等价”，但不要承诺“字节级不变”，除非 task 明确冻结时间或 mock `now_iso()`。
+
+4. profile “只增不改”与 `enabled_base_types` 的“禁用 base 类型”存在语义冲突，需要定义禁用后的行为边界。
+   - `enabled_base_types` 允许 base 8 类子集，本质上会让未启用 base 类型在该实例中变非法；这不是纯“只增”，而是收窄。
+   - 收窄可能是合理需求，但必须说明：未启用类型对应的已有页面是否报 `ENUM_INVALID`、是否从 `suggested_target_type` 中移除、是否仍允许作为 `source_ids`/canonical target、graph 是否排除或保留。
+   - 如果目标是零回归和低风险，建议 MVP 先不支持 `enabled_base_types`，或只允许它影响新建模板/建议，不影响 lint 对已有 base 类型的合法性。若保留该字段，需要新增一个明确 error code（例如 `PROFILE_BASE_TYPE_DISABLED` 或复用 `ENUM_INVALID` 但写清楚）。
+
+### 需要补强的细节
+
+- `.wiki-profile.json` schema 字段还不够完整。建议补 `profile_version` 或 `schema_version` 的兼容规则、`description` 可选、`extra_page_types[].description` 可选、字段名格式约束、`dir` 必须在 `wiki/` 下且不能 `..`、`required_fields`/`optional_fields` 不能互相重复、extra type 的 `type` 命名 regex。
+- 6 个 `PROFILE_*` 还漏了几类主要非法 profile：`dir` 冲突/越界、字段名非法、required/optional 重复、extra enum 指向未知字段、extra optional 指向未知 type。可以不一定都新增 error code，但 spec 需要说明归到哪个 code。
+- 核心不变量锁定清单建议补上：redirect 仅 entity、`aliases` / `canonical_id` 的 RFC-004 语义、`source` 类型的 `id == source_id`、JSON 契约 schema（source_manifest/review_queue/capture_policy/id_index/alias_index/inbox_index/graph-data）不能被 profile 改写、派生层仍不进 Git。
+- `extra_field_enums` 只允许给新字段加 enum 是合理的，但要定义“新字段”的范围：extra page type 的字段、extra_optional_fields 加的字段都算；base 已有字段不算。否则 `severity` 这种跨类型字段可用，但 lint 不知道哪些类型需要校验它。
+- `wiki_graph.py` 当前并不靠 PAGE_TYPES 枚举过滤节点，而是扫所有 `wiki/**/*.md` 且排除 redirect；RFC 写“节点类型集 / prefix 改读 effective schema”时，需要说清 graph 对未知 type 是跳过、报错还是依赖 lint 先拦截。为保持 graph 简单，建议 graph 不重复 schema 校验，只对 lint 合法页面投影；fixture 中加一个 extra type 节点即可。
+
+### 替代方案与范围
+
+- 替代方案 A/B/C/D 的推荐基本合理；MVP 不做联邦、部署、路线 a、热重载、多 profile 合并也合适。
+- 但 “每实例 `.wiki-profile.json` 类比 capture_policy” 这一句不准：`capture_policy.json` 当前在 `knowledge/.wiki/` 下，是实例内部配置；`.wiki-profile.json` 若放实例根，则与其位置不同。建议明确它是“实例根 canonical config，进 Git”，并说明为何不放 `knowledge/.wiki/`，避免和“`.wiki/ 派生/缓存不是正本”的既有规则混淆。
+- 与 RFC-002~007 的方向不冲突；真正的兼容风险主要在 `ID_FORMAT`、source 单主键、redirect 语义、派生 JSON schema 和 RFC-007 `content_hash`/`generated_at` 验证口径，上面几点修掉后可以继续推进。
+
 ## Decision
 
 （待用户填写或授权 Agent 代写）
