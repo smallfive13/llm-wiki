@@ -4,7 +4,7 @@ title: 业务 schema profile 机制（base + 可扩展 overlay，支持多实例
 author: claude
 status: proposed
 created: 2026-05-28
-updated: 2026-05-28
+updated: 2026-05-28  # v2 after codex review v1
 targets:
   - scripts/wiki_common.py
   - scripts/wiki_lint.py
@@ -62,14 +62,15 @@ reviewers:
 BASE_SCHEMA = {
   "schema_version": 1,
   "page_types": {
-    "source": {"prefix": "src_", "dir": "wiki/sources"},
-    "entity": {"prefix": "ent_", "dir": "wiki/entities"},
-    "topic": {"prefix": "top_", "dir": "wiki/topics"},
-    "comparison": {"prefix": "cmp_", "dir": "wiki/comparisons"},
-    "synthesis": {"prefix": "syn_", "dir": "wiki/synthesis"},
-    "decision": {"prefix": "dec_", "dir": "wiki/decisions"},
-    "query": {"prefix": "que_", "dir": "wiki/queries"},
-    "open-question": {"prefix": "oq_", "dir": "wiki/open-questions"},
+    # id_prefix 不含下划线（与 RFC-002 / lint regex 一致：token 后再拼 _YYYYMMDD_）
+    "source": {"id_prefix": "src", "dir": "wiki/sources"},
+    "entity": {"id_prefix": "ent", "dir": "wiki/entities"},
+    "topic": {"id_prefix": "top", "dir": "wiki/topics"},
+    "comparison": {"id_prefix": "cmp", "dir": "wiki/comparisons"},
+    "synthesis": {"id_prefix": "syn", "dir": "wiki/synthesis"},
+    "decision": {"id_prefix": "dec", "dir": "wiki/decisions"},
+    "query": {"id_prefix": "que", "dir": "wiki/queries"},
+    "open-question": {"id_prefix": "oq", "dir": "wiki/open-questions"},
   },
   "core_required_fields": ["id","type","status","confidence","created","updated","last_verified","review"],
   "core_enums": {
@@ -80,22 +81,25 @@ BASE_SCHEMA = {
 }
 ```
 
-`wiki_lint.py` 现有校验改为读 `BASE_SCHEMA`（而非内联字面量），**逻辑不变、行为不变**——这一步只是"把常量挪个位置"，靠 Step 验证字节级等价。
+> **prefix 不含下划线**（v2 钉死，解决 review #2）：`id_prefix` 存 token（`src`/`ent`/`case`），完整 id = `<id_prefix>_YYYYMMDD_<slug>`（inbox = `inb_YYYYMMDD_HHmmss_<slug>`）。这与现有 RFC-002~007 + lint regex `^(src|ent|top|...)_\d{8}_...` 完全一致。effective id regex 由 base + profile 的 `id_prefix` 集合动态拼成。
+
+`wiki_lint.py` 现有校验改为读 `BASE_SCHEMA`（而非内联字面量），**逻辑不变**——这一步只是"把常量挪个位置"，靠 Step 验证**结构等价**（见"验证口径"）。
 
 ### 2. 每实例 profile
 
-实例根放 `.wiki-profile.json`（**canonical config，进 git，类比 `capture_policy.json`**）；不存在时等价空 profile（纯 base）：
+实例根放 `.wiki-profile.json`（**实例根 canonical config，进 Git**）；不存在时等价空 profile（纯 base）：
 
 ```json
 {
   "schema_version": 1,
   "profile": "risk-control",
-  "enabled_base_types": ["source","entity","topic","decision","open-question"],
+  "description": "风控业务知识库（可选）",
   "extra_page_types": [
     {
       "type": "case",
-      "prefix": "case_",
+      "id_prefix": "case",
       "dir": "wiki/cases",
+      "description": "风险案例（可选）",
       "required_fields": ["case_id","severity"],
       "optional_fields": ["resolved_at"]
     }
@@ -109,46 +113,84 @@ BASE_SCHEMA = {
 }
 ```
 
+> **位置说明**（v2，解决 review 末尾 nit）：`.wiki-profile.json` 放**实例根**（与 `purpose.md`/`index.md` 同级），是 canonical 配置、**进 Git**。它**不放** `knowledge/.wiki/`——那是派生/缓存层（`.wiki/` 内的 id_index 等不进 Git）；profile 是正本配置不是派生物，故位置区别于 `.wiki/` 下的 `capture_policy.json`。
+
+字段约束（v2 补全，解决 review 补强）：
+
+- `schema_version`：必须存在；与引擎 `BASE_SCHEMA.schema_version` 比对（见 PROFILE_SCHEMA_VERSION）
+- `profile`：实例 profile 名，`^[a-z][a-z0-9-]*$`
+- `description`：可选
+- `extra_page_types[].type`：`^[a-z][a-z0-9-]*$`，不撞 base 类型名
+- `extra_page_types[].id_prefix`：`^[a-z]{2,5}$`（**不含下划线**），不撞 base 9 个 token / 彼此重复
+- `extra_page_types[].dir`：必须在 `wiki/` 下、不含 `..`、不撞 base 目录 / 彼此重复
+- `extra_page_types[].required_fields` / `optional_fields`：字段名 `^[a-z][a-z0-9_]*$`；两者不得重复；不得撞 core 必填字段名
+- `extra_field_enums` 的 key：必须是 profile 引入的**新字段**（见下方"新字段"定义）
+- `extra_optional_fields` 的 key：必须是已知 type（base 启用类型或 extra type）
+
 ### 3. profile 能做 / 不能做（扩展边界）
 
-**能（只增）**：
+**能（纯只增，v2 收紧）**：
 
-- `enabled_base_types`：选用 base 8 类的子集（缺省 = 全部）
-- `extra_page_types`：新页类型（新 `type` + 新 `prefix` + `dir` + 额外必填/可选字段）
+- `extra_page_types`：新页类型（新 `type` + 新 `id_prefix` + `dir` + 额外必填/可选字段）
 - `extra_field_enums`：为**新字段**声明 enum
 - `extra_optional_fields`：给某类型加可选字段
+
+> **"新字段"定义**（v2，解决 review 补强）：指 profile 引入的字段——即 `extra_page_types[].required_fields/optional_fields` 与 `extra_optional_fields` 声明的字段。**base 已有字段不算新字段**，profile 不能为其加 enum（防止间接改 core）。`extra_field_enums` 的 key 必须落在新字段集合内（否则 PROFILE_ENUM_UNKNOWN_FIELD）。
+
+> **`enabled_base_types` 已从 MVP 移除**（v2，解决 review #4）：原设想"选用 base 子集"本质是**收窄**（让未启用 base 类型在该实例非法），不是纯只增，且引出"已有页面是否变非法 / 是否影响 canonical target / graph 是否排除"一堆边界。为保证零回归 + 纯只增语义，**MVP 不支持禁用 base 类型**；所有 base 8 类在每个实例都合法。"按业务裁剪 base 类型"留后续 RFC（需单独定义禁用语义 + error code）。
 
 **不能（核心不变量，profile 碰不到）**：
 
 | 锁死项 | 原因 |
 | --- | --- |
-| 稳定 ID 格式 `<prefix>_YYYYMMDD_<slug>`（及 inbox `inb_..._HHmmss_...`） | RFC-002 根基，跨业务一致工具才可复用 |
+| 稳定 ID 格式 `<id_prefix>_YYYYMMDD_<slug>`（及 inbox `inb_..._HHmmss_...`） | RFC-002 根基，跨业务一致工具才可复用 |
 | canonical 引用语义（`source_ids`/`related_ids`/`supersedes`/`superseded_by`/`canonical_id`） | 图谱 + lint 基础 |
-| source 单主键 / inbox 必经缓冲 / 派生层不入正本 | 跨业务普适结构纪律 |
-| core 必填字段、`status`/`confidence` core enum | 不可删改，profile 只能在**新字段**上加 enum |
+| source 单主键（`id == source_id == summary_page_id`） | RFC-002 source 主键 |
+| entity 别名机制（`aliases` / `canonical_id` 的 RFC-004 语义、`status: redirect` **仅 entity**、不链式） | RFC-004 根基 |
+| inbox 必经缓冲 / 派生层不入正本（含 .wiki/ 派生 JSON 仍 gitignore） | 跨业务普适结构纪律 |
+| core 必填字段、`status`/`confidence` core enum（profile 只能在**新字段**上加 enum） | 不可删改 |
+| JSON 契约 schema（source_manifest / review_queue / capture_policy / id_index / normalized_alias_index / inbox_index / graph-data）不可被 profile 改写 | 工具互通基础 |
 | PII 兜底下限 | 安全红线，profile 只能加严不能放松 |
 
 ### 4. profile 自校验（新增 lint 检查）
 
-加载 profile 时校验（违规 → 新 error code）：
+加载 profile 时校验（违规 → 新 error code，全部 `PROFILE_*`）：
 
-- `PROFILE_PREFIX_COLLISION`：`extra_page_types[].prefix` 撞 base 9 个或彼此重复
-- `PROFILE_PREFIX_FORMAT`：prefix 不符 `^[a-z]{2,5}_$`
-- `PROFILE_TYPE_COLLISION`：`extra_page_types[].type` 撞 base 类型名
-- `PROFILE_CORE_SHADOW`：`extra_*_fields` 试图覆盖 core 必填字段名 / core enum
-- `PROFILE_ENABLED_UNKNOWN`：`enabled_base_types` 含非 base 类型
-- `PROFILE_SCHEMA_VERSION`：profile 的 `schema_version` 与引擎 `BASE_SCHEMA.schema_version` 不兼容
+| code | 触发 |
+| --- | --- |
+| `PROFILE_SCHEMA_VERSION` | profile 的 `schema_version` 与引擎 `BASE_SCHEMA.schema_version` 不兼容 |
+| `PROFILE_PREFIX_FORMAT` | `id_prefix` 不符 `^[a-z]{2,5}$`（不含下划线） |
+| `PROFILE_PREFIX_COLLISION` | `id_prefix` 撞 base 9 个 token（含 `inb`）或彼此重复 |
+| `PROFILE_TYPE_COLLISION` | `extra_page_types[].type` 撞 base 类型名或彼此重复 |
+| `PROFILE_DIR_INVALID` | `dir` 不在 `wiki/` 下 / 含 `..` / 撞 base 目录 / 彼此重复 |
+| `PROFILE_FIELD_INVALID` | 字段名不符 `^[a-z][a-z0-9_]*$` |
+| `PROFILE_FIELD_OVERLAP` | 同 type 的 `required_fields` 与 `optional_fields` 重复 |
+| `PROFILE_CORE_SHADOW` | `required/optional_fields` 撞 core 必填字段名；或 `extra_field_enums` 指向 base 已有字段 |
+| `PROFILE_ENUM_UNKNOWN_FIELD` | `extra_field_enums` 的 key 不在 profile 新字段集合内 |
+| `PROFILE_OPTFIELD_UNKNOWN_TYPE` | `extra_optional_fields` 的 key 不是已知 type |
+
+profile 自校验在 **merge 之前**跑；任一 error → lint exit 1，不产出 effective schema。
 
 ### 5. 工具 `--root` 参数
 
-`wiki_lint.py` / `wiki_graph.py` 加 `--root <instance>`（缺省自动探测 `knowledge/`，**向后兼容**）：
+**`--root` = 实例根**（v2 钉死，解决 review #1）。语义：
+
+- `--root <instance>` 指向**实例根目录**（含 `wiki/` `raw/` `inbox/` `maps/` `.wiki/` `.wiki-profile.json` 的那一层）
+- 缺省 = `<repo>/knowledge`（现状不变，向后兼容）
+- **所有相对路径以实例根为基准**：`<instance_root>/wiki/...`、`<instance_root>/.wiki/...`、`<instance_root>/raw/...`、`<instance_root>/maps/...`
+- effective schema = `merge(BASE_SCHEMA, <instance_root>/.wiki-profile.json)`
 
 ```bash
-python3 scripts/wiki_lint.py --root knowledge-bizA        # 单仓多实例
-python3 scripts/wiki_lint.py                              # 缺省 knowledge/（现状不变）
+python3 scripts/wiki_lint.py                          # 缺省 knowledge/（现状不变）
+python3 scripts/wiki_lint.py --root knowledge-bizA    # 单仓多实例：实例根 = knowledge-bizA/
+python3 scripts/wiki_graph.py --root knowledge-bizA   # graph 同理
 ```
 
-`--root` 让工具对准任一实例，部署无关（单仓 `--root knowledge-bizA`；多 repo 各自 `--root .`）。effective schema = `merge(BASE_SCHEMA, <root>/.wiki-profile.json)`。
+部署无关：单仓多实例用 `--root knowledge-<biz>`；多 repo 各自 `--root knowledge`（或该 repo 的实例根）。工具启动回显当前实例根 + profile 名，避免跑错实例。
+
+> **重构注意**：现有 `wiki_lint.py` / `wiki_graph.py` 把路径写成 `ROOT / "knowledge/wiki"`（ROOT=repo 根）。v2 改为 `INSTANCE_ROOT / "wiki"`，缺省 `INSTANCE_ROOT = repo根/knowledge`。这是路径基准的统一迁移，TASK 需保证缺省行为与现状一致（结构等价验证覆盖）。
+
+**wiki_graph 对未知 type 的处理**（v2，解决 review 补强）：graph **不重复 schema 校验**——它信任 lint 已拦截非法页面，只对页面 frontmatter 的 `type`（base 或 profile extra type 皆可）正常投影为节点；遇到完全未声明的 type 时跳过该页 + 计入 insights（不报错）。fixture 应含一个 extra type 节点验证其正常进图。
 
 ### 6. `.wiki-schema.md` 与文档
 
@@ -162,6 +204,7 @@ python3 scripts/wiki_lint.py                              # 缺省 knowledge/（
 - **部署机制**：引擎打包分发、多 repo submodule、CI 编排——等部署形态决策
 - **路线 a 全 schema-driven**：base 仍留代码，不整体数据化
 - **profile 删除/重定义 core**：明确禁止（见 #3）
+- **禁用 base 类型（`enabled_base_types`）**：原 v1 设想已移除（收窄语义与"只增"冲突 + 边界复杂）；按业务裁剪 base 类型留后续 RFC
 - **profile 热重载 / 多 profile 合并**：一个实例一个 profile
 - **业务级 capture_policy 模板**：capture_policy 已是实例级，本 RFC 不动其机制
 
@@ -202,8 +245,8 @@ python3 scripts/wiki_lint.py                              # 缺省 knowledge/（
 ### 改动正本 / 代码
 
 - `scripts/wiki_common.py`：新增 `BASE_SCHEMA` 常量 + `load_profile()` + `merge_schema()` + profile 自校验 helper
-- `scripts/wiki_lint.py`：校验改读 effective schema（base+profile）；新增 6 个 PROFILE_* error code；加 `--root`。**无 profile 时行为字节级不变**
-- `scripts/wiki_graph.py`：节点类型集 / prefix 改读 effective schema；加 `--root`
+- `scripts/wiki_lint.py`：校验改读 effective schema（base+profile）；新增 10 个 PROFILE_* error code；加 `--root`（实例根基准）。**无 profile 时行为等价**（结构等价，见验证口径）
+- `scripts/wiki_graph.py`：节点 type 集 / id_prefix 改读 effective schema；加 `--root`；未知 type 跳过不报错
 - `scripts/README.md`：profile 机制 + `--root` 用法 + 新 error code
 - `knowledge/.wiki-schema.md`：增 profile 概念 + 本实例（空 profile）说明
 - `wiki-design/01-architecture.md`：增"多实例 + schema profile"段
@@ -215,15 +258,26 @@ python3 scripts/wiki_lint.py                              # 缺省 knowledge/（
 - 现有 `knowledge/` 实例数据（不写 profile = 纯 base）
 - inbox / capture / 派生层机制
 
+### 验证口径（v2 钉死，解决 review #3）
+
+"无 profile 行为等价"**不是字节级不变**（lint 重建的 `.wiki/*` 含 `updated_at`、`--json` 含 `ran_at`、graph 含 `generated_at`，时间字段天然每次变）。改为**结构等价 + 时间字段归一**：
+
+1. lint human 输出在固定空库 / fixture 下，**去掉时间相关行**后与 refactor 前完全一致
+2. lint `--json` 输出**去掉 `ran_at`** 后结构等价
+3. 三个 `.wiki/*.json` **去掉 `updated_at`** 后结构等价
+4. graph 用 RFC-007 已钉死的 `content_hash` + 结构断言验证，**不比对 `generated_at`**
+
+TASK 落地后必须：重跑 RFC-006 Step 6 全量（E1~E11，按上述口径）+ RFC-007 fixture（content_hash）确认**无 profile 等价**，再加 profile 专项测试（含一个 extra type 走通 lint + graph）。
+
 ### 与既有约束的衔接
 
-- **lint 零回归是硬关**：BASE_SCHEMA 抽取 + profile 合并层落地后，TASK 必须重跑 RFC-006 Step 6 全量（E1~E11）+ RFC-007 fixture，确认**无 profile 时行为不变**，再加 profile 专项测试。
-- effective schema 影响 wiki_graph 的节点类型集——graph 也要重测。
+- **lint 零回归是硬关**：BASE_SCHEMA 抽取 + profile 合并层落地后按上述口径验证。
+- effective schema 影响 wiki_graph 的节点 type 集——graph 也要重测（含 extra type fixture）。
 
 ### 风险
 
-1. **BASE_SCHEMA 抽取回归**：把内联 enum 收拢成常量，易抄漏。缓解：抽取后字节级对比 lint 输出（无 profile 应与 refactor 前完全一致）。
-2. **profile 合并语义复杂度**：enabled_base_types + extra_page_types + extra_enums 的合并顺序与冲突。缓解：profile 自校验在合并前拦截非法 profile。
+1. **BASE_SCHEMA 抽取回归**：把内联 enum 收拢成常量，易抄漏。缓解：抽取后按"验证口径"做结构等价对比（无 profile 应与 refactor 前等价）。
+2. **profile 合并语义复杂度**：extra_page_types + extra_enums + extra_optional_fields 的合并顺序与冲突。缓解：profile 自校验在 merge 前拦截非法 profile（10 个 PROFILE_* code）。
 3. **prefix 空间耗尽 / 冲突**：业务各自加 prefix 可能撞。缓解：`PROFILE_PREFIX_COLLISION` 强制唯一。
 4. **schema_version 演进**：引擎升级 base schema 后老 profile 兼容性。缓解：profile 带 `schema_version`，不兼容时 `PROFILE_SCHEMA_VERSION` 报错提示迁移。
 5. **多实例后 `--root` 误用**：跑错实例。缓解：`--root` 缺省仍 `knowledge/`；工具输出回显当前 root + profile 名。
@@ -287,3 +341,30 @@ python3 scripts/wiki_lint.py                              # 缺省 knowledge/（
 ## Decision
 
 （待用户填写或授权 Agent 代写）
+
+## Revision v2 by claude · 2026-05-28
+
+addressing codex review v1 的 4 阻塞点 + 补强细节 + 位置 nit。
+
+### 阻塞点修复
+
+1. **`--root` 语义钉死**（review #1）：`--root` = **实例根**，缺省 `<repo>/knowledge`；所有相对路径以实例根为基准（`<root>/wiki`、`<root>/.wiki`…）。补"重构注意"：现有 `ROOT/"knowledge/wiki"` → `INSTANCE_ROOT/"wiki"`，缺省行为靠结构等价验证守住。
+2. **prefix 不含下划线**（review #2）：`BASE_SCHEMA` 与 profile 都存 `id_prefix` token（`src`/`case`），完整 id = `<id_prefix>_YYYYMMDD_<slug>`；`PROFILE_PREFIX_FORMAT` regex 改 `^[a-z]{2,5}$`。与现有 lint regex 一致，消除 ID_FORMAT 打架。
+3. **验证口径换成结构等价 + 时间归一**（review #3）：删"字节级不变"，新增"验证口径"段——lint human 去时间行 / `--json` 去 `ran_at` / `.wiki/*.json` 去 `updated_at` 结构等价 / graph 用 content_hash。影响范围 + 风险 #1 同步。
+4. **移除 `enabled_base_types`**（review #4）：收窄语义与"只增"冲突，MVP 删除；base 8 类每实例都合法；禁用 base 类型留后续 RFC。"能做"列表 + MVP 不包含 + PROFILE error code 同步。
+
+### 补强细节采纳
+
+- `.wiki-profile.json` 字段约束补全（profile/description/type/id_prefix/dir/字段名 regex + 不重复 + 不撞 core）。
+- PROFILE_* error code 从 6 扩到 **10**（补 DIR_INVALID / FIELD_INVALID / FIELD_OVERLAP / ENUM_UNKNOWN_FIELD / OPTFIELD_UNKNOWN_TYPE；删 ENABLED_UNKNOWN）。
+- 核心不变量锁定清单补：redirect 仅 entity、RFC-004 alias/canonical_id 语义、source `id==source_id`、7 类 JSON 契约 schema 不可改写、派生层仍 gitignore。
+- 定义"新字段"范围（profile 引入的字段才算；base 字段不算），`extra_field_enums` 只能落新字段。
+- wiki_graph 未知 type 处理：不重复 schema 校验，只投影 lint 合法页面，未声明 type 跳过 + 计 insights；fixture 加 extra type 节点。
+- 位置 nit：明确 `.wiki-profile.json` 在**实例根**（canonical 进 Git），区别于 `.wiki/` 下的 capture_policy（派生/缓存层）。
+
+### 未改动
+
+- 路线 b / profile-overlay 核心方向、替代方案 A~D 推荐项不变。
+- Codex review v1 段完整保留（append-only）。
+
+待 Codex re-review。
