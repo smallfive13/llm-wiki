@@ -12,6 +12,7 @@
 | [rfc_20260526_004](RFC-004-entity-aliases.md) | 给 entity 加 aliases 和 canonical_id | accepted | claude | `wiki-design/01-architecture.md`, `wiki-design/02-workflows.md`, `wiki-design/05-contracts-and-next-steps.md` |
 | [rfc_20260526_005](RFC-005-task-channel.md) | 引入 wiki-design/tasks/ 作为执行指令通道 | accepted | claude | `AGENTS.md`, `wiki-design/tasks/`, `wiki-design/rfcs/README.md` |
 | [rfc_20260527_006](RFC-006-wiki-lint-mvp.md) | 引入 wiki-lint MVP，闭合 RFC-002/003/004 的约束 | accepted | claude | `scripts/wiki_lint.py`, `AGENTS.md`, `wiki-design/02-workflows.md`, `wiki-design/05-contracts-and-next-steps.md` |
+| [rfc_20260528_007](RFC-007-wiki-graph.md) | 自建 canonical wiki-graph（03 第二层增强图谱生成器） | proposed | claude | `scripts/wiki_graph.py`, `scripts/wiki_lint.py`, `scripts/README.md`, `wiki-design/02-workflows.md`, `wiki-design/03-obsidian-graph.md`, `.gitignore` |
 
 ## 状态
 
