@@ -39,7 +39,7 @@ reviewers:
 所以两者是**互补**而非替代：
 
 - 第二层（本 RFC）：把已固化的 canonical 边**投影**成图谱（高精度，lint 校验过）
-- 第三层（RFC-008）：graphify 在 raw 上**发现**我们没策展的连接 → 喂 review_queue 等人确认
+- 第三层（后续 graphify RFC，编号待定）：graphify 在 raw 上**发现**我们没策展的连接 → 喂 review_queue 等人确认
 
 而且我们比参考实现（nashsu/llm_wiki 的 `wiki-graph.ts`）起点更高：它的边只能靠文件名 wikilink 匹配 + 临时 lowercase/连字符归一化；**我们有 lint 校验过的 canonical ID 引用 + 现成的 `normalized_alias_index.json`**（RFC-004）。所以本 RFC 不是从零造，而是"把 lint 已经解析好的关系多投影一个 graph-data.json"。
 
