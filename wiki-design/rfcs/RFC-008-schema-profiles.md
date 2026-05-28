@@ -368,3 +368,49 @@ addressing codex review v1 的 4 阻塞点 + 补强细节 + 位置 nit。
 - Codex review v1 段完整保留（append-only）。
 
 待 Codex re-review。
+
+## Review v2 by codex · 2026-05-28
+
+### 结论
+
+- 需修改。
+- v1 的 4 个阻塞点大部分已经修到位；现在只剩少量残留文案会和 v2 新口径互相打架。其中“字节级不变”残留是阻塞，因为它会让后续 apply task 的验收标准不一致。
+
+### v1 阻塞点复核
+
+1. `--root = 实例根`：已解决。
+   - v2 明确 `--root` 指实例根，缺省 `<repo>/knowledge`，相对路径以实例根为基准：`wiki/`、`.wiki/`、`raw/`、`maps/`。
+   - “重构注意”也明确现有 `ROOT / "knowledge/wiki"` 要迁移为 `INSTANCE_ROOT / "wiki"`，缺省行为靠结构等价验证守住。这个语义现在清晰。
+
+2. `id_prefix` 不含下划线：主体已解决。
+   - `BASE_SCHEMA` 和 profile 示例都改成 `id_prefix: "src" / "case"`，完整 id = `<id_prefix>_YYYYMMDD_<slug>`，与 RFC-002 和当前 lint regex 自洽。
+   - `PROFILE_PREFIX_FORMAT = ^[a-z]{2,5}$` 正确，也把 `inb` 作为保留 token 纳入 collision 检查。
+   - 非阻塞残留：背景段仍写“prefix `case_`”，建议改成“id_prefix `case`”或“ID prefix token `case`”，避免读者误以为 profile 里要写带下划线的 prefix。
+
+3. 验证口径：机制已解决，但有阻塞级残留。
+   - 新增“验证口径”段是对的：lint human 去时间行、`--json` 去 `ran_at`、`.wiki/*.json` 去 `updated_at`、graph 用 `content_hash` + 结构断言。这是可机械执行的，也能证明“无 profile 行为等价”。
+   - 阻塞残留：提案核心段仍保留“**无 profile 时 == 当前行为，字节级不变**”。这和 v2 后文“不是字节级不变，改为结构等价 + 时间字段归一”直接矛盾。后续 task 如果按前一句验收会失败或被迫 mock 时间。
+   - 建议把该句改成“无 profile 时 == 当前行为（按验证口径做结构等价，不承诺含时间字段的字节级不变）”。
+
+4. `enabled_base_types` 移除：已解决。
+   - active profile schema 中已经没有 `enabled_base_types`。
+   - “能做”列表现在是纯新增：extra page type / extra field enum / extra optional field。
+   - 剩余出现都在“已移除 / MVP 不包含 / v2 revision 说明”语境中，不是 active 机制残留，可以接受。
+
+### 补强细节复核
+
+- 10 个 `PROFILE_*` 覆盖面足够进入下一轮：schema_version、prefix format/collision、type collision、dir invalid、field invalid、field overlap、core shadow、enum unknown field、optional-field unknown type 都有落点。
+- 核心不变量清单补得比较完整，已覆盖 RFC-002~007 的关键冻结点：ID、canonical、source 单主键、RFC-004 alias/redirect、inbox、派生层、core enum、JSON 契约、PII。
+- “新字段”定义已补清楚：profile 引入的字段才算，base 已有字段不算，`extra_field_enums` 必须落在新字段集合内。
+- `wiki_graph` 边界基本可执行：graph 不重复 schema 校验，profile extra type 正常投影，完全未声明 type 跳过并计入 insights。后续 task 需要 fixture 覆盖 extra type 正常进图，以及 unknown type 跳过。
+- profile 位置主体已讲清：`.wiki-profile.json` 在实例根，canonical、进 Git，不放 `.wiki/`。但替代方案 B 的推荐评价仍写“与 capture_policy 并列”，这与前文“位置区别于 `.wiki/` 下的 capture_policy”矛盾。建议改成“与实例上下文文件并列”或“位于实例根，随实例走”。
+
+### 其它非阻塞建议
+
+- `extra_optional_fields` 目前更像文档/模板约束，因为现有 lint 不拒绝 wiki 页 extra frontmatter。后续 apply spec 最好说明：MVP 是否只校验 profile 合法性和 extra required/enum，不做“未知字段禁止”；否则会悄悄引入一个新的 `EXTRA_FRONTMATTER` 类行为。
+- profile 专项测试建议至少包含：合法 extra type 全链路、prefix collision、dir 越界、enum 指向未知字段、base 字段 enum shadow、unknown type 被 graph 跳过。
+
+### 最小修改建议
+
+- 删除或改写第一个“字节级不变”承诺。
+- 把背景里的 `case_` 和替代方案 B 里的“与 capture_policy 并列”两处残留同步成 v2 口径。
