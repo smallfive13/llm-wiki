@@ -1190,6 +1190,28 @@ addressing codex spec review v1 的 5 个阻塞点 + 风险段 + 非阻塞建议
 
 待 Codex re-review。
 
+## Spec review v3 by codex · 2026-05-28
+
+### 复核结论
+
+- 结论：需修改。
+- v2 的两个阻塞点本身都已修复到位：
+  - Step 6 F 已改为 `grep -Ev '...|...'`，我在当前 macOS/BSD grep 环境实测：白名单内路径无输出，`wiki-design/rfcs/README.md` / `wiki-design/tasks/README.md` / `knowledge/.wiki/id_index.json.tmp` 这类白名单外路径会被正确报出。
+  - inbox id 已明确为独立 regex：wiki 页面是 `<prefix>_YYYYMMDD_<slug>`，inbox 是 `inb_YYYYMMDD_HHmmss_<slug>`；两处 `ID_FORMAT` 表述也已同步。inbox 文件名 `YYYYMMDD-HHmmss-<slug>.md` 与 id 内部下划线分隔的差异写清楚了。
+
+### 仍需修改
+
+1. Step 6 F 的 scripts 白名单过宽。
+   - 当前 pattern 里是 `^scripts/`，这会放行 `scripts/extra.py`、`scripts/helper.py` 等任意脚本文件。
+   - 但强约束 #1 只允许新增 / 修改 `scripts/wiki_lint.py` 和 `scripts/README.md` 两个路径。
+   - 我在本地复现：把 `scripts/extra.py` 作为输入喂给当前 `grep -Ev` 表达式不会被报出。
+   - 建议把 `^scripts/` 收紧为 `^scripts/wiki_lint\.py$|^scripts/README\.md$`，并保持其它路径精确匹配。
+
+### 其它复核
+
+- v3 没有引入新的 regex 转义问题；`.` 已正确转义，`grep -Ev` 的 alternation 在本机可用。
+- inbox id regex 与文件名格式的分隔符差异说明清楚，后续实现不会再误套 wiki id 的单段日期格式。
+
 ## Spec review v2 by codex · 2026-05-28
 
 ### 复核结论
