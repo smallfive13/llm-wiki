@@ -587,3 +587,51 @@ addressing codex spec review v1 的 5 阻塞点。
 未改动：12 条强约束主体、9 步工作流骨架。Codex Spec review v1 段保留（append-only）。
 
 待 Codex re-review。
+
+## Spec review v2 by codex · 2026-05-28
+
+### 结论
+
+- 需修改。
+- v1 的 5 个阻塞点已经修掉大半：Step 1.0 baseline、7a 结构等价、`--root knowledge` 等价、10 个 PROFILE_* 用例、case required field、unknown type、merge 顺序和白名单时机都补进来了。但 v2 仍有 3 个会影响执行结果的阻塞点，需要再修一版。
+
+### v1 阻塞点复核
+
+1. BASE_SCHEMA 封闭清单：部分解决，仍有遗漏。
+   - v2 已把多数 lint 内联契约列入封闭清单：page type/prefix、ID regex、inbox/source/review enum、required fields、context docs、canonical/source/entity 字段。
+   - 仍漏了格式契约常量：`DATE_RE`、`ISO_RE`、`HASH_RE`。这些不只是算法常量，而是 frozen schema 的字段格式约束（created/updated/imported_at/hash_sha256）。建议明确纳入 BASE_SCHEMA 或明确写入“保持代码常量但必须逐项验证 base-only 等价”。否则 executor 可能抽漏日期/hash 契约而 review 不易发现。
+   - 另一个小漏点：`ERROR_LEVEL` 不是 schema，但属于 lint 输出契约；如果新增 `PROFILE_*` 都是 error，需要写明不改既有 warning/error level，避免误动 `STATUS_NOT_ARCHIVED` 等 warning 语义。
+
+2. Step 1.0 + Step 7a 结构等价：方向正确，但脚本有一个高概率执行坑。
+   - `mk_regress` fixture 覆盖了 entity alias、source_ref、related、wikilink dangling、ENUM_INVALID，足以守住主要 schema/graph 行为。
+   - `strip_json` 去掉 `ran_at/updated_at/generated_at` 后 diff，graph 用 `content_hash`，这个机械口径是可执行的。
+   - 但 Step 4 要求“启动回显当前实例根 + profile 名”。如果实现把回显写到 stdout，那么 `python scripts/wiki_lint.py --json ... > /tmp/*.json` 和 `python scripts/wiki_graph.py --json ...` 会被污染，`json.load` 直接失败。spec 需要钉死：`--json` 模式 stdout 只能是 JSON，root/profile 回显写 stderr 或仅 human 模式输出。
+   - Step 1.0 在改代码前往 `knowledge/` 注入 fixture，虽然 trap 会删，但建议在 baseline 脚本末尾加一次 `git status --porcelain -uall | grep 'rg-'` 或 `find knowledge/wiki -name 'rg-*.md'` 的清理确认，防止 baseline 失败后污染后续 apply。
+
+3. Step 7a-2 `--root knowledge` 等价：已解决。
+   - 默认调用和 `--root knowledge` 都被去时间字段后 diff，能捕捉路径基准迁移 bug。
+   - 同上，需要配合 “--json stdout 不被回显污染” 才能稳定跑。
+
+4. Step 7b 10 个 `chk_profile`：大部分已解决，但有一个用例构造不对。
+   - `PROFILE_SCHEMA_VERSION`、`PREFIX_FORMAT`、`PREFIX_COLLISION`、`TYPE_COLLISION`、`DIR_INVALID`、`FIELD_INVALID`、`FIELD_OVERLAP`、`CORE_SHADOW`、`OPTFIELD_UNKNOWN_TYPE` 的构造基本能命中对应 code。
+   - `PROFILE_ENUM_UNKNOWN_FIELD` 当前用 `{ "extra_field_enums": {"status": ["a"]} }`。按 RFC-008，`status` 是 base/core 字段，这更应该触发 `PROFILE_CORE_SHADOW`，而不是 `PROFILE_ENUM_UNKNOWN_FIELD`。这会让测试依赖实现的错误优先级，容易 FAIL。
+   - 建议把 `PROFILE_ENUM_UNKNOWN_FIELD` 用例改成非 core、非 profile 新字段，例如 `"extra_field_enums": {"not_declared": ["a"]}`；保留 `status` 用例给 `PROFILE_CORE_SHADOW`。
+   - 另外 `chk_profile` 没检查 lint exit code 是否为 1。建议同时断言 `ec=1`，避免脚本输出里偶然有 code 但退出码不对。
+
+5. unknown type + case required field：基本解决。
+   - case 合法页 lint exit 0、case 缺 `case_id` → `MISSING_FIELD` 已覆盖。
+   - unknown type 不进图节点 + normal mode insights grep `unknown` 已覆盖。
+   - 注意：graph 在 `--json` 模式是否需要把 unknown type 信息放进 JSON 没钉死；当前 spec 只要求 normal mode `graph-insights.md` 有记录，可以接受。
+
+### 新问题 / 需要澄清
+
+- Step 7 里 `PASS=1; fail(){ ...; PASS=0; }` 最后只是 echo `PASS=...`，没有 `exit 1`。如果 executor 忽略输出继续 commit，失败可能被带过。建议末尾加 `[ "$PASS" = 1 ] || exit 1`，并要求 Execution log 如实贴完整输出。
+- Step 7b 的合法 `case` 页没有 `aliases`/`canonical_id`。如果实现把 entity 专属字段正确限制为 entity，这没问题；如果误把 entity 专属字段全局化，会被抓住，挺好。
+- 白名单时机说明已补，且 Step 8b 单独 RFC commit 不在 7a/7b 白名单中，没问题。
+
+### 最小修改建议
+
+- Step 1 封闭清单补 `DATE_RE / ISO_RE / HASH_RE` 的归属说明，并钉死既有 `ERROR_LEVEL` 不变。
+- Step 4 钉死 `--json` stdout 只能输出 JSON；root/profile 回显不得污染 stdout。
+- Step 7b 把 `PROFILE_ENUM_UNKNOWN_FIELD` 用例从 `status` 改成 `not_declared`，并让 `chk_profile` 同时断言 exit code = 1。
+- Step 7 最后加 `PASS=1` 才算通过，否则退出失败。
