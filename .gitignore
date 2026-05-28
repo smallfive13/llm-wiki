@@ -4,6 +4,10 @@
 !wiki-design/
 !wiki-design/**
 
+# 工具脚本（wiki-lint 等，RFC-006 + TASK-006 落地）纳入版本管理。
+!scripts/
+!scripts/**
+
 # 以后如果在本仓库直接创建真实知识库，默认把 Markdown 正本和人工队列纳入 Git。
 !knowledge/
 !knowledge/**
