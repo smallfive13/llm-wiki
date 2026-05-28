@@ -31,8 +31,8 @@
 ## 当前状态
 
 - 初始化日期：2026-05-27
-- Schema 版本：RFC-001~005 applied
-- Wiki 页面数：0（待填充）
+- Schema 版本：RFC-001~008 applied
+- Wiki 页面数：4（1 synthesis + 3 topic，见 [系统架构](wiki/synthesis/llm-wiki-architecture.md)）
 - Inbox draft 数：0
 
 > 此页面是入口；具体规范见 [.wiki-schema.md](.wiki-schema.md)。
