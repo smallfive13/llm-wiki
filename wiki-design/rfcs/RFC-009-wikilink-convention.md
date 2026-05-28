@@ -136,3 +136,38 @@ canonical 的 `related_ids` 不受影响（图谱真正的边来自它），wiki
 ## Decision
 
 （待用户填写或授权 Agent 代写）
+
+## Review by codex · 2026-05-28
+
+### 结论
+
+- 需修改。
+- 核心方向同意：把 wikilink target 统一成文件 slug，并用 `[[slug|显示文本]]` 兼容 Obsidian 与中文可读性，是当前 4 页未解析节点问题的正确解法。
+- 但有 4 个执行级细节需要先钉死，否则 apply 时容易和 RFC-004 alias 语义、RFC-007 graph 解析边界发生偏差。
+
+### 重点问题
+
+1. 管道解析方向对，但“alias 先于 slug”在当前实现里不是严格成立。
+   - 当前 `parse_wikilink()` 已经做了 `raw.split("|", 1)[0].split("#", 1)[0]`，所以“取第一个 `|` 前为 target”事实上已存在。
+   - 当前 `build_wikilink_lookup()` 是把 `normalized_alias_index`、id、H1 title、slug 写进同一个 dict；后写入的 slug/title 可能覆盖 alias key。RFC 写“仍先查 normalized_alias_index，再查 slug→id，顺序不变”，但实现层如果继续单 dict 合并，并不能保证 alias 优先。
+   - 建议 RFC 明确 apply 时要拆成两阶段 lookup（alias lookup → slug/path lookup），或保证后续 `add_lookup` 不覆盖 alias index 中已有 key。否则 RFC-004 entity alias 的优先级可能被同名 slug/title 反向覆盖。
+
+2. slug 歧义处理还不够可执行。
+   - RFC 说歧义时可写 `[[wiki/topics/foo|Foo]]`，但当前 lookup 只登记 `Path(doc.rel).stem`，没有登记 `wiki/topics/foo` 这种无 `.md` 相对路径。
+   - “wiki_graph 取末段 slug 或全路径匹配”需要二选一并写清优先级。建议：若 target 含 `/`，先按实例根相对路径去掉 `.md` 精确匹配；若 target 不含 `/`，按 slug 匹配；slug 重复时不建边并写 `ambiguous_wikilink` insights。
+   - `ambiguous_wikilink` 的输出位置也应明确：只进 `graph-insights.md`，还是同时进入 `graph-data.json`/meta。当前 RFC 只说 insights warning，后续验证应按这个口径写死。
+
+3. 文档同步范围不完整。
+   - RFC targets 没有 `wiki-design/01-architecture.md`，但该文件仍有 `[[某篇来源摘要]]`、`[[LightRAG]]`、`[[Agent-native Wiki]]` 这类非 slug-based 示例。若 RFC 要标准化 wikilink 约定，01 也应加入 targets，或明确这些只是历史/占位示例且不在本轮改。
+   - `knowledge/.wiki-schema.md` 和 `wiki-design/05` 中的 entity alias 示例仍有 `[[Attention]]` / `[[正名]]` 形态。若“不再用 H1 标题作为 wikilink target”是硬规则，这些示例也要同步成 `[[attention|Attention]]` 这类 slug target + display 文本；同时保留 RFC-004 “别名本身不要包成 wikilink”的语义。
+   - 迁移 4 页的清单本身是完整的；我核对到这 4 页里需要替换的标题 wikilink 都在该列表覆盖范围内。
+
+4. 验证不能只写“重跑 RFC-007/008”。
+   - 重跑 RFC-007 fixture + RFC-008 零回归能守住旧行为不退化，但不能充分证明新功能：管道显示文本、带目录锚定、重复 slug ambiguity。
+   - 建议后续 task 额外加 3 个断言：`[[slug|Title]]` 正常建 `wikilink` 边；重复 basename slug 时不建边且 insights 出 `ambiguous_wikilink`；`[[wiki/topics/foo|Foo]]` 能精确消歧到目标页。
+
+### 兼容性判断
+
+- 与 RFC-002 不冲突：canonical 仍按稳定 `id`，wikilink 仍是显示层；只是把显示层 target 从 H1 标题收敛到文件 slug/path。
+- 与 RFC-004 不冲突的前提是：entity alias lookup 必须保持优先，且“用户别名不要包成 wikilink”的回答规则继续保留。
+- 与 RFC-007/008 的验证口径兼容，但需要在旧回归之外加本 RFC 专项 fixture。
