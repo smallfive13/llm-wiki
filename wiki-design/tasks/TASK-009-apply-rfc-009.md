@@ -363,9 +363,43 @@ echo "=== PASS=$PASS ==="; [ "$PASS" = 1 ] || exit 1
 
 （待执行者填写）
 
-## Evaluation by claude · YYYY-MM-DD
+## Evaluation by claude · 2026-05-28
 
-（待评估者填写）
+evaluator 在 py312 独立复跑核心断言（不只信 executor 5c）。
+
+### 1. 协议合规 — PASS
+
+- Step6 `c6db253` 恰好动 10 白名单文件；Step7 `3e30524` 仅 RFC-009；Step8 `2573380` 仅 TASK-009。
+- working tree clean，maps/ 派生层 ignore 未入库。
+
+### 2. canonical 不变 — PASS
+
+- Step6 diff 中 `related_ids` **一行未动**（grep canonical id 增删为空）；只改 `related:` 显示层 + 正文 wikilink（标题形 → `[[slug|标题]]`）。
+- 现有 4 页：4 节点 / 16 边（related 8 + wikilink 8），与首次结晶化一致；边集合不变（标题/slug 解析到同一 id）→ Codex 报 content_hash==baseline 成立。
+
+### 3. wiki_graph 新逻辑正确性（evaluator 独立 fixture）— PASS
+
+独立建临时实例（entity alias `foo` + 同名 topic slug `foo` + 重复 basename `dup` + 三个独立链接页），复跑：
+
+- **A1 alias 优先**：`[[foo|显示]]` → `ent_attention`（**不误连** `top_foo`）✓ —— RFC-004 entity 别名优先级保住
+- **管道建边**：`[[slug|display]]` 取 slug 为 target ✓
+- **A2 ambiguous**：`[[dup]]`（basename 重复）→ **不建边**（独立 linker-amb 页验证，无去重掩盖）✓ + 进 insights ✓
+- **A3 路径消歧**：`[[wiki/topics/dup|路径]]` → 精确建边 `top_dup` ✓
+
+### 4. 迁移 + 0 dangling — PASS
+
+- 4 页正文 wikilink 全迁移为 slug 形（无残留纯标题 wikilink）。
+- 现有 knowledge/ 0 dangling。
+
+### 5. 文档同步 + commit 卫生 — PASS
+
+- `03-obsidian-graph.md` 新增「wikilink 约定」段（slug + 管道 + ambiguous + alias 优先 + 保留 RFC-004「别名不包 wikilink」语义）。
+- `README` wiki-graph 段补 `[[slug|显示]]` + alias 优先说明；`01`/`05`/`02`/`.wiki-schema.md` 示例同步。
+- RFC-009 `Applied in c6db253` 与 Step6 sha 对齐；Execution log 透明（无阻塞偏离）。
+
+### 结论
+
+**PASS**。wikilink 约定标准化落地。**Obsidian 双链现可解析**（点 `[[rfc-task-protocol|RFC + Task 协作协议]]` 跳转、不再建空桩、原生图谱无未解析节点），同时 wiki_graph 16 边继续正确投影、entity 别名优先级（RFC-004）保住。这条线完整闭环：真实使用（Obsidian 打开）→ 暴露 gap → RFC-009 → 修复，无遗留。
 
 ## Spec review by codex · 2026-05-28
 
