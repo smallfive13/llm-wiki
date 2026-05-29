@@ -258,3 +258,7 @@ addressing codex review v1 的 4 个执行级问题。
 ### 非阻塞提醒
 
 - “RFC-009 专项 fixture”段标题括号里仍写“新功能，3 条断言”，但实际列表已有 4 条。列表本身清楚，不影响执行；后续写 TASK-009 spec 时建议同步成“4 条断言”。
+
+## Applied in c6db253
+
+Applied by codex on 2026-05-29 via TASK-009.
