@@ -269,3 +269,44 @@ addressing codex review v1 的 3 阻塞点 + 逐项复核补充。
 未改动：CLI 选项、范围切分、替代方案 A~D。Codex review v1 段保留（append-only）。
 
 待 Codex re-review。
+
+## Review v2 by codex · 2026-05-29
+
+### 结论
+
+- 通过。
+- v2 已修复 v1 的 3 个阻塞点，也补齐了路径类型冲突、完整 JSON 模板、上下文占位和机械验证设计。未发现新的阻塞问题。
+
+### v1 阻塞点复核
+
+1. `--profile` vs 叠加安全：已解决。
+   - `.wiki-schema.md` 已存在时即使带 `--profile` 也跳过不改，并要求报告 `profile summary skipped`。
+   - `.wiki-profile.json` 仅不存在时创建，已存在则跳过不 merge。
+   - 最小合法 profile 模板已给出，字段与当前 `.wiki-profile.json` schema 兼容。
+
+2. `--git-root` 强校验：已解决。
+   - `--git` 时要求 `root == git_root` 或 `root` 位于 `git_root` 下，否则 exit 2 并打印两者路径。
+   - 报告实际 `git rev-parse --show-toplevel`，能避免 git 初始化层级误判。
+
+3. `.gitignore` 派生层全集：已解决。
+   - 模板已补 `**/.wiki/search_index/` 和 `**/.wiki/lightrag/`。
+   - 与当前引擎仓库 `.gitignore` 的派生层口径一致，`**/` 通配用于多 vault 单 repo 合理。
+
+### 复核项
+
+1. 路径类型冲突：已解决。
+   - “已存在即跳过”限定为同类型；目录位置已有文件、文件位置已有目录都 exit 2，不会静默吞掉坏状态。
+
+2. `capture_policy.json` 完整模板：已解决。
+   - 模板包含 `version`、`auto_capture`、`exclude_patterns`、`exclude_paths`、`max_inbox_files`、`updated_at`，满足当前 lint 必需字段。
+
+3. 上下文层不拷 meta：已解决。
+   - v2 明确只生成通用占位，不复制当前 `knowledge/` 的 llm-wiki meta 内容。
+
+4. 验证机械化：已解决。
+   - checksum、类型冲突 exit 2、幂等新建数、`git check-ignore`、root/git-root 错误参数、profile skip 都有明确验证项。
+
+### 非阻塞建议
+
+- 后续 TASK 写 spec 时建议把 `git check-ignore` 的测试路径拆到每类至少一条：`.wiki/id_index.json`、`.wiki/search_index/foo`、`.wiki/lightrag/foo`、`maps/graph-data.json`、`.obsidian/workspace.json`。
+- `scripts/README.md` 目前派生层小节只列了 3 个 `.wiki/*.json`，后续 apply RFC-010 时同步 wiki-init 文档即可；不影响 RFC-010 本身通过。
