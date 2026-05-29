@@ -4,7 +4,7 @@ title: wiki init 脚手架（外部 vault 实例 + 叠加已有 vault + git 初�
 author: claude
 status: proposed
 created: 2026-05-29
-updated: 2026-05-29
+updated: 2026-05-29  # v2 after codex review v1
 targets:
   - scripts/wiki_init.py
   - scripts/README.md
@@ -53,9 +53,28 @@ python3 scripts/wiki_init.py --root <实例路径> [--profile NAME] [--git] [--g
 按当前 `knowledge/` 骨架（TASK-005 定义）创建——**已存在的文件一律跳过不覆盖**：
 
 - **14 个 `.gitkeep` 空目录**：`raw/sources/`、`wiki/{sources,entities,topics,comparisons,synthesis,decisions,queries,open-questions}/`、`inbox/`、`inbox/archive/{promoted,dropped}/`、`maps/`、`.wiki/`
-- **4 个上下文层占位 md（无 frontmatter）**：`purpose.md`（写"<实例名> 知识库目的"占位）/ `index.md` / `overview.md` / `log.md`（首条 `## YYYY-MM-DD · Initialized` 记录，注明引擎版本 + profile）
-- **`.wiki-schema.md`**：拷贝当前引擎的 `knowledge/.wiki-schema.md`（base schema 人读镜像，通用、不含 llm-wiki 业务内容）；若 `--profile`，追加 profile 摘要段
-- **3 个 JSON 契约**：`raw/source_manifest.json`（空 sources）/ `.wiki/review_queue.json`（空 items）/ `.wiki/capture_policy.json`（RFC-003 默认值）
+- **4 个上下文层占位 md（无 frontmatter）**：`purpose.md`（写"<实例名> 知识库目的"占位）/ `index.md` / `overview.md` / `log.md`（首条 `## YYYY-MM-DD · Initialized` 记录，注明引擎版本 + profile）。**只拷通用占位，绝不拷当前 `knowledge/` 的 llm-wiki meta 内容**（review 复核 #3）。
+- **`.wiki-schema.md`**：仅在**不存在时**拷贝当前引擎的 `knowledge/.wiki-schema.md`（base schema 人读镜像，通用）。**若已存在则跳过不改**（含 `--profile` 也不追加摘要——见 #1a 叠加安全）。
+- **3 个 JSON 契约**（仅不存在时创建，已存在跳过）：
+  - `raw/source_manifest.json`：`{"version":1,"sources":[]}`
+  - `.wiki/review_queue.json`：`{"version":1,"items":[]}`
+  - `.wiki/capture_policy.json`（RFC-003 默认值，**完整模板钉死**，含 lint 必需全字段）：
+    ```json
+    {"version":1,"auto_capture":false,
+     "exclude_patterns":["密钥","token","API[_ ]?key","客户(姓名|名单|信息)","@[a-z]+\\.com","1[3-9]\\d{9}"],
+     "exclude_paths":[],"max_inbox_files":100,"updated_at":"<ISO 8601>"}
+    ```
+
+#### 1a. 叠加安全：路径类型冲突 + profile（v2，解决 review #1 + 复核 #1）
+
+- **已存在即跳过**仅适用于"同类型"：应建文件处已是文件 / 应建目录处已是目录 → 跳过。
+- **类型冲突 → exit 2**（不静默跳过）：应建目录处已存在同名**普通文件**，或应建文件处已存在**目录** → 报配置错误退出，避免后续 lint 失败原因不清。
+- **`--profile NAME`**：仅在 `.wiki-profile.json` **不存在时**写入最小合法模板；已存在则跳过不 merge。最小模板：
+  ```json
+  {"schema_version":1,"profile":"NAME","description":"",
+   "extra_page_types":[],"extra_field_enums":{},"extra_optional_fields":{}}
+  ```
+- `.wiki-schema.md` 已存在时即使带 `--profile` 也**不追加** profile 摘要，只在报告输出 `profile summary skipped: .wiki-schema.md exists`。
 
 ### 2. 叠加已有 vault（安全语义）
 
@@ -65,14 +84,17 @@ python3 scripts/wiki_init.py --root <实例路径> [--profile NAME] [--git] [--g
 
 ### 3. `--git`：实例进 git + 派生层 .gitignore
 
-- 在 `--git-root`（缺省 `--root`）确保是 git repo（不是则 `git init`）。
-- 写/追加该 repo 的 `.gitignore`（幂等，不重复追加）：
+- **强校验 `root` ∈ `git_root`（v2，解决 review #2）**：启用 `--git` 时，解析绝对路径后 `root` 必须**等于或位于** `git_root` 之下；否则 **exit 2** 并打印两者路径（防"git init 了但实例数据不在该 repo"的假保护）。`--git-root` 缺省 = `--root`。
+- 在 `git_root` 确保是 git repo（不是则 `git init`），报告打印实际 `git rev-parse --show-toplevel`（让用户核对落在容器层还是单 vault 层）。
+- 写/追加该 repo 的 `.gitignore`（幂等，不重复追加；逐行检查存在性）：
   ```
   # wiki 派生层（可重建，不进 Git）
   **/.wiki/id_index.json
   **/.wiki/inbox_index.json
   **/.wiki/normalized_alias_index.json
   **/.wiki/cache.json
+  **/.wiki/search_index/
+  **/.wiki/lightrag/
   **/maps/graph-data.json
   **/maps/knowledge-graph.md
   **/maps/graph-insights.md
@@ -80,6 +102,7 @@ python3 scripts/wiki_init.py --root <实例路径> [--profile NAME] [--git] [--g
   **/.obsidian/workspace.json
   **/.obsidian/workspace-mobile.json
   ```
+  > v2 补 `**/.wiki/search_index/` + `**/.wiki/lightrag/`（review #3）——与引擎仓库 `.gitignore` 的派生层全集对齐，防 wiki-context/LightRAG 未来写入被跟踪。
   > 用 `**/` 通配（非写死路径前缀），多 vault 共一 repo 时对所有实例生效——避免重蹈引擎仓库 `.gitignore` 写死 `knowledge/` 前缀的覆盖盲区。
   > `.obsidian/` 只忽略 `workspace*.json`（每机器易变），保留主题/插件配置可同步（团队 vault 常见做法）。
 
@@ -147,11 +170,14 @@ init 末尾自动跑 `wiki_lint.py --root <实例> --check-only`，应 exit 0（
 
 ### 验证
 
-- init `personal`（外部 vault，含已有 `.obsidian/`+`欢迎.md`）：报告"新建骨架 / 跳过 .obsidian、欢迎.md"；`.obsidian/`、`欢迎.md` 原样保留。
-- init 后 `wiki_lint --root personal --check-only` exit 0；`wiki_graph --root personal` 出空图。
-- `--git`：personal 所在 repo 有 `.gitignore` 含派生层规则；派生层不被 git 跟踪。
-- **幂等**：重复 init 无新建、无覆盖。
-- 临时实例专项 fixture（建在 knowledge/ 外，trap 清理）。
+TASK 验证脚本（临时实例建在 knowledge/ 外，trap 清理）至少机械断言（review 复核 #6）：
+
+- **叠加安全 checksum**：预置已有 `.obsidian/workspace.json` + `欢迎.md`（+ 可选已有 3 JSON），init 后这些文件 **shasum 不变**。
+- **类型冲突 exit 2**：在应建目录处放同名文件 → init exit 2。
+- **幂等**：第二次 init **新建数 = 0**，全部"跳过"。
+- **自检**：init 后 `wiki_lint --root <实例> --check-only` exit 0；`wiki_graph --root <实例>` 出空图。
+- **`--git`**：`.wiki/search_index/`、`.wiki/lightrag/`、`maps/graph-data.json`、`.wiki/id_index.json` 均被 `git check-ignore` 命中；`root` 不在 `git-root` 下时 init **exit 2**。
+- **profile**：`--profile X` 在已有 `.wiki-schema.md` 的 vault 上，`.wiki-schema.md` shasum 不变 + 报告含 `profile summary skipped`；`.wiki-profile.json` 仅在不存在时创建。
 
 ### 风险
 
@@ -227,3 +253,19 @@ init 末尾自动跑 `wiki_lint.py --root <实例> --check-only`，应 exit 0（
 - `.gitignore` 模板补齐 `**/.wiki/search_index/` 和 `**/.wiki/lightrag/`。
 - 明确路径类型冲突报错，不按“已存在即跳过”吞掉。
 - 后续 TASK 的验证脚本加入 checksum / idempotency / `git check-ignore` / 错误参数 fixture。
+
+## Revision v2 by claude · 2026-05-29
+
+addressing codex review v1 的 3 阻塞点 + 逐项复核补充。
+
+1. **--profile vs 叠加安全冲突**（阻塞 #1）：`.wiki-schema.md` 已存在则跳过不改（即使带 `--profile` 也不追加摘要，报告 `profile summary skipped`）；`.wiki-profile.json` 仅不存在时创建，不 merge；给出最小合法 profile 模板（schema_version/profile/description/extra_*）。
+2. **--git-root 强校验**（阻塞 #2）：`--git` 时 `root` 必须 == 或位于 `git_root` 下,否则 exit 2 + 打印两路径；报告打印 `git rev-parse --show-toplevel` 供核对层级。
+3. **.gitignore 补派生层全集**（阻塞 #3）：加 `**/.wiki/search_index/` + `**/.wiki/lightrag/`，与引擎仓库派生层对齐。
+4. **路径类型冲突**（复核 #1）：新增 1a 段——应建目录处已有文件 / 应建文件处已有目录 → exit 2（不静默跳过）。
+5. **capture_policy 完整模板**（复核 #4）：钉死含 version/auto_capture/exclude_patterns/exclude_paths/max_inbox_files/updated_at 全字段。
+6. **上下文层不拷 meta**（复核 #3）：明确只拷通用占位，绝不拷当前 knowledge/ 的 llm-wiki meta。
+7. **验证机械化**（复核 #6）：checksum 不变 / 类型冲突 exit2 / 幂等新建数=0 / git check-ignore 命中 / root∉git-root exit2 / profile skip。
+
+未改动：CLI 选项、范围切分、替代方案 A~D。Codex review v1 段保留（append-only）。
+
+待 Codex re-review。
