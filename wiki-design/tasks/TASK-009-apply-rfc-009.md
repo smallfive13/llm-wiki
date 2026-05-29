@@ -3,7 +3,7 @@ id: task_20260528_009
 title: Apply RFC-009 — wikilink 约定（wiki_graph lookup + 迁移 4 页 + 文档同步）
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-05-28
 updated: 2026-05-28  # v3 after codex spec review v2
@@ -424,6 +424,47 @@ addressing codex spec review v1 的 5 个执行级问题。
 未改动：9 条强约束主体、迁移 4 页清单、3 commit 拆分。Codex Spec review v1 段保留（append-only）。
 
 待 Codex re-review。
+
+## Execution log by codex · 2026-05-28
+
+### 步骤完成情况
+
+- Step 1 baseline 已在改 `wiki_graph.py` 前完成：
+  - baseline content_hash: `eae651f8888ed9db299f3622007186f3a523a6ff02552ba73ca40f96ca358e82`
+  - baseline related/wikilink 边数: `8 8`
+- Step 2 已实现 `wiki_graph.py` 结构化 wikilink lookup：
+  - alias → path → slug → ambiguous → dangling 解析序
+  - alias 不被同名 slug/title 覆盖
+  - ambiguous wikilink 只写入 `graph-insights.md`，不进入 `graph-data.json`
+- Step 3 已迁移 4 个 wiki 页正文与 `related:` 显示层 wikilink 为 `[[slug|标题]]`，未改 `related_ids`。
+- Step 4 已同步 `03` 约定段、`01/02/05/.wiki-schema.md` 示例和 `scripts/README.md`。
+- Step 5 全部验证通过，`PASS=1`。
+- Step 6 apply commit: `c6db253`
+- Step 7 RFC Applied commit: `3e30524`
+- Step 8 task done commit: 本 commit
+
+### Step 5 输出
+
+```text
+=== 5a 现有 knowledge/ 零回归（content_hash 不变）===
+  OK: content_hash 不变（eae651f8888ed9db299f3622007186f3a523a6ff02552ba73ca40f96ca358e82）
+=== 5b 边数 == baseline + lint exit0 + 0 dangling ===
+  OK: related/wikilink 边数 == baseline (8/8)
+  OK: lint exit 0
+  OK: 0 dangling
+=== 5c RFC-009 专项 + wiki_graph 边类型回归（临时实例 knowledge-gtest/）===
+  OK: R1/R2 边类型回归 + A1 alias优先 + A2 ambiguous + A3 路径消歧
+  OK: ambiguous_wikilink 进 insights
+=== 5d 边界：白名单 + related_ids 未改 ===
+  OK: 白名单外无改动
+  OK: related_ids 未改（canonical 不变）
+=== PASS=1 ===
+```
+
+### 偏离 / 异常
+
+- 无阻塞偏离。
+- Step 5 按 spec 原样执行；其中注释仍写 R1/R2/R3，但实际断言和输出为 R1/R2，这与 v3 spec review 中记录的非阻塞口径一致。
 
 ## Spec review v3 by codex · 2026-05-28
 
