@@ -167,3 +167,63 @@ init 末尾自动跑 `wiki_lint.py --root <实例> --check-only`，应 exit 0（
 ## Decision
 
 （待用户填写或授权 Agent 代写）
+
+## Review by codex · 2026-05-29
+
+### 结论
+
+- 需修改。
+- 核心方向同意：`wiki_init.py` 解决外部 vault 实例创建、叠加已有 Obsidian vault、可选 git 初始化这三个真实痛点，且把 `wiki sync` / Agent active instance / 迁移划出 MVP 是合理的。
+- 但 RFC 当前还有 3 个执行级阻塞点，需要先钉死，否则后续 TASK 容易出现“看似安全、实际覆盖/漏跟踪/假 git 保护”的问题。
+
+### 重点问题
+
+1. `--profile` 与“已存在即跳过”语义有冲突。
+   - RFC 一方面说“已存在的文件一律跳过不覆盖”，另一方面说 `--profile` 时追加 `.wiki-schema.md` profile 摘要段。若目标 vault 已有 `.wiki-schema.md`，追加就是修改既有文件，破坏叠加安全语义。
+   - 建议钉死：`.wiki-schema.md` 只在新建时写入 profile 摘要；若已存在则不改，只在报告里提示“profile summary skipped because .wiki-schema.md exists”。`.wiki-profile.json` 若已存在也必须跳过，不做 merge。
+   - `--profile NAME` 还需要给出精确模板，否则 executor 可能写出无法通过 lint 的 profile。建议最小合法模板为 `schema_version: 1`、`profile: NAME`、`description: ""`、`extra_page_types: []`、`extra_field_enums: {}`、`extra_optional_fields: {}`。
+
+2. `--git-root` 需要强校验实例根在 git-root 内。
+   - 当前 RFC 说在 `--git-root` 确保 git repo，但没有要求 `<实例路径>` 必须位于 `<git-root>` 下。若用户传错，例如 `--root /vault/personal --git-root /other/repo`，脚本仍可能 `git init` / 写 `.gitignore` 成功，却没有让实例数据进 git。
+   - 建议加入配置错误：启用 `--git` 时，解析绝对路径后 `root` 必须等于或位于 `git_root` 之下；否则 exit 2，并打印两者路径。
+   - 还建议报告实际 `git rev-parse --show-toplevel` 或新建 repo 路径，避免用户以为初始化在容器层，实际落在单 vault 层。
+
+3. `.gitignore` 派生层规则没有覆盖当前引擎已定义的派生层全集。
+   - RFC 列了 `id_index` / `inbox_index` / `normalized_alias_index` / `cache.json` / `maps/*`，但当前根 `.gitignore` 还排除了 `.wiki/search_index/` 和 `.wiki/lightrag/`。TASK-005 log 也把这些视为派生层。
+   - 外部实例 repo 若漏掉这两个目录，后续一旦 wiki-context / LightRAG 或历史脚本写入，就会被 git 跟踪。建议补：
+     - `**/.wiki/search_index/`
+     - `**/.wiki/lightrag/`
+   - `**/maps/...` 可能误伤同 repo 下非 wiki 的 maps 目录，RFC 已把风险列出并说明 MVP 可接受；这个点我认为非阻塞。
+
+### 逐项复核
+
+1. 叠加安全语义：方向正确，但需要补“路径类型冲突”处理。
+   - “已存在即跳过”可以覆盖 `.obsidian/`、用户 md、已建骨架、3 JSON 已存在的覆盖风险。
+   - 还应明确：若应创建目录的位置已存在同名普通文件，或应创建文件的位置已存在目录，不应跳过，应 exit 2 报配置错误；否则后续 lint 失败原因会不清晰。
+
+2. `--git` / `--git-root`：方案基本合理，但需补上面的 root 包含关系和派生层全集。
+   - `**/` 通配适合多 vault 共一 repo。
+   - `.obsidian/workspace*.json` 粒度合理：忽略每机器状态，保留主题/插件配置。
+
+3. `.wiki-schema.md` 拷模板 vs 从 BASE_SCHEMA 生成：MVP 可以接受。
+   - RFC 已说明 stale 风险只是文档漂移，工具读 `BASE_SCHEMA`，并把 `wiki sync` 推迟到后续 RFC；这个边界清楚。
+   - 但实现时应只复制通用 `knowledge/.wiki-schema.md`，不能复制当前 `purpose/index/overview/log` 的 llm-wiki meta 内容；上下文层应按 RFC 的空实例占位生成。
+
+4. 骨架清单与当前 TASK-005：基本一致。
+   - 14 个 `.gitkeep` 目录与 TASK-005 对齐。
+   - 3 个 JSON 路径对齐。
+   - 建议在 RFC 或后续 task 中写死 `capture_policy.json` 完整模板，至少包含当前 lint 必需字段：`version`、`auto_capture`、`exclude_patterns`、`exclude_paths`、`max_inbox_files`、`updated_at`。只写“RFC-003 默认值”会让实现留歧义。
+
+5. 范围切分：合理。
+   - `wiki sync`、Agent active instance 指向（RFC-011）、迁移现有 `knowledge/` 内容都不应塞进 init MVP。
+
+6. 验证设计：方向够，但需要更机械。
+   - 临时 fixture 应至少断言：已有 `.obsidian/workspace.json` checksum 不变、已有 `欢迎.md` checksum 不变、已有 3 JSON 不变、重复 init 第二次新建数为 0、`.wiki/search_index/` / `.wiki/lightrag/` 被 `git check-ignore` 命中、`root` 不在 `git-root` 下时 exit 2。
+
+### 最小修改建议
+
+- 明确 `--profile` 只创建缺失的 `.wiki-profile.json`，不修改已存在 `.wiki-schema.md`；给出最小合法 profile JSON。
+- 明确 `--git` 时 `root` 必须在 `git_root` 内；不满足则 exit 2。
+- `.gitignore` 模板补齐 `**/.wiki/search_index/` 和 `**/.wiki/lightrag/`。
+- 明确路径类型冲突报错，不按“已存在即跳过”吞掉。
+- 后续 TASK 的验证脚本加入 checksum / idempotency / `git check-ignore` / 错误参数 fixture。
