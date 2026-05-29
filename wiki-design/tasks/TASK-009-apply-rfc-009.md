@@ -362,3 +362,39 @@ addressing codex spec review v1 的 5 个执行级问题。
 未改动：9 条强约束主体、迁移 4 页清单、3 commit 拆分。Codex Spec review v1 段保留（append-only）。
 
 待 Codex re-review。
+
+## Spec review v2 by codex · 2026-05-28
+
+### 结论
+
+- 需修改。
+- v2 已解决 v1 的大部分结构问题：Step 2 已把 lookup 拆成结构化解析方向，Step 1/5a 已固化 baseline 并做真实 hash 比对，Step 5b 已改成与 baseline 比边数并生成 fresh insights，Step 5d 也补了白名单和 `related_ids` 检查。但 Step 5c 仍有两个会导致专项验证误判的阻塞点，Step 5a 也还有可执行性残留。
+
+### v1 五点复核
+
+1. Step 2 结构化 lookup + 五步解析序：已解决。
+   - 规则已经能和当前 `build_wikilink_lookup()` / `build_edges()` 改造衔接：保留 `parse_wikilink()` 负责管道和 heading 剥离，再由 resolver 按 alias、path、unique slug、ambiguous、dangling 顺序解析。
+   - “alias 不被覆盖”也写成了 resolver 优先级，能守住 RFC-004 的正名 alias 语义。
+
+2. Step 1 baseline + Step 5a 真实比对：部分解决。
+   - `content_hash` 和 related/wikilink 边数已经写入 `/tmp/g009_before_hash`、`/tmp/g009_before_counts`，Step 5a/5b 能真实比对。
+   - 但 5a 仍保留 `>>> 粘贴 TASK-007 Step 7c <<<` / `>>> 粘贴 TASK-008 Step 7a-1 <<<` 占位。作为执行 spec，它还不是一个可直接机械运行的验证块；建议要么内嵌完整脚本，要么引用精确到当前 task 文件的稳定段落并写明复制边界。
+
+3. Step 5b baseline 比边数 + fresh insights：已解决。
+   - 边数不再写死 `6/6`，而是读取 Step 1 baseline。
+   - dangling 检查前先跑普通模式 `wiki_graph.py`，避免读取 stale `knowledge/maps/graph-insights.md`。
+
+4. Step 5c 内嵌 fixture 4 断言：需修改。
+   - fixture 结构已经补齐，alias 优先构造方向也对：`entity attention` 带 alias `foo`，同时存在 `topics/foo`，`[[foo|显示文本]]` 应指向 entity。
+   - 阻塞点 A：Python 断言只打印 `OK/FAIL`，没有 `sys.exit(1)`，也没有回写 shell `PASS=0`。因此断言失败时 Step 5 仍可能继续通过。
+   - 阻塞点 B：`[[dup]]` ambiguous 和 `[[wiki/topics/dup|路径消歧]]` 放在同一个 `linker` 页面里，且目标同为 `top_20260528_dup`。由于 graph 边按 `(source,target,relation,source_kind)` 去重，只要路径消歧建出了 `linker -> top_dup`，就无法机械证明 ambiguous `[[dup]]` 没有也错误建边；断言 2 和断言 3 互相污染。建议拆成两个 source 页面，例如 `linker-ambiguous` 只放 `[[dup]]`，`linker-path` 只放 `[[wiki/topics/dup|路径消歧]]`，再分别断言。
+
+5. Step 5d 白名单 + `related_ids` diff：基本解决。
+   - 白名单覆盖了 task apply 允许修改的路径，并把 TASK-009 自身纳入 review/执行日志路径；未跟踪 Obsidian 空桩由前置条件要求用户处理，符合“不纳入本 task commit”的边界。
+   - `related_ids` grep 是偏保守的 diff 检查，可能覆盖到其它 canonical id 列表，但在本 task 的白名单和迁移范围下可以接受。
+
+### 最小修改建议
+
+- Step 5c 的 Python 断言改为收集 failures，失败时 `raise SystemExit(1)`；shell 层用 `|| fail "RFC-009 fixture assertions"` 接住。
+- 将 ambiguous 与 path disambiguation 拆到不同 source 页面，避免同一 `(source,target,relation,source_kind)` 去重掩盖错误。
+- Step 5a 去掉占位，内嵌或精确引用可直接复制的 RFC-007/RFC-008 回归脚本，保证执行者不需要再凭记忆找段落。
