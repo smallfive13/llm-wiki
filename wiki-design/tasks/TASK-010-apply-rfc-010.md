@@ -107,7 +107,7 @@ python3 scripts/wiki_init.py --root <path> [--profile NAME] [--git] [--git-root 
 - 强校验:`root` 必须 == 或位于 `git_root`(缺省 `root`)下;否则 **exit 2** + 打印两路径
 - `git_root` 非 repo 则 `subprocess git init`;打印 `git rev-parse --show-toplevel`
 - 写/追加 `.gitignore`(RFC-010 #3 全 12 行,逐行检查存在性,幂等)
-- git subprocess 失败 graceful 报错(exit 2),不留半初始化
+- git subprocess 失败 graceful 报错(exit 2) —— **失败语义以 1.9 为准**（已建骨架不回滚，报告说明）
 
 #### 1.7 自检(RFC-010 #4)
 - init 末尾跑 wiki_lint(subprocess),**必须显式 `cwd=engine_repo`**(解决 review #1)——因 `wiki_lint._repo_root()` 用 `Path.cwd()` 且要求 cwd 含 `scripts/`,只给绝对路径不够:
@@ -172,7 +172,7 @@ python3 scripts/wiki_init.py --root "$C" >/dev/null 2>&1; [ $? = 2 ] && echo "  
 echo "=== 5d --git: check-ignore 派生层全集 + root∉git-root exit2 ==="
 G="$BASE/repo"; mkdir -p "$G/personal"
 python3 scripts/wiki_init.py --root "$G/personal" --git --git-root "$G" >/dev/null 2>&1 || fail "5d init --git 非 0"
-# 全集（解决 review #3）：派生层 7 + .obsidian workspace 2
+# 全集（解决 review #3）：派生层 9 样例 + .obsidian workspace 2 = 11（以本循环清单为准）
 for p in personal/.wiki/id_index.json personal/.wiki/inbox_index.json personal/.wiki/normalized_alias_index.json \
          personal/.wiki/cache.json personal/.wiki/search_index/ personal/.wiki/lightrag/ \
          personal/maps/graph-data.json personal/maps/knowledge-graph.md personal/maps/graph-insights.md \
