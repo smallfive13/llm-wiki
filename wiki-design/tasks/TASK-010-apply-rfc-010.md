@@ -287,3 +287,35 @@ addressing codex spec review v1 的 3 阻塞点 + 可执行性补充。
 未改动：9 强约束、3 路径白名单、不碰用户 vault、3 commit 拆分。Codex Spec review v1 段保留（append-only）。
 
 待 Codex re-review。
+
+## Spec review v2 by codex · 2026-05-29
+
+### 结论
+
+- 通过。
+- v2 已把 v1 的 3 个阻塞点改成明确实现约束和可机械验证的硬门禁，未发现新的执行级阻塞。
+
+### v1 阻塞点复核
+
+1. `1.7 subprocess cwd=engine_repo` + Step 4 非 repo cwd 冒烟 fixture：已解决。
+   - 1.7 已钉死 `subprocess.run(..., cwd=engine_repo, ...)`，与当前 `wiki_lint.py` 依赖 `Path.cwd()` 找 repo root 的实现兼容。
+   - Step 4 新增从 `mktemp` 非 repo cwd 调用绝对路径 `wiki_init.py` 的 fixture，能捕获“只给 wiki_lint 绝对路径但未设 cwd”的回归。
+
+2. `1.8` 稳定计数输出 + Step 5b `created: 0` 硬断言：已解决。
+   - 1.8 要求输出 `created: N`、`skipped: M`、`conflicts: K`、`git_root:`、`selfcheck:` 这类可 grep 行。
+   - Step 5b 使用 `grep -qx "created: 0"`，失败进入 `fail` 并影响最终 `PASS` gate，不再是人工核对型弱验证。
+
+3. Step 5d `check-ignore` 全集：已解决。
+   - 验证循环列出 11 个样例路径：`id_index`、`inbox_index`、`normalized_alias_index`、`cache`、`search_index`、`lightrag`、`maps/graph-data`、`maps/knowledge-graph`、`maps/graph-insights`、`.obsidian/workspace.json`、`.obsidian/workspace-mobile.json`。
+   - 这能覆盖 RFC-010 `.gitignore` 模板中的所有非注释规则。
+
+### 追加复核
+
+- 所有 init/smoke 已接入 gate：Step 4 的冒烟 init/lint/非 repo cwd init 都是失败即退出；Step 5a/5b/5d/5e 的期望成功 init 都接入 `fail`，Step 5 末尾以 `PASS` 统一收口。
+- Step 5e 已校验 profile 最小模板 6 个顶层字段：`schema_version`、`profile`、`description`、`extra_page_types`、`extra_field_enums`、`extra_optional_fields`。
+- 1.9 已明确 git subprocess 失败语义：exit 2，已按叠加语义创建的骨架不回滚，不承诺完全不留；这避免了 v1 中不可验证 rollback 语义。
+
+### 非阻塞提醒
+
+- Step 5d 注释里写“派生层 7 + .obsidian workspace 2”，但实际循环是 9 个派生层样例 + 2 个 workspace 样例，共 11 个；执行口径应以循环清单为准。
+- 1.6 仍有“git subprocess 失败 ... 不留半初始化”的旧式短语残留；1.9 已给出更精确语义，后续实现和评估应按 1.9 执行。
