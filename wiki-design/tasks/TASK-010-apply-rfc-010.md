@@ -6,7 +6,7 @@ executor: codex
 status: pending
 type: apply
 created: 2026-05-29
-updated: 2026-05-29
+updated: 2026-05-29  # v2 after codex spec review v1
 related_rfcs:
   - rfc_20260529_010
 ---
@@ -110,8 +110,19 @@ python3 scripts/wiki_init.py --root <path> [--profile NAME] [--git] [--git-root 
 - git subprocess 失败 graceful 报错(exit 2),不留半初始化
 
 #### 1.7 自检(RFC-010 #4)
-- init 末尾跑 `wiki_lint.py --root <实例> --check-only`(subprocess,引擎路径定位同 1.3);exit≠0 则报告 + 本脚本 exit 2
-- 报告:新建 N / 跳过 M / git repo 路径 / 自检结果
+- init 末尾跑 wiki_lint(subprocess),**必须显式 `cwd=engine_repo`**(解决 review #1)——因 `wiki_lint._repo_root()` 用 `Path.cwd()` 且要求 cwd 含 `scripts/`,只给绝对路径不够:
+  ```python
+  subprocess.run([sys.executable, str(engine_repo / "scripts/wiki_lint.py"),
+                  "--root", str(root), "--check-only"], cwd=engine_repo, ...)
+  ```
+  其中 `engine_repo = Path(__file__).resolve().parent.parent`。exit≠0 则报告 + 本脚本 exit 2。
+
+#### 1.8 报告输出格式(钉死可解析,解决 review #2)
+- 末尾输出**稳定可 grep 行**:`created: N`、`skipped: M`、`conflicts: K`、`git_root: <path>`、`selfcheck: ok|fail`
+- Step 5 据此硬断言(不靠多语言 grep "新建")。
+
+#### 1.9 git 失败语义(解决 review 边界)
+- git subprocess 失败 → exit 2;**已按叠加语义创建的骨架不回滚**(报告说明),但不写临时/半文件。不承诺"完全不留"。
 
 ### Step 2~3：文档
 - `scripts/README.md`:wiki init 段(用法 + 选项表 + 叠加语义 + git + 自检)
@@ -121,11 +132,14 @@ python3 scripts/wiki_init.py --root <path> [--profile NAME] [--git] [--git-root 
 ```bash
 conda activate py312
 python -c "import yaml" || pip install pyyaml
-# 冒烟:临时空目录 init → 自检 exit 0
+# 冒烟:临时空目录 init → 自检 exit 0（失败即退出，作为 gate）
 T=$(mktemp -d)
-python3 scripts/wiki_init.py --root "$T"; echo "init exit: $?"
-python3 scripts/wiki_lint.py --root "$T" --check-only >/dev/null 2>&1; echo "lint exit: $? (期望 0)"
-rm -rf "$T"
+python3 scripts/wiki_init.py --root "$T" || { echo "FAIL: 冒烟 init 非 0"; rm -rf "$T"; exit 1; }
+python3 scripts/wiki_lint.py --root "$T" --check-only >/dev/null 2>&1 || { echo "FAIL: 冒烟 lint 非 0"; rm -rf "$T"; exit 1; }
+# 非 repo cwd 调用 wiki_init 仍成功（验证 1.7 cwd=engine_repo，解决 review #1）
+T2=$(mktemp -d); ( cd "$T2" && python3 /Users/zhangjunwu/workspace/llm-wiki/llm-wiki/scripts/wiki_init.py --root "$T2/inst" ) || { echo "FAIL: 非 repo cwd init 失败"; rm -rf "$T" "$T2"; exit 1; }
+echo "冒烟 OK（含非 repo cwd）"
+rm -rf "$T" "$T2"
 ```
 
 ### Step 5：自检验证(临时实例,knowledge/ 外,trap 清理)
@@ -141,24 +155,28 @@ printf '{"x":1}\n' > "$V/.obsidian/workspace.json"
 printf '# 欢迎\n' > "$V/欢迎.md"
 H1=$(shasum "$V/.obsidian/workspace.json" | cut -d' ' -f1)
 H2=$(shasum "$V/欢迎.md" | cut -d' ' -f1)
-python3 scripts/wiki_init.py --root "$V" >/dev/null 2>&1; echo "  init exit: $?"
+python3 scripts/wiki_init.py --root "$V" >/dev/null 2>&1 || fail "5a init 非 0"
 [ "$H1" = "$(shasum "$V/.obsidian/workspace.json" | cut -d' ' -f1)" ] && echo "  OK: workspace.json 未变" || fail "workspace.json 被改"
 [ "$H2" = "$(shasum "$V/欢迎.md" | cut -d' ' -f1)" ] && echo "  OK: 欢迎.md 未变" || fail "欢迎.md 被改"
 [ -f "$V/.wiki/capture_policy.json" ] && echo "  OK: 骨架已叠加" || fail "骨架没建"
 
-echo "=== 5b 幂等:第二次 init 新建数 0 ==="
-OUT=$(python3 scripts/wiki_init.py --root "$V" 2>&1)
-echo "$OUT" | grep -qE "新建 0|created 0|新建.*0 " && echo "  OK: 第二次新建 0" || echo "  (核对报告新建数: $(echo "$OUT" | grep -iE '新建|created'))"
+echo "=== 5b 幂等:第二次 init created: 0（硬断言，解决 review #2）==="
+OUT=$(python3 scripts/wiki_init.py --root "$V" 2>&1) || fail "5b init 非 0"
+echo "$OUT" | grep -qx "created: 0" && echo "  OK: created: 0" || fail "第二次 init created 非 0（报告: $(echo "$OUT" | grep -E '^created:'))"
 
 echo "=== 5c 类型冲突 exit 2 ==="
 C="$BASE/conflict"; mkdir -p "$C"
 printf 'x\n' > "$C/wiki"   # 应建目录 wiki/ 处放了文件
 python3 scripts/wiki_init.py --root "$C" >/dev/null 2>&1; [ $? = 2 ] && echo "  OK: 类型冲突 exit 2" || fail "类型冲突未 exit 2"
 
-echo "=== 5d --git: check-ignore 派生层 + root∉git-root exit2 ==="
+echo "=== 5d --git: check-ignore 派生层全集 + root∉git-root exit2 ==="
 G="$BASE/repo"; mkdir -p "$G/personal"
-python3 scripts/wiki_init.py --root "$G/personal" --git --git-root "$G" >/dev/null 2>&1; echo "  init --git exit: $?"
-for p in personal/.wiki/id_index.json personal/.wiki/search_index/ personal/.wiki/lightrag/ personal/maps/graph-data.json; do
+python3 scripts/wiki_init.py --root "$G/personal" --git --git-root "$G" >/dev/null 2>&1 || fail "5d init --git 非 0"
+# 全集（解决 review #3）：派生层 7 + .obsidian workspace 2
+for p in personal/.wiki/id_index.json personal/.wiki/inbox_index.json personal/.wiki/normalized_alias_index.json \
+         personal/.wiki/cache.json personal/.wiki/search_index/ personal/.wiki/lightrag/ \
+         personal/maps/graph-data.json personal/maps/knowledge-graph.md personal/maps/graph-insights.md \
+         personal/.obsidian/workspace.json personal/.obsidian/workspace-mobile.json; do
   git -C "$G" check-ignore "$p" >/dev/null 2>&1 && echo "  OK ignore: $p" || fail "未 ignore: $p"
 done
 # root 不在 git-root 下 → exit 2
@@ -168,9 +186,15 @@ python3 scripts/wiki_init.py --root "$OUT_DIR" --git --git-root "$G" >/dev/null 
 echo "=== 5e profile: 已有 .wiki-schema.md 时不改 + .wiki-profile.json 仅不存在时建 ==="
 P="$BASE/pf"; mkdir -p "$P"; printf 'EXISTING\n' > "$P/.wiki-schema.md"
 HS=$(shasum "$P/.wiki-schema.md" | cut -d' ' -f1)
-python3 scripts/wiki_init.py --root "$P" --profile risk >/dev/null 2>&1
+python3 scripts/wiki_init.py --root "$P" --profile risk >/dev/null 2>&1 || fail "5e init 非 0"
 [ "$HS" = "$(shasum "$P/.wiki-schema.md" | cut -d' ' -f1)" ] && echo "  OK: 已有 .wiki-schema.md 未改" || fail ".wiki-schema.md 被改"
-[ -f "$P/.wiki-profile.json" ] && python3 -c "import json;d=json.load(open('$P/.wiki-profile.json'));assert d['profile']=='risk'" && echo "  OK: profile 模板已建" || fail "profile 模板"
+# .wiki-profile.json 仅不存在时建 + 6 个顶层字段齐全
+python3 -c "
+import json,sys
+d=json.load(open('$P/.wiki-profile.json'))
+need={'schema_version','profile','description','extra_page_types','extra_field_enums','extra_optional_fields'}
+sys.exit(0 if (need<=set(d) and d['profile']=='risk') else 1)
+" && echo "  OK: profile 模板 6 字段齐全" || fail "profile 模板字段缺"
 
 echo "=== 5f 白名单(引擎仓库只动 3 路径)==="
 extra=$(git status --porcelain -uall | cut -c4- | grep -Ev '^scripts/wiki_init\.py$|^scripts/README\.md$|^wiki-design/02-workflows\.md$|^wiki-design/tasks/TASK-010-apply-rfc-010\.md$')
@@ -248,3 +272,18 @@ echo "=== PASS=$PASS ==="; [ "$PASS" = 1 ] || exit 1
 - 规定 `wiki_init.py` 输出稳定计数格式；Step 5b 失败时必须 `fail`。
 - Step 5d 覆盖完整 `.gitignore` 规则清单，至少包含 `.obsidian/workspace*.json` 和所有 `.wiki` / `maps` 派生层。
 - 所有期望成功的 init/smoke 调用都接入 PASS gate。
+
+## Revision v2 by claude · 2026-05-29
+
+addressing codex spec review v1 的 3 阻塞点 + 可执行性补充。
+
+1. **wiki_lint subprocess cwd=engine_repo**（阻塞 #1）：1.7 钉死 `subprocess.run([..., "scripts/wiki_lint.py", "--root", root, "--check-only"], cwd=engine_repo)`（engine_repo = `Path(__file__).resolve().parent.parent`）；Step 4 加"非 repo cwd 调用 wiki_init 仍成功"fixture。
+2. **稳定计数 + 5b 硬断言**（阻塞 #2）：新增 1.8——wiki_init 输出 `created: N`/`skipped: M`/`conflicts: K`/`git_root:`/`selfcheck:` 可解析行；Step 5b 改 `grep -qx "created: 0"` 否则 `fail`。
+3. **5d .gitignore 全集**（阻塞 #3）：check-ignore 从 4 个扩到 **11 个**（派生层 7：id_index/inbox_index/normalized_alias_index/cache/search_index/lightrag/maps×3 + .obsidian workspace×2）。
+4. **所有期望成功的 init/smoke 接 PASS gate**（可执行性）：5a/5b/5d/5e 的 init 调用都 `|| fail`；Step 4 冒烟失败即 exit 1。
+5. **5e profile 校 6 字段**：不只 profile 字段，断言最小模板 6 个顶层字段齐全。
+6. **git 失败语义**（边界）：1.9 明确 git 失败 exit 2 + 已建骨架不回滚（报告说明），不承诺"完全不留"。
+
+未改动：9 强约束、3 路径白名单、不碰用户 vault、3 commit 拆分。Codex Spec review v1 段保留（append-only）。
+
+待 Codex re-review。
