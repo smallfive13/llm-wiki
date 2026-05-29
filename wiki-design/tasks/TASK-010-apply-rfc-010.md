@@ -3,7 +3,7 @@ id: task_20260529_010
 title: Apply RFC-010 — 实现 wiki_init.py 脚手架
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-05-29
 updated: 2026-05-29  # v2 after codex spec review v1
@@ -319,3 +319,81 @@ addressing codex spec review v1 的 3 阻塞点 + 可执行性补充。
 
 - Step 5d 注释里写“派生层 7 + .obsidian workspace 2”，但实际循环是 9 个派生层样例 + 2 个 workspace 样例，共 11 个；执行口径应以循环清单为准。
 - 1.6 仍有“git subprocess 失败 ... 不留半初始化”的旧式短语残留；1.9 已给出更精确语义，后续实现和评估应按 1.9 执行。
+
+## Execution log by codex · 2026-05-29
+
+### 步骤完成情况
+
+- Step 1：完成 `scripts/wiki_init.py`。
+- Step 2：完成 `scripts/README.md` wiki-init 文档。
+- Step 3：完成 `wiki-design/02-workflows.md` 实例初始化 workflow。
+- Step 4：preflight + 冒烟通过。
+- Step 5：临时实例自检通过，`PASS=1`。
+- Step 6 commit：`4c3d44e`
+- Step 7 commit：`94a9b0c`
+- Step 8 commit：本段提交后生成。
+
+### Step 4 冒烟
+
+```text
+### Step 4 conda activate preflight confirmation
+Python 3.12.11
+6.0.3
+### Step 4 preflight + smoke
++ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -c "import yaml"
++ python3 scripts/wiki_init.py --root "$T"
+created: 36
+skipped: 1
+conflicts: 0
+git_root: none
+selfcheck: ok
+
++ python3 scripts/wiki_lint.py --root "$T" --check-only >/dev/null 2>&1
++ (cd "$T2" && python3 /Users/zhangjunwu/workspace/llm-wiki/llm-wiki/scripts/wiki_init.py --root "$T2/inst")
+created: 37
+skipped: 0
+conflicts: 0
+git_root: none
+selfcheck: ok
+
+冒烟 OK（含非 repo cwd）
+```
+
+### Step 5 自检输出
+
+```text
+=== 5a 叠加安全:预置已有文件 init 后 checksum 不变 ===
+  OK: workspace.json 未变
+  OK: 欢迎.md 未变
+  OK: 骨架已叠加
+=== 5b 幂等:第二次 init created: 0（硬断言，解决 review #2）===
+  OK: created: 0
+=== 5c 类型冲突 exit 2 ===
+  OK: 类型冲突 exit 2
+=== 5d --git: check-ignore 派生层全集 + root∉git-root exit2 ===
+  OK ignore: personal/.wiki/id_index.json
+  OK ignore: personal/.wiki/inbox_index.json
+  OK ignore: personal/.wiki/normalized_alias_index.json
+  OK ignore: personal/.wiki/cache.json
+  OK ignore: personal/.wiki/search_index/
+  OK ignore: personal/.wiki/lightrag/
+  OK ignore: personal/maps/graph-data.json
+  OK ignore: personal/maps/knowledge-graph.md
+  OK ignore: personal/maps/graph-insights.md
+  OK ignore: personal/.obsidian/workspace.json
+  OK ignore: personal/.obsidian/workspace-mobile.json
+  OK: root∉git-root exit 2
+=== 5e profile: 已有 .wiki-schema.md 时不改 + .wiki-profile.json 仅不存在时建 ===
+  OK: 已有 .wiki-schema.md 未改
+  OK: profile 模板 6 字段齐全
+=== 5f 白名单(引擎仓库只动 3 路径)===
+  OK: 白名单外无改动
+=== PASS=1 ===
+```
+
+### 偏离 / 异常
+
+- 首次直接运行 spec 中的 `conda activate py312` 失败，因为当前非交互 shell 未初始化 conda，`conda` / `python` / `pip` 不在 PATH；该次 smoke 仍由系统 `python3` 跑通，但未作为最终 Step 4 依据。
+- 已随后使用 `/Users/zhangjunwu/soft/anaconda3/etc/profile.d/conda.sh` 确认 `conda activate py312` 可用，并用 `/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312` 重跑 Step 4 / Step 5 全部验证通过。
+- 一次 Step 5 命令封装因外层 shell 引号问题失败，未作为验证结果；随后用等价 here-doc/参数方式重跑同一组验证，通过。
+- 全部验证均在 `mktemp` 临时实例执行，未触碰用户真实 vault `/Users/zhangjunwu/workspace/obsidian/...`；未执行 init personal。
