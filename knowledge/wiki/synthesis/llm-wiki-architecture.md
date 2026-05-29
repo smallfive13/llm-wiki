@@ -14,9 +14,9 @@ related_ids:
   - top_20260528_toolchain-usage
 sources: []
 related:
-  - "[[RFC + Task 协作协议]]"
-  - "[[知识库 Schema 与页面规则]]"
-  - "[[工具链与使用说明]]"
+  - "[[rfc-task-protocol|RFC + Task 协作协议]]"
+  - "[[wiki-schema-rules|知识库 Schema 与页面规则]]"
+  - "[[toolchain-usage|工具链与使用说明]]"
 supersedes: []
 superseded_by: []
 evidence_count: 8
@@ -24,7 +24,7 @@ evidence_count: 8
 
 # llm-wiki 系统架构
 
-> 一个人和 Agent 都能读写的长期知识层。由 Codex 与 Claude Code 协作维护，Markdown 为正本、Git 为审计、派生层可重建。本页是顶层综合，细节见 [[RFC + Task 协作协议]]、[[知识库 Schema 与页面规则]]、[[工具链与使用说明]]。
+> 一个人和 Agent 都能读写的长期知识层。由 Codex 与 Claude Code 协作维护，Markdown 为正本、Git 为审计、派生层可重建。本页是顶层综合，细节见 [[rfc-task-protocol|RFC + Task 协作协议]]、[[wiki-schema-rules|知识库 Schema 与页面规则]]、[[toolchain-usage|工具链与使用说明]]。
 
 ## 一句话定位
 

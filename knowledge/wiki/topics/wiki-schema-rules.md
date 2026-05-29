@@ -13,8 +13,8 @@ related_ids:
   - top_20260528_toolchain-usage
 sources: []
 related:
-  - "[[llm-wiki 系统架构]]"
-  - "[[工具链与使用说明]]"
+  - "[[llm-wiki-architecture|llm-wiki 系统架构]]"
+  - "[[toolchain-usage|工具链与使用说明]]"
 supersedes: []
 superseded_by: []
 evidence_count: 4
@@ -22,7 +22,7 @@ evidence_count: 4
 
 # 知识库 Schema 与页面规则
 
-> 写一个 wiki 页面要遵守的契约：页面类型、稳定 ID、frontmatter 字段、canonical vs 显示层、别名机制。机械校验见 [[工具链与使用说明]]，整体定位见 [[llm-wiki 系统架构]]。
+> 写一个 wiki 页面要遵守的契约：页面类型、稳定 ID、frontmatter 字段、canonical vs 显示层、别名机制。机械校验见 [[toolchain-usage|工具链与使用说明]]，整体定位见 [[llm-wiki-architecture|llm-wiki 系统架构]]。
 
 ## 8 类页面 + ID prefix
 

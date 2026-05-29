@@ -115,10 +115,10 @@ source_ids:                                # canonical 来源引用（按 ID）
 related_ids:                               # canonical 相关页引用（按 ID）
   - ent_20260524_lightrag
 sources:                                   # 可选显示层，Obsidian wikilink
-  - "[[某篇来源摘要]]"
+  - "[[src_xxx-source-summary|某篇来源摘要]]"
 related:
-  - "[[LightRAG]]"
-  - "[[Agent-native Wiki]]"
+  - "[[lightrag|LightRAG]]"
+  - "[[agent-native-wiki|Agent-native Wiki]]"
 supersedes: []                             # ID 数组
 superseded_by: []                          # ID 数组
 evidence_count: 1

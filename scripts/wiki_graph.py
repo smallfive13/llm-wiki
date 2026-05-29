@@ -35,6 +35,7 @@ WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
 
 Node = Dict[str, Any]
 Edge = Dict[str, Any]
+WikilinkLookups = Dict[str, Any]
 
 
 def find_root() -> Path:
@@ -158,35 +159,71 @@ def read_alias_index(root: Path, redirects: Dict[str, str]) -> Dict[str, str]:
             continue
         canonical_id = item.get("canonical_id")
         if isinstance(canonical_id, str) and canonical_id:
-            lookup[key] = fold_target(canonical_id, redirects)
+            normalized = normalize_alias(key)
+            if normalized:
+                lookup[normalized] = fold_target(canonical_id, redirects)
     return lookup
 
 
-def add_lookup(lookup: Dict[str, str], form: str, target: str) -> None:
-    key = normalize_alias(form)
-    if key:
-        lookup[key] = target
+def normalize_wikilink_target(value: str) -> str:
+    text = value.strip()
+    if text.endswith(".md"):
+        text = text[:-3]
+    return normalize_alias(text)
 
 
-def build_wikilink_lookup(root: Path, docs: List[MarkdownDoc], redirects: Dict[str, str]) -> Dict[str, str]:
-    lookup = read_alias_index(root, redirects)
+def build_wikilink_lookup(root: Path, docs: List[MarkdownDoc], redirects: Dict[str, str]) -> WikilinkLookups:
+    alias_lookup = read_alias_index(root, redirects)
+    path_lookup: Dict[str, str] = {}
+    slug_targets: Dict[str, Set[str]] = defaultdict(set)
     for doc in docs:
         pid = page_id(doc)
         if not pid:
             continue
         target = fold_target(pid, redirects)
-        add_lookup(lookup, pid, target)
-        add_lookup(lookup, node_label(doc), target)
-        add_lookup(lookup, Path(doc.rel).stem, target)
-        if doc.fm.get("type") == "entity":
-            for alias in list_field(doc, "aliases"):
-                add_lookup(lookup, alias, target)
-    return lookup
+        path_key = normalize_wikilink_target(doc.rel)
+        if path_key:
+            path_lookup[path_key] = target
+        slug_key = normalize_wikilink_target(Path(doc.rel).stem)
+        if slug_key:
+            slug_targets[slug_key].add(target)
+
+    slug_lookup: Dict[str, str] = {}
+    ambiguous_slugs: Set[str] = set()
+    for key, targets in slug_targets.items():
+        if len(targets) == 1:
+            slug_lookup[key] = next(iter(targets))
+        else:
+            ambiguous_slugs.add(key)
+    return {
+        "alias": alias_lookup,
+        "path": path_lookup,
+        "slug": slug_lookup,
+        "ambiguous_slugs": ambiguous_slugs,
+    }
 
 
 def parse_wikilink(raw: str) -> str:
     target = raw.split("|", 1)[0].split("#", 1)[0]
     return target.strip()
+
+
+def resolve_wikilink_target(raw_target: str, lookups: WikilinkLookups) -> Tuple[Optional[str], str]:
+    key = normalize_wikilink_target(raw_target)
+    if not key:
+        return None, "dangling"
+    alias_lookup = lookups["alias"]
+    if key in alias_lookup:
+        return alias_lookup[key], "resolved"
+    if "/" in raw_target:
+        path_lookup = lookups["path"]
+        return (path_lookup[key], "resolved") if key in path_lookup else (None, "dangling")
+    slug_lookup = lookups["slug"]
+    if key in slug_lookup:
+        return slug_lookup[key], "resolved"
+    if key in lookups["ambiguous_slugs"]:
+        return None, "ambiguous"
+    return None, "dangling"
 
 
 def add_edge(
@@ -224,10 +261,11 @@ def build_edges(
     docs: List[MarkdownDoc],
     nodes: Dict[str, Node],
     redirects: Dict[str, str],
-    wikilink_lookup: Dict[str, str],
-) -> Tuple[List[Edge], List[Dict[str, str]]]:
+    wikilink_lookup: WikilinkLookups,
+) -> Tuple[List[Edge], List[Dict[str, str]], List[Dict[str, str]]]:
     edges: Dict[Tuple[str, str, str, str], Edge] = {}
     dangling: Dict[Tuple[str, str], Dict[str, str]] = {}
+    ambiguous: Dict[Tuple[str, str], Dict[str, str]] = {}
     docs_by_source: Dict[str, List[str]] = defaultdict(list)
 
     for doc in docs:
@@ -245,9 +283,14 @@ def build_edges(
             raw_target = parse_wikilink(match.group(1))
             if not raw_target:
                 continue
-            target = wikilink_lookup.get(normalize_alias(raw_target))
+            target, resolution = resolve_wikilink_target(raw_target, wikilink_lookup)
             if target:
                 add_edge(edges, nodes, redirects, pid, target, "wikilink", "wikilink", 1)
+            elif resolution == "ambiguous":
+                ambiguous.setdefault(
+                    (pid, raw_target),
+                    {"source": pid, "target": raw_target, "file": doc.rel},
+                )
             else:
                 dangling.setdefault(
                     (pid, raw_target),
@@ -262,7 +305,11 @@ def build_edges(
             add_edge(edges, nodes, redirects, left, right, "co_source", "computed", 1, undirected=True)
 
     sorted_edges = [edges[key] for key in sorted(edges)]
-    return sorted_edges, [dangling[key] for key in sorted(dangling)]
+    return (
+        sorted_edges,
+        [dangling[key] for key in sorted(dangling)],
+        [ambiguous[key] for key in sorted(ambiguous)],
+    )
 
 
 def build_adjacency(nodes: Dict[str, Node], edges: List[Edge]) -> Dict[str, Set[str]]:
@@ -324,7 +371,7 @@ def build_graph(root: Path, schema: Dict[str, Any]) -> Tuple[Dict[str, Any], Dic
     redirects = build_redirect_map(docs)
     nodes, unknown_types = build_nodes(docs, schema)
     wikilink_lookup = build_wikilink_lookup(root, docs, redirects)
-    edges, dangling = build_edges(docs, nodes, redirects, wikilink_lookup)
+    edges, dangling, ambiguous = build_edges(docs, nodes, redirects, wikilink_lookup)
     assign_degree(nodes, edges)
     communities = detect_communities(nodes, edges)
 
@@ -349,6 +396,7 @@ def build_graph(root: Path, schema: Dict[str, Any]) -> Tuple[Dict[str, Any], Dic
     }
     meta = {
         "dangling_wikilinks": dangling,
+        "ambiguous_wikilinks": ambiguous,
         "type_counts": Counter(str(node.get("type")) for node in sorted_nodes),
         "unknown_type_pages": unknown_types,
     }
@@ -414,6 +462,10 @@ def render_insights(graph: Dict[str, Any], meta: Dict[str, Any]) -> str:
         f"- {item['target']} (from {item['source']}, {item['file']})"
         for item in meta["dangling_wikilinks"]
     ]
+    ambiguous = [
+        f"- {item['target']} (from {item['source']}, {item['file']})"
+        for item in meta.get("ambiguous_wikilinks", [])
+    ]
     unknown = [
         f"- unknown type {item['type']} (id {item['id']}, {item['file']})"
         for item in meta.get("unknown_type_pages", [])
@@ -443,6 +495,10 @@ def render_insights(graph: Dict[str, Any], meta: Dict[str, Any]) -> str:
         "## Dangling Wikilinks",
         "",
         *table_or_none(dangling),
+        "",
+        "## Ambiguous Wikilinks",
+        "",
+        *table_or_none(ambiguous),
         "",
         "## Unknown Types",
         "",

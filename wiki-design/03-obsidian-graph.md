@@ -5,7 +5,7 @@
 Obsidian 不作为后端，而作为人工工作台：
 
 - 浏览 Markdown 正本。
-- 用 `[[wikilink]]` 形成可视化图谱。
+- 用 `[[slug|显示文本]]` 形成可视化图谱。
 - 用 Backlinks 发现上下文。
 - 用 Bases 或 Dataview 类能力做 dashboard。
 - 人工调整标题、拆分页面、合并重复主题、处理 review。
@@ -14,7 +14,7 @@ Agent 负责摄入、整理、补链、生成 insight；Obsidian 负责人类理
 
 ## Wikilink 规则
 
-重要概念第一次出现时使用 `[[wikilink]]`。
+重要概念第一次出现时使用 `[[slug|显示文本]]`。
 
 适合建链接的对象：
 
@@ -30,11 +30,26 @@ Agent 负责摄入、整理、补链、生成 insight；Obsidian 负责人类理
 - 只出现一次且没有长期价值的词。
 - 为了增加图谱密度而滥用链接。
 
+## Wikilink 约定
+
+wikilink target 使用目标页文件名 slug，而不是 H1 标题：
+
+```markdown
+[[rfc-task-protocol|RFC + Task 协作协议]]
+[[wiki/topics/rfc-task-protocol|RFC + Task 协作协议]]
+```
+
+- `|` 前是解析 target；`|` 后是显示文本。
+- target 不含 `/` 时按 basename slug 匹配；全局唯一才建边。
+- target 含 `/` 时按实例根相对路径去 `.md` 精确匹配，用于消除跨类型同名 slug。
+- basename slug 重复时不建边，`wiki_graph` 只在 `graph-insights.md` 记录 `ambiguous_wikilink`。
+- entity 别名仍优先走 `normalized_alias_index.json`；用户原文里的别名不要包成 wikilink，附正名 `[[slug|正名]]`。
+
 ## 图谱分层
 
 ### 第一层：Obsidian 原生图谱
 
-由 Markdown 中的 `[[wikilink]]` 直接形成。
+由 Markdown 中的 `[[slug|显示文本]]` 直接形成。
 
 优点：
 

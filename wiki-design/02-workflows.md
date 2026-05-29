@@ -51,8 +51,8 @@ knowledge/log.md
 正文中的关键判断使用 [1]、[2] 标注。
 
 引用：
-- [1] [[页面名]] · wiki/topics/example.md · 支撑：一句话说明
-- [2] [[来源摘要]] · wiki/sources/example.md · 原始资料：raw/sources/example.pdf
+- [1] [[example|页面名]] · wiki/topics/example.md · 支撑：一句话说明
+- [2] [[source-summary|来源摘要]] · wiki/sources/example.md · 原始资料：raw/sources/example.pdf
 ```
 
 如果回答依赖的是 source 摘要页，尽量同时给出原始资料路径或 `source_id`，方便人工回查。
@@ -167,7 +167,7 @@ Triage 如果需要异步人工处理，应写入 `knowledge/.wiki/review_queue.
 抽取稳定结论
 -> 区分事实、判断、决策、开放问题
 -> 写入对应页面
--> 给重要概念加 [[wikilink]]
+-> 给重要概念加 [[slug|wikilink]]
 -> 更新 log
 ```
 

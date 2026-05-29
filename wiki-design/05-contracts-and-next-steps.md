@@ -266,7 +266,7 @@ suggested_target_title: "Attention 复杂度讨论"
 | `suggested_target_type` | Agent 建议晋升时的目标页面类型（`topic` / `entity` / `decision` / ...） |
 | `suggested_target_title` | Agent 建议晋升时的标题 |
 
-正文：不超过 30 行。可带 `[[wikilink]]`，但不强制。
+正文：不超过 30 行。可带 `[[slug|显示文本]]`，但不强制。
 
 ### Capture item 不参与的 lint
 
@@ -558,7 +558,7 @@ related_ids:                               # canonical 引用（按 ID）
 sources:                                   # 可选显示层
   - "[[attention-is-all-you-need]]"
 related:
-  - "[[Transformer]]"
+  - "[[transformer|Transformer]]"
 supersedes: []                             # ID 数组
 superseded_by: []                          # ID 数组
 evidence_count: 1
@@ -631,7 +631,7 @@ evidence_count: 1
 
 ## 关键概念
 
-- [[概念]]
+- [[concept|概念]]
 
 ## 证据摘录
 
@@ -678,12 +678,12 @@ evidence_count: 0
 ## 相关页面
 ```
 
-> **别名管理**：99% 的别名应只放在正名页的 `aliases` 列表里。仅在外部已有 wikilink 散布到某别名时，才建薄重定向页（`canonical_id` 指向正名页 + `status: redirect`，正文留一行"重定向到 [[正名]]" 即可）。
+> **别名管理**：99% 的别名应只放在正名页的 `aliases` 列表里。仅在外部已有 wikilink 散布到某别名时，才建薄重定向页（`canonical_id` 指向正名页 + `status: redirect`，正文留一行"重定向到 [[canonical-name|正名]]" 即可）。
 >
 > **alias 来源**（可选，不强制）：alias 字符串可在正文里附上 source 引用，例如：
 > ```
 > ## 别名来源
-> - "SDPA" → [[src_xxx_attention-paper]]
+> - "SDPA" → [[attention-paper|Attention paper]]
 > ```
 > 未来如需结构化此关系，另开 RFC。本期不引入新 frontmatter 字段。
 
@@ -820,7 +820,7 @@ evidence_count: 0
 
 ## 引用
 
-- [1] [[页面名]] · `wiki/topics/example.md` · 支撑：...
+- [1] [[example|页面名]] · `wiki/topics/example.md` · 支撑：...
 ```
 
 ## 答案引用格式
@@ -829,10 +829,10 @@ evidence_count: 0
 
 **别名引用规则**：如果用户原话用了某 entity 的别名（如 "self-attention"），Agent 回答时应保留用户原写法并附正名 wikilink，**不要把别名包成 wikilink**：
 
-- 正确：`self-attention（正名 [[Attention]]）`
-- 错误：`[[self-attention]]（正名 [[Attention]]）`（除非别名薄页确实存在）
+- 正确：`self-attention（正名 [[attention|Attention]]）`
+- 错误：`[[self-attention]]（正名 [[attention|Attention]]）`（除非别名薄页确实存在）
 
-后续段落引用统一用正名 `[[Attention]]`。
+后续段落引用统一用正名 `[[attention|Attention]]`。
 
 查询回答不要只说“根据 Wiki”。固定使用：
 
@@ -841,8 +841,8 @@ evidence_count: 0
 
 ## 引用
 
-- [1] [[页面名]] · `wiki/topics/example.md` · 支撑：一句话说明
-- [2] [[来源摘要]] · `wiki/sources/source-a.md` · 原始资料：`raw/sources/source-a.pdf` · source_id: `src_...`
+- [1] [[example|页面名]] · `wiki/topics/example.md` · 支撑：一句话说明
+- [2] [[source-a|来源摘要]] · `wiki/sources/source-a.md` · 原始资料：`raw/sources/source-a.pdf` · source_id: `src_...`
 
 ## 置信度与缺口
 

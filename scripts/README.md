@@ -153,8 +153,17 @@ MVP 只投影显式 canonical 数据、wikilink，以及由显式 source 字段�
 - `source_ref`：`source_ids[]`，`source_kind: canonical`
 - `related`：`related_ids[]`，`source_kind: canonical`
 - `supersedes`：`supersedes[]`，`source_kind: canonical`
-- `wikilink`：正文 `[[...]]` 解析，`source_kind: wikilink`
+- `wikilink`：正文 `[[slug|显示文本]]` 解析，`source_kind: wikilink`
 - `co_source`：两个页面共享 `source_ids[]`，`source_kind: computed`
+
+### Wikilink 解析
+
+`wiki_graph.py` 保留 Obsidian 兼容写法，解析时只取 `|` 前、`#` 前的 target：
+
+- alias 优先：先查 `normalized_alias_index.json`，避免同名 slug/title 覆盖 RFC-004 entity 别名。
+- slug 匹配：`[[rfc-task-protocol|RFC + Task 协作协议]]` 按文件 basename 匹配；basename 全局唯一才建边。
+- 路径消歧：`[[wiki/topics/rfc-task-protocol|RFC + Task 协作协议]]` 按实例根相对路径去 `.md` 精确匹配。
+- ambiguous：basename 重复时不建边，只在 `graph-insights.md` 的 `Ambiguous Wikilinks` 段提示；不写入 `graph-data.json`。
 
 ### MVP 不覆盖
 

@@ -12,7 +12,7 @@ related_ids:
   - syn_20260528_llm-wiki-architecture
 sources: []
 related:
-  - "[[llm-wiki 系统架构]]"
+  - "[[llm-wiki-architecture|llm-wiki 系统架构]]"
 supersedes: []
 superseded_by: []
 evidence_count: 2
@@ -20,7 +20,7 @@ evidence_count: 2
 
 # RFC + Task 协作协议
 
-> Codex 与 Claude Code 在同一仓库协作的两层机制：RFC 管「要不要这么改」，Task 管「怎么做、谁来做」。全程 append-only + git 留痕，互不覆盖。隶属 [[llm-wiki 系统架构]]。
+> Codex 与 Claude Code 在同一仓库协作的两层机制：RFC 管「要不要这么改」，Task 管「怎么做、谁来做」。全程 append-only + git 留痕，互不覆盖。隶属 [[llm-wiki-architecture|llm-wiki 系统架构]]。
 
 ## 为什么需要
 

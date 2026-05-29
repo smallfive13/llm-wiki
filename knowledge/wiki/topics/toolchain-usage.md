@@ -13,8 +13,8 @@ related_ids:
   - top_20260528_wiki-schema-rules
 sources: []
 related:
-  - "[[llm-wiki 系统架构]]"
-  - "[[知识库 Schema 与页面规则]]"
+  - "[[llm-wiki-architecture|llm-wiki 系统架构]]"
+  - "[[wiki-schema-rules|知识库 Schema 与页面规则]]"
 supersedes: []
 superseded_by: []
 evidence_count: 3
@@ -22,7 +22,7 @@ evidence_count: 3
 
 # 工具链与使用说明
 
-> `scripts/` 下的命令怎么用：环境、lint、graph、多实例、capture / ingest 工作流。schema 规则见 [[知识库 Schema 与页面规则]]，整体见 [[llm-wiki 系统架构]]。
+> `scripts/` 下的命令怎么用：环境、lint、graph、多实例、capture / ingest 工作流。schema 规则见 [[wiki-schema-rules|知识库 Schema 与页面规则]]，整体见 [[llm-wiki-architecture|llm-wiki 系统架构]]。
 
 ## 运行环境
 
@@ -64,7 +64,7 @@ python3 scripts/wiki_lint.py  --root knowledge-风控
 python3 scripts/wiki_graph.py --root knowledge-客服
 ```
 
-`--root` 指实例根（缺省 `knowledge/`）。各实例可放 `.wiki-profile.json` 定制 schema（见 [[知识库 Schema 与页面规则]]）。
+`--root` 指实例根（缺省 `knowledge/`）。各实例可放 `.wiki-profile.json` 定制 schema（见 [[wiki-schema-rules|知识库 Schema 与页面规则]]）。
 
 ## 调用约定
 
