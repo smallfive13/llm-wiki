@@ -6,7 +6,7 @@ executor: codex
 status: pending
 type: apply
 created: 2026-05-28
-updated: 2026-05-28  # v2 after codex spec review v1
+updated: 2026-05-28  # v3 after codex spec review v2
 related_rfcs:
   - rfc_20260528_009
 ---
@@ -133,49 +133,39 @@ print('baseline related/wikilink 边数:', rel, wl)
 ```bash
 conda activate py312; set +e
 PASS=1; fail(){ echo "  FAIL: $1"; PASS=0; }
-strip(){ python3 -c "
-import json,sys
-d=json.load(open(sys.argv[1]))
-def s(o):
- if isinstance(o,dict): return {k:s(v) for k,v in o.items() if k not in ('ran_at','updated_at','generated_at')}
- if isinstance(o,list): return [s(x) for x in o]
- return o
-json.dump(s(d),open(sys.argv[2],'w'),sort_keys=True)
-" "$1" "$2"; }
 
-echo "=== 5a 零回归 ==="
-# RFC-007 fixture（逐字复制 TASK-007 Step 7c，含 trap + 全 .wiki 快照 + content_hash 断言）
-# >>> 粘贴 TASK-007 Step 7c <<<
-# RFC-008 结构等价（逐字复制 TASK-008 Step 7a-1：mk_regress + strip + diff lint + graph content_hash）
-# >>> 粘贴 TASK-008 Step 7a-1 <<<
-echo "--- 现有 knowledge/ 4 页 content_hash 不变（迁移只改 target 标题→slug，解析到同一 id）---"
+echo "=== 5a 现有 knowledge/ 零回归（content_hash 不变）==="
+# TASK-009 只改 wiki_graph 的 wikilink 解析，不碰 wiki_lint/BASE_SCHEMA → 不重跑 RFC-008 lint 回归。
+# 现有 knowledge/ 4 页迁移只把 wikilink target 从标题改为 slug，解析到同一 id：
+# content_hash 涵盖全部 节点+边+社区，若 wikilink 重构破坏任何现有边投影，hash 必变。
+# wiki_graph 对非 wikilink 边类型（source_ref/related/supersedes/co_source/redirect 折叠）
+# 的回归，由 5c 临时实例的 R1/R2/R3 断言覆盖（现有 4 页不含这些边）。
 python scripts/wiki_graph.py --json 2>/dev/null > /tmp/g009_after.json
 HA=$(python3 -c "import json;print(json.load(open('/tmp/g009_after.json'))['content_hash'])")
 HB=$(cat /tmp/g009_before_hash)
 [ "$HA" = "$HB" ] && echo "  OK: content_hash 不变（$HA）" || fail "content_hash 变了（迁移影响了边投影）"
 
-echo "=== 5b 4 页迁移后边数 == baseline + 0 dangling ==="
+echo "=== 5b 边数 == baseline + lint exit0 + 0 dangling ==="
 read RB WB < /tmp/g009_before_counts
 python3 -c "
-import json
+import json,sys
 g=json.load(open('/tmp/g009_after.json'))
 rel=sum(1 for e in g['edges'] if e['relation']=='related'); wl=sum(1 for e in g['edges'] if e['relation']=='wikilink')
-import sys; sys.exit(0 if (rel==$RB and wl==$WB) else 1)
+sys.exit(0 if (rel==$RB and wl==$WB) else 1)
 " && echo "  OK: related/wikilink 边数 == baseline ($RB/$WB)" || fail "边数偏离 baseline $RB/$WB"
 python scripts/wiki_lint.py --check-only >/dev/null 2>&1; [ $? = 0 ] && echo "  OK: lint exit 0" || fail "lint"
-# 普通模式生成 fresh insights 再 grep（不读 stale）
-python scripts/wiki_graph.py >/dev/null 2>&1
+python scripts/wiki_graph.py >/dev/null 2>&1   # 普通模式生成 fresh insights，不读 stale
 grep -A2 "Dangling Wikilinks" knowledge/maps/graph-insights.md | grep -q "(none)" && echo "  OK: 0 dangling" || fail "dangling 非空"
 
-echo "=== 5c RFC-009 专项（临时实例 knowledge-gtest/，knowledge/ 外）==="
-cleanup(){ rm -rf knowledge-gtest; }
+echo "=== 5c RFC-009 专项 + wiki_graph 边类型回归（临时实例 knowledge-gtest/）==="
+cleanup(){ rm -rf knowledge-gtest /tmp/g009_gtest.json; }
 trap cleanup EXIT
 mkdir -p knowledge-gtest/wiki/entities knowledge-gtest/wiki/topics knowledge-gtest/wiki/sources knowledge-gtest/raw/sources knowledge-gtest/inbox knowledge-gtest/maps knowledge-gtest/.wiki
 for f in purpose index overview log; do printf '# %s\n' "$f" > "knowledge-gtest/$f.md"; done
 printf '{"version":1,"sources":[]}\n' > knowledge-gtest/raw/source_manifest.json
 printf '{"version":1,"items":[]}\n' > knowledge-gtest/.wiki/review_queue.json
 printf '{"version":1,"auto_capture":false,"exclude_patterns":[],"exclude_paths":[],"max_inbox_files":100,"updated_at":"2026-05-28T00:00:00+08:00"}\n' > knowledge-gtest/.wiki/capture_policy.json
-mkpage(){ # $1=path $2=id $3=type ; 读 stdin 作为额外 frontmatter+body
+mkpage(){ # $1=path $2=id $3=type ; stdin = 额外 frontmatter + body
   cat > "knowledge-gtest/$1" <<EOF
 ---
 id: $2
@@ -189,7 +179,7 @@ review: false
 $(cat)
 EOF
 }
-# 正名 entity attention，alias foo
+# --- 别名优先 fixture：正名 entity attention，alias foo；topic foo（slug 与 alias 同名）---
 mkpage wiki/entities/attention.md ent_20260528_attention entity <<'EOF'
 aliases: [foo]
 canonical_id: null
@@ -201,7 +191,6 @@ evidence_count: 0
 ---
 # Attention
 EOF
-# topic foo（slug 与 alias foo 同名 → 验 alias 优先）
 mkpage wiki/topics/foo.md top_20260528_foo topic <<'EOF'
 source_ids: []
 related_ids: []
@@ -213,7 +202,7 @@ evidence_count: 0
 ---
 # Foo Topic
 EOF
-# 重复 basename dup：topics/dup + sources/dup
+# --- 重复 basename dup：topics/dup + sources/dup ---
 mkpage wiki/topics/dup.md top_20260528_dup topic <<'EOF'
 source_ids: []
 related_ids: []
@@ -241,8 +230,47 @@ evidence_count: 1
 ---
 # Dup Source
 EOF
-# 链接页：[[foo]]（alias 优先）/ [[dup]]（ambiguous）/ [[wiki/topics/dup|Dup]]（路径消歧）/ [[foo|显示]]（管道建边已含在 [[foo]]）
-mkpage wiki/topics/linker.md top_20260528_linker topic <<'EOF'
+# --- 边类型回归 fixture：srcD + topicC(source_ref→srcD) + topicE(与 C 共享 srcD → co_source) ---
+mkpage wiki/sources/srcd.md src_20260528_srcd source <<'EOF'
+source_id: src_20260528_srcd
+hash_sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+original_path: raw/sources/srcd.pdf
+source_url: null
+imported_at: 2026-05-28T10:00:00+08:00
+source_ids: []
+related_ids: []
+sources: []
+related: []
+supersedes: []
+superseded_by: []
+evidence_count: 1
+---
+# Src D
+EOF
+mkpage wiki/topics/tc.md top_20260528_tc topic <<'EOF'
+source_ids: [src_20260528_srcd]
+related_ids: []
+sources: []
+related: []
+supersedes: []
+superseded_by: []
+evidence_count: 1
+---
+# Topic C
+EOF
+mkpage wiki/topics/te.md top_20260528_te topic <<'EOF'
+source_ids: [src_20260528_srcd]
+related_ids: []
+sources: []
+related: []
+supersedes: []
+superseded_by: []
+evidence_count: 1
+---
+# Topic E
+EOF
+# --- 三个独立链接页（拆分，避免边去重掩盖 ambiguous）---
+mkpage wiki/topics/linker-alias.md top_20260528_linker-alias topic <<'EOF'
 source_ids: []
 related_ids: []
 sources: []
@@ -251,39 +279,73 @@ supersedes: []
 superseded_by: []
 evidence_count: 0
 ---
-# Linker
-[[foo|显示文本]] 与 [[dup]] 以及 [[wiki/topics/dup|路径消歧]]
+# Linker Alias
+正文 [[foo|显示文本]]
+EOF
+mkpage wiki/topics/linker-amb.md top_20260528_linker-amb topic <<'EOF'
+source_ids: []
+related_ids: []
+sources: []
+related: []
+supersedes: []
+superseded_by: []
+evidence_count: 0
+---
+# Linker Amb
+正文 [[dup]]
+EOF
+mkpage wiki/topics/linker-path.md top_20260528_linker-path topic <<'EOF'
+source_ids: []
+related_ids: []
+sources: []
+related: []
+supersedes: []
+superseded_by: []
+evidence_count: 0
+---
+# Linker Path
+正文 [[wiki/topics/dup|路径消歧]]
 EOF
 # 先 lint 建 normalized_alias_index（alias foo → ent_attention），再 graph
 python scripts/wiki_lint.py --root knowledge-gtest >/dev/null 2>&1
 python scripts/wiki_graph.py --root knowledge-gtest --json 2>/dev/null > /tmp/g009_gtest.json
 python scripts/wiki_graph.py --root knowledge-gtest >/dev/null 2>&1   # 生成 insights
-python3 -c "
-import json
+python3 - <<'PY'
+import json,sys
 g=json.load(open('/tmp/g009_gtest.json'))
-E=[(e['source'],e['target'],e['relation']) for e in g['edges'] if e['relation']=='wikilink']
-def edge(s,t): return any(x[0]==s and x[1]==t for x in E)
-# 断言 1+管道：[[foo|显示文本]] 建 wikilink 边
-# 断言 4：alias foo 优先 → linker --wikilink--> ent_attention（不是 top_foo）
-print('  断言1+4 alias优先 [[foo|..]]→ent_attention:', 'OK' if edge('top_20260528_linker','ent_20260528_attention') and not edge('top_20260528_linker','top_20260528_foo') else 'FAIL')
-# 断言 2：[[dup]] ambiguous → 不建边
-print('  断言2 [[dup]] ambiguous 不建边:', 'OK' if not (edge('top_20260528_linker','top_20260528_dup') or edge('top_20260528_linker','src_20260528_dup')) else 'FAIL')
-# 断言 3：[[wiki/topics/dup|路径消歧]] → 精确建边到 top_dup
-print('  断言3 路径消歧 →top_dup:', 'OK' if edge('top_20260528_linker','top_20260528_dup') else 'FAIL')
-"
-grep -A2 "Ambiguous Wikilinks\|ambiguous" knowledge-gtest/maps/graph-insights.md | grep -qi "dup" && echo "  断言2 ambiguous_wikilink 进 insights: OK" || echo "  断言2 ambiguous insights: 检查"
+def has(s,t,rel=None):
+    return any(e['source']==s and e['target']==t and (rel is None or e['relation']==rel) for e in g['edges'])
+fails=[]
+# 边类型回归（证明 wikilink 重构未误伤其他边）
+if not has('top_20260528_tc','src_20260528_srcd','source_ref'): fails.append('R1 source_ref tc→srcd')
+if not (has('top_20260528_tc','top_20260528_te','co_source') or has('top_20260528_te','top_20260528_tc','co_source')): fails.append('R2 co_source tc<->te')
+# 新功能断言
+# A1 + 管道 + alias 优先：[[foo|显示文本]] → ent_attention（不是 top_foo）
+if not has('top_20260528_linker-alias','ent_20260528_attention','wikilink'): fails.append('A1 alias优先 linker-alias→ent_attention')
+if has('top_20260528_linker-alias','top_20260528_foo'): fails.append('A1 误连 top_foo（alias 未优先）')
+# A2 ambiguous：[[dup]] 独立页，到 dup 任何 target 都不应建边
+if has('top_20260528_linker-amb','top_20260528_dup') or has('top_20260528_linker-amb','src_20260528_dup'):
+    fails.append('A2 [[dup]] ambiguous 误建边')
+# A3 路径消歧：[[wiki/topics/dup|..]] → top_dup
+if not has('top_20260528_linker-path','top_20260528_dup','wikilink'): fails.append('A3 路径消歧→top_dup')
+if fails:
+    print('  FAIL:', '; '.join(fails)); sys.exit(1)
+print('  OK: R1/R2 边类型回归 + A1 alias优先 + A2 ambiguous + A3 路径消歧')
+PY
+[ $? = 0 ] || fail "5c 断言"
+grep -A3 -iE "ambiguous" knowledge-gtest/maps/graph-insights.md | grep -qi "dup" && echo "  OK: ambiguous_wikilink 进 insights" || fail "ambiguous 未进 insights"
 cleanup; trap - EXIT
 
 echo "=== 5d 边界：白名单 + related_ids 未改 ==="
 extra=$(git status --porcelain -uall | cut -c4- | grep -Ev '^scripts/wiki_graph\.py$|^scripts/README\.md$|^wiki-design/01-architecture\.md$|^wiki-design/03-obsidian-graph\.md$|^wiki-design/05-contracts-and-next-steps\.md$|^wiki-design/02-workflows\.md$|^knowledge/\.wiki-schema\.md$|^knowledge/wiki/synthesis/llm-wiki-architecture\.md$|^knowledge/wiki/topics/rfc-task-protocol\.md$|^knowledge/wiki/topics/wiki-schema-rules\.md$|^knowledge/wiki/topics/toolchain-usage\.md$|^wiki-design/tasks/TASK-009-apply-rfc-009\.md$')
 [ -z "$extra" ] && echo "  OK: 白名单外无改动" || { echo "  FAIL:"; echo "$extra" | sed 's/^/    /'; PASS=0; }
-# related_ids 未改：4 页 diff 不应含 related_ids 行增删
-git diff -- knowledge/wiki/ | grep -E '^[-+]\s*related_ids:|^[-+]\s+- (syn|top|ent|src|cmp|dec|que|oq)_' | grep -q . && fail "related_ids 被改动" || echo "  OK: related_ids 未改（canonical 不变）"
+# related_ids 未改：4 页 diff 不应含 related_ids 行或 canonical id 数组项的增删
+git diff -- knowledge/wiki/ | grep -E '^[-+][[:space:]]*related_ids:|^[-+][[:space:]]+- (syn|top|ent|src|cmp|dec|que|oq)_' | grep -q . && fail "related_ids 被改动" || echo "  OK: related_ids 未改（canonical 不变）"
 
 echo "=== PASS=$PASS ==="; [ "$PASS" = 1 ] || exit 1
 ```
 
-预期：5a content_hash 不变 + RFC-007/008 回归过；5b 边数==baseline + lint exit0 + 0 dangling；5c 断言 1/2/3/4 全 OK + ambiguous 进 insights；5d 白名单外无改动 + related_ids 未改。
+预期：5a content_hash 不变；5b 边数==baseline + lint exit0 + 0 dangling；5c R1/R2 边类型回归 + A1 alias优先 + A2 ambiguous 不建边 + A3 路径消歧 全过 + ambiguous 进 insights；5d 白名单外无改动 + related_ids 未改。任一 fail → PASS=0 → exit 1。
 
 ### Step 6~8：commit apply / RFC Applied / task done
 
@@ -398,3 +460,15 @@ addressing codex spec review v1 的 5 个执行级问题。
 - Step 5c 的 Python 断言改为收集 failures，失败时 `raise SystemExit(1)`；shell 层用 `|| fail "RFC-009 fixture assertions"` 接住。
 - 将 ambiguous 与 path disambiguation 拆到不同 source 页面，避免同一 `(source,target,relation,source_kind)` 去重掩盖错误。
 - Step 5a 去掉占位，内嵌或精确引用可直接复制的 RFC-007/RFC-008 回归脚本，保证执行者不需要再凭记忆找段落。
+
+## Revision v3 by claude · 2026-05-28
+
+addressing codex spec review v2 的 3 个阻塞点。
+
+1. **5c 断言真正影响 PASS**（review 阻塞 A）：把 `print('OK'/'FAIL')` 改为单个 `python3 - <<PY` 脚本收集 `fails[]` → `sys.exit(1)`，shell `[ $? = 0 ] || fail "5c 断言"`；ambiguous insights 检查也改 `|| fail`。不再有只打印的假阳性。
+2. **ambiguous 与路径消歧拆分到不同链接页**（review 阻塞 B）：原 `linker` 同页混写 `[[dup]]` + `[[wiki/topics/dup|..]]` 落同一 target，去重掩盖。改为三个独立页：`linker-alias`（`[[foo|..]]`）/ `linker-amb`（仅 `[[dup]]`）/ `linker-path`（仅 `[[wiki/topics/dup|..]]`）。A2 断言「linker-amb 到 dup 任何 target 无边」不再被路径消歧边污染。
+3. **5a 去粘贴占位，改自包含**（review 阻塞 C）：删「粘贴 TASK-007 Step7c + TASK-008 7a-1」。5a 仅保留"现有 knowledge/ content_hash == baseline"（机械，已证现有 related/wikilink 边零回归）；非 wikilink 边类型（source_ref/co_source）回归改由 5c 临时实例新增的 **R1/R2 断言**覆盖（自包含，不依赖粘贴）。说明 TASK-009 只改 wikilink 解析、不碰 lint/BASE_SCHEMA 故不重跑 RFC-008 lint 回归。
+
+未改动：迁移 4 页清单、9 强约束、5b/5d、3 commit 拆分。Codex Spec review v1/v2 段保留（append-only）。
+
+待 Codex re-review。
