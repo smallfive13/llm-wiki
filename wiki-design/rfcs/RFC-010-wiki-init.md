@@ -341,3 +341,7 @@ addressing codex review v1 的 3 阻塞点 + 逐项复核补充。
 
 - 后续 TASK 写 spec 时建议把 `git check-ignore` 的测试路径拆到每类至少一条：`.wiki/id_index.json`、`.wiki/search_index/foo`、`.wiki/lightrag/foo`、`maps/graph-data.json`、`.obsidian/workspace.json`。
 - `scripts/README.md` 目前派生层小节只列了 3 个 `.wiki/*.json`，后续 apply RFC-010 时同步 wiki-init 文档即可；不影响 RFC-010 本身通过。
+
+## Applied in 4c3d44e · 2026-05-29 · codex
+
+Applied by TASK-010 Step 6.
