@@ -204,3 +204,47 @@ echo "=== PASS=$PASS ==="; [ "$PASS" = 1 ] || exit 1
 ## Evaluation by claude · YYYY-MM-DD
 
 （待评估者填写）
+
+## Spec review by codex · 2026-05-29
+
+### 结论
+
+- 需修改。
+- spec 已覆盖 RFC-010 Decision 的主体路径：3 个 apply target、叠加安全、profile、git-root 校验、完整 `capture_policy`、临时 fixture、不碰用户 vault、三 commit 拆分都在。引擎路径用 `Path(__file__).resolve().parent.parent` 定位脚本所在仓库，作为拷贝 `.wiki-schema.md` 的来源是可靠的。
+- 但还有 3 个执行级阻塞点会导致后续 apply 出现假阳性或任意 cwd 运行失败，需要先修 spec。
+
+### 阻塞点
+
+1. `wiki_lint.py` subprocess 必须显式 `cwd=<engine_repo>`。
+   - TASK 1.1 要求 `wiki_init.py` 可从任意 cwd 跑；1.7 又要求 init 末尾 subprocess 跑 `wiki_lint.py --root <实例> --check-only`。
+   - 当前 `wiki_lint.py` 的 `_repo_root()` 是 `Path.cwd()`，且要求 cwd 下存在 `scripts/`。所以如果 `wiki_init.py` 从外部 cwd 运行，只用脚本绝对路径调用 `wiki_lint.py` 仍会失败。
+   - 建议在 1.7 钉死调用方式：`subprocess.run([sys.executable, str(engine_repo / "scripts/wiki_lint.py"), "--root", str(root), "--check-only"], cwd=engine_repo, ...)`。Step 5/Step 4 也应增加一个“从非 repo cwd 调用 wiki_init.py 仍成功”的 fixture，否则这个约束测不到。
+
+2. Step 5b 幂等检查不会影响 PASS。
+   - 现在 `grep` 到“新建 0”时打印 OK；否则只打印“核对报告新建数”，没有 `fail`，最终 `PASS` 仍可能是 1。
+   - 这正好是 RFC-010 的核心安全约束之一，必须成为硬门禁。
+   - 建议要求 `wiki_init.py` 输出稳定、可解析的计数行，例如 `created: N` / `skipped: M` / `conflicts: K`，然后 Step 5b 断言 `created: 0`，失败时 `fail "第二次 init 新建数非 0"`。只靠多语言 grep 报告不稳。
+
+3. Step 5d 没有验证 `.gitignore` 全部锁定规则。
+   - Decision #4 要求派生层全集 + `.obsidian/workspace*.json`。当前只 `git check-ignore` 了 4 个路径：`id_index`、`search_index/`、`lightrag/`、`graph-data.json`。
+   - 这不能捕获漏写 `inbox_index.json`、`normalized_alias_index.json`、`cache.json`、`maps/knowledge-graph.md`、`maps/graph-insights.md`、`.obsidian/workspace.json`、`.obsidian/workspace-mobile.json` 的实现错误。
+   - 建议 Step 5d 遍历 RFC-010 模板中的所有非注释规则对应样例路径，或直接 `grep -Fx` 检查 `.gitignore` 必须包含完整规则清单，再配合 `git check-ignore` 抽样。
+
+### 其它可执行性问题
+
+- Step 4 冒烟只 `echo` exit code，不把 init/lint 非 0 接入 PASS 或 exit。虽然 Step 5 会覆盖大部分路径，但 smoke 作为 gate 应显式失败。
+- Step 5a、5d、5e 中 `wiki_init.py` exit code 也多处只打印不校验。建议所有期望成功的 init 调用都写成 `python3 ... || fail "..."`。
+- 5e 只校验 `.wiki-profile.json` 的 `profile` 字段，建议顺手断言最小模板的 6 个顶层字段都存在，避免实现少字段但 lint 仍未被该分支清晰定位。
+
+### 边界与风险判断
+
+- 不碰用户真实 `personal` vault、全部验证在 `mktemp` 且 trap 清理，这个边界正确。
+- 白名单只允许 `scripts/wiki_init.py`、`scripts/README.md`、`wiki-design/02-workflows.md` 和 TASK 自身，方向正确；Step 7 追加 RFC Applied 不在 Step 5 apply 白名单内也合理。
+- git subprocess 失败处理已在 1.6 提到，但 spec 还应明确失败时允许已创建骨架保留还是要回滚；至少不要承诺“完全不留半初始化”而没有可验证 rollback 机制。建议表述为“git 失败 exit 2，不写临时文件；已按叠加语义创建的骨架不回滚，并在报告中说明”。
+
+### 最小修改建议
+
+- 1.7 明确 `wiki_lint.py` subprocess `cwd=engine_repo`，并在 Step 5 增加非 repo cwd 调用 fixture。
+- 规定 `wiki_init.py` 输出稳定计数格式；Step 5b 失败时必须 `fail`。
+- Step 5d 覆盖完整 `.gitignore` 规则清单，至少包含 `.obsidian/workspace*.json` 和所有 `.wiki` / `maps` 派生层。
+- 所有期望成功的 init/smoke 调用都接入 PASS gate。
