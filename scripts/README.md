@@ -171,3 +171,70 @@ MVP 只投影显式 canonical 数据、wikilink，以及由显式 source 字段�
 - 推断边或语义关系类型
 - 交互式 HTML 可视化
 - 共享 tag、共同邻居、类型亲和、共现等后续计算关系
+
+## wiki-init
+
+实现：见 [`wiki_init.py`](wiki_init.py)
+设计：见 [`../wiki-design/rfcs/RFC-010-wiki-init.md`](../wiki-design/rfcs/RFC-010-wiki-init.md)
+
+`wiki_init.py` 用于把任意目录初始化为合法 wiki 实例。它只补缺失骨架，已存在同类型路径会跳过；如果应建目录处已有文件，或应建文件处已有目录，会以 exit 2 报配置错误。它不会覆盖已有 Obsidian 配置、用户笔记或既有 wiki 契约文件。
+
+### 用法
+
+```bash
+conda activate py312
+python3 scripts/wiki_init.py --root <实例路径> [--profile NAME] [--git] [--git-root <repo路径>]
+```
+
+| 选项 | 含义 |
+| --- | --- |
+| `--root <path>` | 实例根。相对路径按引擎仓库根解析，也可传外部绝对路径 |
+| `--profile NAME` | 仅在缺失时创建最小 `.wiki-profile.json`；不会修改已存在 `.wiki-schema.md` |
+| `--git` | 确保 `--git-root` 是 git repo，并写入派生层与 `.obsidian/workspace*.json` ignore 规则 |
+| `--git-root <path>` | git repo 根；缺省为 `--root`，且 `--root` 必须位于其内 |
+
+稳定报告行：
+
+```text
+created: N
+skipped: M
+conflicts: K
+git_root: <path|none>
+selfcheck: ok|fail
+```
+
+退出码：
+
+- `0` = 初始化完成，末尾 `wiki_lint.py --check-only` 自检通过
+- `2` = 配置错误、类型冲突、git 失败或自检失败
+
+### 生成内容
+
+- 14 个标准目录及 `.gitkeep`
+- `purpose.md` / `index.md` / `overview.md` / `log.md` 通用占位内容，不拷贝当前 `knowledge/` 的 llm-wiki meta
+- `.wiki-schema.md` 从引擎 `knowledge/.wiki-schema.md` 拷贝，仅在目标缺失时写入
+- `raw/source_manifest.json`
+- `.wiki/review_queue.json`
+- `.wiki/capture_policy.json`，默认 `auto_capture: false`、`exclude_paths: []`、`max_inbox_files: 100`
+
+### git 与自检
+
+`--git` 会逐行追加以下 ignore 规则且保持幂等：
+
+```gitignore
+# wiki 派生层（可重建，不进 Git）
+**/.wiki/id_index.json
+**/.wiki/inbox_index.json
+**/.wiki/normalized_alias_index.json
+**/.wiki/cache.json
+**/.wiki/search_index/
+**/.wiki/lightrag/
+**/maps/graph-data.json
+**/maps/knowledge-graph.md
+**/maps/graph-insights.md
+# Obsidian 每机器配置
+**/.obsidian/workspace.json
+**/.obsidian/workspace-mobile.json
+```
+
+初始化末尾会从引擎仓库根执行 `wiki_lint.py --root <实例> --check-only`。脚本可从任意 cwd 调用；自检 subprocess 会显式使用引擎仓库作为 cwd。

@@ -1,0 +1,395 @@
+#!/usr/bin/env python3
+"""Initialize an llm-wiki instance skeleton safely."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Iterable, List, Optional
+
+
+LOCAL_TZ = timezone(timedelta(hours=8))
+EXIT_CONFIG = 2
+PROFILE_RE = re.compile(r"^[a-z][a-z0-9-]*$")
+
+DIRS_WITH_GITKEEP = [
+    "raw/sources",
+    "wiki/sources",
+    "wiki/entities",
+    "wiki/topics",
+    "wiki/comparisons",
+    "wiki/synthesis",
+    "wiki/decisions",
+    "wiki/queries",
+    "wiki/open-questions",
+    "inbox",
+    "inbox/archive/promoted",
+    "inbox/archive/dropped",
+    "maps",
+    ".wiki",
+]
+
+GITIGNORE_LINES = [
+    "# wiki 派生层（可重建，不进 Git）",
+    "**/.wiki/id_index.json",
+    "**/.wiki/inbox_index.json",
+    "**/.wiki/normalized_alias_index.json",
+    "**/.wiki/cache.json",
+    "**/.wiki/search_index/",
+    "**/.wiki/lightrag/",
+    "**/maps/graph-data.json",
+    "**/maps/knowledge-graph.md",
+    "**/maps/graph-insights.md",
+    "# Obsidian 每机器配置",
+    "**/.obsidian/workspace.json",
+    "**/.obsidian/workspace-mobile.json",
+]
+
+
+@dataclass
+class Counters:
+    created: int = 0
+    skipped: int = 0
+    conflicts: List[str] = field(default_factory=list)
+    git_root: str = "none"
+    selfcheck: str = "fail"
+    notes: List[str] = field(default_factory=list)
+
+    def conflict(self, path: Path, detail: str) -> None:
+        self.conflicts.append(f"{path}: {detail}")
+
+
+def now_iso() -> str:
+    return datetime.now(LOCAL_TZ).replace(microsecond=0).isoformat()
+
+
+def today() -> str:
+    return datetime.now(LOCAL_TZ).strftime("%Y-%m-%d")
+
+
+def engine_repo() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
+def resolve_from_engine(raw: str, engine: Path) -> Path:
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        path = engine / path
+    return path.resolve()
+
+
+def write_report(counters: Counters) -> None:
+    for note in counters.notes:
+        print(note)
+    for item in counters.conflicts:
+        print(f"conflict: {item}", file=sys.stderr)
+    print(f"created: {counters.created}")
+    print(f"skipped: {counters.skipped}")
+    print(f"conflicts: {len(counters.conflicts)}")
+    print(f"git_root: {counters.git_root}")
+    print(f"selfcheck: {counters.selfcheck}")
+
+
+def create_root(root: Path, counters: Counters) -> bool:
+    if root.exists():
+        if root.is_dir():
+            counters.skipped += 1
+            return True
+        counters.conflict(root, "root path exists but is not a directory")
+        return False
+    try:
+        root.mkdir(parents=True, exist_ok=False)
+    except OSError as exc:
+        counters.conflict(root, f"cannot create root directory: {exc}")
+        return False
+    counters.created += 1
+    return True
+
+
+def required_file_paths(root: Path, profile: Optional[str]) -> List[Path]:
+    paths = [
+        root / "purpose.md",
+        root / "index.md",
+        root / "overview.md",
+        root / "log.md",
+        root / ".wiki-schema.md",
+        root / "raw/source_manifest.json",
+        root / ".wiki/review_queue.json",
+        root / ".wiki/capture_policy.json",
+    ]
+    if profile:
+        paths.append(root / ".wiki-profile.json")
+    paths.extend(root / rel / ".gitkeep" for rel in DIRS_WITH_GITKEEP)
+    return paths
+
+
+def collect_type_conflicts(root: Path, dirs: Iterable[str], files: Iterable[Path], counters: Counters) -> bool:
+    root = root.resolve()
+    planned_dirs = [root / rel for rel in dirs]
+    all_targets = planned_dirs + list(files)
+    for target in all_targets:
+        try:
+            rel_parts = target.relative_to(root).parts
+        except ValueError:
+            counters.conflict(target, "planned path escapes instance root")
+            continue
+        current = root
+        for part in rel_parts[:-1]:
+            current = current / part
+            if current.exists() and not current.is_dir():
+                counters.conflict(current, "parent path must be a directory")
+                break
+    for directory in planned_dirs:
+        if directory.exists() and not directory.is_dir():
+            counters.conflict(directory, "expected directory but found file")
+    for path in files:
+        if path.exists() and not path.is_file():
+            counters.conflict(path, "expected file but found directory")
+    return not counters.conflicts
+
+
+def ensure_dir(path: Path, counters: Counters) -> None:
+    if path.exists():
+        counters.skipped += 1
+        return
+    path.mkdir(parents=True, exist_ok=False)
+    counters.created += 1
+
+
+def ensure_text_file(path: Path, text: str, counters: Counters) -> bool:
+    if path.exists():
+        counters.skipped += 1
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    counters.created += 1
+    return True
+
+
+def ensure_json_file(path: Path, data: Any, counters: Counters) -> bool:
+    if path.exists():
+        counters.skipped += 1
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2, sort_keys=True)
+        f.write("\n")
+    counters.created += 1
+    return True
+
+
+def copy_schema(root: Path, engine: Path, counters: Counters) -> bool:
+    target = root / ".wiki-schema.md"
+    if target.exists():
+        counters.skipped += 1
+        return True
+    source = engine / "knowledge/.wiki-schema.md"
+    if not source.is_file():
+        counters.conflict(source, "engine schema template missing")
+        return False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, target)
+    counters.created += 1
+    return True
+
+
+def create_skeleton(root: Path, engine: Path, profile: Optional[str], counters: Counters) -> bool:
+    for rel in DIRS_WITH_GITKEEP:
+        ensure_dir(root / rel, counters)
+        ensure_text_file(root / rel / ".gitkeep", "", counters)
+
+    instance_name = root.name or "knowledge"
+    date = today()
+    profile_name = profile or "base"
+    ensure_text_file(root / "purpose.md", f"# Purpose\n\n> {instance_name} 知识库目的(占位,待填)。\n", counters)
+    ensure_text_file(root / "index.md", "# Index\n\n", counters)
+    ensure_text_file(root / "overview.md", "# Overview\n\n", counters)
+    ensure_text_file(
+        root / "log.md",
+        f"# Log\n\n## {date} · Initialized\n\nInitialized by wiki_init (engine: llm-wiki, profile: {profile_name})。\n",
+        counters,
+    )
+    if not copy_schema(root, engine, counters):
+        return False
+
+    ensure_json_file(root / "raw/source_manifest.json", {"version": 1, "sources": []}, counters)
+    ensure_json_file(root / ".wiki/review_queue.json", {"version": 1, "items": []}, counters)
+    ensure_json_file(
+        root / ".wiki/capture_policy.json",
+        {
+            "version": 1,
+            "auto_capture": False,
+            "exclude_patterns": [
+                "密钥",
+                "token",
+                "API[_ ]?key",
+                "客户(姓名|名单|信息)",
+                "@[a-z]+\\.com",
+                "1[3-9]\\d{9}",
+            ],
+            "exclude_paths": [],
+            "max_inbox_files": 100,
+            "updated_at": now_iso(),
+        },
+        counters,
+    )
+    if profile:
+        ensure_json_file(
+            root / ".wiki-profile.json",
+            {
+                "schema_version": 1,
+                "profile": profile,
+                "description": "",
+                "extra_page_types": [],
+                "extra_field_enums": {},
+                "extra_optional_fields": {},
+            },
+            counters,
+        )
+    return True
+
+
+def is_inside(path: Path, parent: Path) -> bool:
+    return path == parent or path.is_relative_to(parent)
+
+
+def run_git(args: List[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", *args], cwd=cwd, text=True, capture_output=True)
+
+
+def ensure_git(root: Path, raw_git_root: Optional[str], engine: Path, counters: Counters) -> bool:
+    git_root = resolve_from_engine(raw_git_root, engine) if raw_git_root else root
+    counters.git_root = str(git_root)
+    if not is_inside(root, git_root):
+        counters.notes.append(f"git error: root is not inside git_root: root={root} git_root={git_root}")
+        return False
+    if git_root.exists() and not git_root.is_dir():
+        counters.conflict(git_root, "git_root exists but is not a directory")
+        return False
+    git_root.mkdir(parents=True, exist_ok=True)
+
+    probe = run_git(["rev-parse", "--show-toplevel"], git_root)
+    if probe.returncode != 0:
+        init = run_git(["init"], git_root)
+        if init.returncode != 0:
+            counters.notes.append("git error: git init failed; skeleton changes are not rolled back")
+            if init.stderr.strip():
+                counters.notes.append(init.stderr.strip())
+            return False
+        probe = run_git(["rev-parse", "--show-toplevel"], git_root)
+    if probe.returncode != 0:
+        counters.notes.append("git error: git rev-parse --show-toplevel failed; skeleton changes are not rolled back")
+        if probe.stderr.strip():
+            counters.notes.append(probe.stderr.strip())
+        return False
+
+    actual = probe.stdout.strip()
+    if actual:
+        counters.git_root = actual
+        counters.notes.append(f"git repo: {actual}")
+    return ensure_gitignore(git_root, counters)
+
+
+def ensure_gitignore(git_root: Path, counters: Counters) -> bool:
+    path = git_root / ".gitignore"
+    existing_text = ""
+    if path.exists():
+        if not path.is_file():
+            counters.conflict(path, "expected .gitignore file but found directory")
+            return False
+        existing_text = path.read_text(encoding="utf-8")
+        counters.skipped += 1
+    else:
+        counters.created += 1
+
+    existing_lines = set(existing_text.splitlines())
+    missing = [line for line in GITIGNORE_LINES if line not in existing_lines]
+    if missing:
+        prefix = "" if not existing_text or existing_text.endswith("\n") else "\n"
+        with path.open("a", encoding="utf-8") as f:
+            f.write(prefix)
+            f.write("\n".join(missing))
+            f.write("\n")
+        counters.created += len(missing)
+    else:
+        counters.skipped += len(GITIGNORE_LINES)
+    return True
+
+
+def run_selfcheck(root: Path, engine: Path, counters: Counters) -> bool:
+    lint = engine / "scripts/wiki_lint.py"
+    result = subprocess.run(
+        [sys.executable, str(lint), "--root", str(root), "--check-only"],
+        cwd=engine,
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode == 0:
+        counters.selfcheck = "ok"
+        return True
+    counters.selfcheck = "fail"
+    counters.notes.append("selfcheck failed: wiki_lint returned non-zero")
+    if result.stdout.strip():
+        counters.notes.append(result.stdout.strip())
+    if result.stderr.strip():
+        counters.notes.append(result.stderr.strip())
+    return False
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Initialize an llm-wiki instance skeleton safely.")
+    parser.add_argument("--root", required=True, help="实例根目录；相对路径按引擎仓库根解析")
+    parser.add_argument("--profile", help="创建最小 .wiki-profile.json 模板")
+    parser.add_argument("--git", action="store_true", help="确保实例进入 git，并写入派生层 .gitignore")
+    parser.add_argument("--git-root", help="git repo 根目录；相对路径按引擎仓库根解析")
+    return parser
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    args = build_parser().parse_args(argv)
+    engine = engine_repo()
+    root = resolve_from_engine(args.root, engine)
+    counters = Counters()
+
+    if args.profile and not PROFILE_RE.match(args.profile):
+        counters.notes.append("config error: --profile must match ^[a-z][a-z0-9-]*$")
+        write_report(counters)
+        return EXIT_CONFIG
+
+    schema_preexisted = (root / ".wiki-schema.md").is_file()
+    if not create_root(root, counters):
+        write_report(counters)
+        return EXIT_CONFIG
+
+    files = required_file_paths(root, args.profile)
+    if not collect_type_conflicts(root, DIRS_WITH_GITKEEP, files, counters):
+        write_report(counters)
+        return EXIT_CONFIG
+
+    if not create_skeleton(root, engine, args.profile, counters):
+        write_report(counters)
+        return EXIT_CONFIG
+    if args.profile and schema_preexisted:
+        counters.notes.append("profile summary skipped: .wiki-schema.md exists")
+
+    if args.git and not ensure_git(root, args.git_root, engine, counters):
+        write_report(counters)
+        return EXIT_CONFIG
+
+    if not run_selfcheck(root, engine, counters):
+        write_report(counters)
+        return EXIT_CONFIG
+
+    write_report(counters)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

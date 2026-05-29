@@ -24,6 +24,43 @@ knowledge/log.md
 
 如果用户只是问普通问题，默认只读，不自动更新 Wiki。
 
+## 实例初始化
+
+触发语义：
+
+```text
+初始化一个新的 wiki 实例
+把这个 Obsidian vault 接成 llm-wiki 实例
+给外部 knowledge 目录补 wiki 骨架
+```
+
+流程：
+
+```bash
+conda activate py312
+python3 scripts/wiki_init.py --root <实例路径> [--profile NAME] [--git] [--git-root <repo路径>]
+```
+
+约束：
+
+- `--root` 是实例根；共享引擎仍在 llm-wiki 仓库，lint / graph 通过 `--root` 指向实例。
+- init 只补缺失骨架；同类型已存在路径跳过，类型冲突 exit 2，不覆盖 `.obsidian/`、用户 md、已建 schema 或 JSON 契约。
+- 上下文层使用通用占位内容，不拷贝当前 `knowledge/` 的 llm-wiki meta。
+- `--profile NAME` 只在缺失时创建最小 `.wiki-profile.json`；即使带 profile，也不修改已存在 `.wiki-schema.md`。
+- `--git` 要求实例根位于 `--git-root` 内，写入派生层和 `.obsidian/workspace*.json` ignore 规则，并保持幂等。
+- init 末尾自动跑 `wiki_lint.py --root <实例> --check-only`；失败时实例视为未就绪。
+
+多实例推荐形态：
+
+```text
+llm-wiki/                         # 共享引擎与脚本
+obsidian/knowledge/               # 一个 git repo 包多个 vault
+  personal/                       # 一个 wiki 实例 / Obsidian vault
+  work/                           # 另一个 wiki 实例 / Obsidian vault
+```
+
+`personal` 等真实用户 vault 的初始化应在对应 task/evaluation 明确通过后手动触发，不作为普通 apply task 的隐式副作用。
+
 ## 查询
 
 触发语义：
