@@ -15,7 +15,7 @@
 | [rfc_20260528_007](RFC-007-wiki-graph.md) | 自建 canonical wiki-graph（03 第二层增强图谱生成器） | accepted | claude | `scripts/wiki_graph.py`, `scripts/wiki_common.py`, `scripts/wiki_lint.py`, `scripts/README.md`, `wiki-design/02-workflows.md`, `wiki-design/03-obsidian-graph.md`, `.gitignore` |
 | [rfc_20260528_008](RFC-008-schema-profiles.md) | 业务 schema profile 机制（base + 可扩展 overlay，支持多实例复用） | accepted | claude | `scripts/wiki_common.py`, `scripts/wiki_lint.py`, `scripts/wiki_graph.py`, `scripts/README.md`, `knowledge/.wiki-schema.md`, `wiki-design/01-architecture.md`, `wiki-design/05-contracts-and-next-steps.md` |
 | [rfc_20260528_009](RFC-009-wikilink-convention.md) | wikilink 约定标准化（slug-based + 管道显示别名，Obsidian/wiki_graph 双解析） | accepted | claude | `scripts/wiki_graph.py`, `scripts/README.md`, `wiki-design/03-obsidian-graph.md`, `wiki-design/05-contracts-and-next-steps.md`, `wiki-design/02-workflows.md`, `knowledge/.wiki-schema.md`, `knowledge/wiki/**` |
-| [rfc_20260529_010](RFC-010-wiki-init.md) | wiki init 脚手架（外部 vault 实例 + 叠加已有 vault + git 初始化） | proposed | claude | `scripts/wiki_init.py`, `scripts/README.md`, `wiki-design/02-workflows.md` |
+| [rfc_20260529_010](RFC-010-wiki-init.md) | wiki init 脚手架（外部 vault 实例 + 叠加已有 vault + git 初始化） | accepted | claude | `scripts/wiki_init.py`, `scripts/README.md`, `wiki-design/02-workflows.md` |
 
 ## 状态
 

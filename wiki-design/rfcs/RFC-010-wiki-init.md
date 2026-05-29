@@ -2,9 +2,9 @@
 id: rfc_20260529_010
 title: wiki init 脚手架（外部 vault 实例 + 叠加已有 vault + git 初始化）
 author: claude
-status: proposed
+status: accepted
 created: 2026-05-29
-updated: 2026-05-29  # v2 after codex review v1
+updated: 2026-05-29  # accepted; decision by claude (Path A)
 targets:
   - scripts/wiki_init.py
   - scripts/README.md
@@ -190,9 +190,40 @@ TASK 验证脚本（临时实例建在 knowledge/ 外，trap 清理）至少机�
 
 （待 Codex 追加）
 
-## Decision
+## Decision by claude · 2026-05-29（用户授权 Path A 代写）
 
-（待用户填写或授权 Agent 代写）
+**Accepted**。RFC-010 经 2 轮 review 收敛（v1 3 阻塞 → v2 通过）。本 Decision 锁定实现约束，移交 TASK-010。
+
+### 关键决策点
+
+| 决策点 | 选择 |
+| --- | --- |
+| git repo 层级 | **`obsidian/knowledge/` 一个 repo 包多 vault**（`--git-root` 指容器层，`.gitignore` `**/` 通配覆盖所有域） |
+| `.wiki-schema.md` 来源 | **拷贝引擎模板**（MVP）；从 BASE_SCHEMA 生成留 `wiki sync` 后续 RFC |
+| 叠加 vs 全新 | **只叠加**（已存在跳过；类型冲突 exit 2），不提供清空重建 |
+| `.obsidian` gitignore | **仅 `workspace*.json`**（保留主题/插件配置可同步） |
+
+### 锁定的实现约束（移交 TASK-010 spec）
+
+1. **骨架**：复刻 knowledge/（14 .gitkeep + 4 上下文层通用占位 + .wiki-schema.md 拷模板 + 3 JSON 完整内容）。**绝不拷 llm-wiki meta**。
+2. **叠加安全**：已存在同类型→跳过；**类型冲突（应建目录处有文件/反之）→ exit 2**；幂等（重复 init 新建数=0）。
+3. **--profile**：仅 `.wiki-profile.json` 不存在时写最小合法模板；`.wiki-schema.md` 已存在则不追加摘要（报 `profile summary skipped`）。
+4. **--git**：`root` 必须 ∈ `git_root`（否则 exit 2 + 打印两路径 + show-toplevel）；写/追加 `.gitignore`（派生层全集含 search_index/lightrag + `.obsidian/workspace*.json`，`**/` 通配，逐行幂等）。
+5. **capture_policy.json**：完整模板钉死（version/auto_capture/exclude_patterns 6 条/exclude_paths/max_inbox_files/updated_at）。
+6. **自检**：init 末尾跑 `wiki_lint --root <实例> --check-only` 应 exit 0。
+7. **验证机械化**：checksum 不变（.obsidian/workspace.json + 欢迎.md）/ 类型冲突 exit2 / 幂等新建数=0 / `git check-ignore` 命中派生层 / root∉git-root exit2 / profile skip。临时实例建 knowledge/ 外 + trap 清理。
+8. **不碰**：AGENTS.md（Agent 指向留 RFC-011）、wiki_lint/graph/common/BASE_SCHEMA、引擎仓库 .gitignore、现有 knowledge/。
+9. **运行环境**：conda py312 + PyYAML；`--git` 走 subprocess git，失败 graceful 报错不留半初始化。
+
+### Apply 触发
+
+- 立即开 **TASK-010: apply RFC-010 — implement wiki_init.py**（type: apply，executor: codex）
+- TASK-010 done 后,**用它 init `personal` vault**（`--root /Users/zhangjunwu/workspace/obsidian/knowledge/personal --git --git-root /Users/zhangjunwu/workspace/obsidian/knowledge --profile personal`）——这是多实例真正落地的时刻
+- TASK-010 done 后回本 RFC 追加 `## Applied in <commit-sha>`
+
+## Applied in working tree · 2026-05-29 · claude
+
+RFC accepted，targets 待 TASK-010 落地。apply 真正完成后由 TASK-010 evaluator 追加 commit sha。
 
 ## Review by codex · 2026-05-29
 
