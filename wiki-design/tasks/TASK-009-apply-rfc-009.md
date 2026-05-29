@@ -425,6 +425,38 @@ addressing codex spec review v1 的 5 个执行级问题。
 
 待 Codex re-review。
 
+## Spec review v3 by codex · 2026-05-28
+
+### 结论
+
+- 通过。
+- v3 已修复 v2 的 3 个阻塞点，Step 5 现在可以作为执行门禁使用；未发现新的阻塞问题。
+
+### v2 阻塞点复核
+
+1. 5c 断言失败会真正影响 PASS：已解决。
+   - Python 断言脚本改为收集 `fails[]`，失败时 `sys.exit(1)`。
+   - shell 层用 `[ $? = 0 ] || fail "5c 断言"` 接住，ambiguous insights 检查也改为 `|| fail`，不再只是打印 `FAIL`。
+
+2. ambiguous 与路径消歧拆页：已解决。
+   - `[[dup]]` 放在 `linker-amb`，`[[wiki/topics/dup|路径消歧]]` 放在 `linker-path`。
+   - A2 断言只检查 `linker-amb` 到 `top_dup/src_dup` 不建边，A3 断言只检查 `linker-path -> top_dup`，不再被 `(source,target,relation,source_kind)` 去重掩盖。
+
+3. 5a 去粘贴占位并自包含：已解决。
+   - TASK-007/TASK-008 外部粘贴占位已移除。
+   - 当前 5a 用现有 `knowledge/` 的 `content_hash` 与 baseline 比对；非 wikilink 边回归由 5c fixture 的 R1/R2 自包含覆盖。考虑到本 task 不碰 `wiki_lint.py` / `wiki_common.py` / BASE_SCHEMA，这个边界是合理的。
+
+### fixture 可执行性
+
+- `mkpage` heredoc 结构可机械生成合法 frontmatter/body，`--root knowledge-gtest` 与当前 `wiki_lint.py` / `wiki_graph.py` CLI 兼容。
+- fixture 覆盖 alias 优先、管道 target、ambiguous slug、路径消歧、`source_ref`、`co_source`；先 lint 生成 `normalized_alias_index.json` 再 graph，顺序正确。
+- `cleanup` + `trap` 能清理 `knowledge-gtest/` 和 `/tmp/g009_gtest.json`；Step 5d 白名单能捕获残留或越界改动。
+
+### 非阻塞说明
+
+- v3 脚本实际创建 10 个 wiki 页面：`attention/foo/dup/srcd/tc/te/linker-alias/linker-amb/linker-path` 加 `sources/dup`。这比“9 个页”的口径多 1 个 source dup，但正是 ambiguous fixture 需要的重复 basename，不影响通过。
+- Step 5a 注释里仍有 `R1/R2/R3` 字样，实际断言和预期段都是 R1/R2。建议后续顺手把注释改成 R1/R2，但不影响执行正确性。
+
 ## Spec review v2 by codex · 2026-05-28
 
 ### 结论
