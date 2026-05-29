@@ -225,9 +225,49 @@ echo "=== PASS=$PASS ==="; [ "$PASS" = 1 ] || exit 1
 
 （待执行者填写）
 
-## Evaluation by claude · YYYY-MM-DD
+## Evaluation by claude · 2026-05-29
 
-（待评估者填写）
+evaluator 在 py312 独立复跑 8 项(不只信 executor),全在 mktemp 临时实例,未碰用户真实 vault。
+
+### 1. 协议合规 — PASS
+
+- Step6 `4c3d44e` 恰好 3 白名单(wiki_init.py / README / 02-workflows);Step7 `94a9b0c` 仅 RFC-010;Step8 `99ece29` 仅 TASK-010。working tree clean。
+
+### 2. 叠加安全（最高风险，独立复跑）— PASS
+
+- 预置 `.obsidian/workspace.json` + `欢迎.md` → init 后**两者 checksum 不变**;骨架正常叠加(`created:36 skipped:1`,skip 即已有 .obsidian)。
+- 类型冲突(应建目录处放文件)→ **exit 2** ✓。
+- 幂等:第二次 `created: 0` ✓。
+
+### 3. --git（独立复跑）— PASS
+
+- **11 条 .gitignore 规则全部 `git check-ignore` 命中**(派生层 id_index/inbox_index/normalized_alias_index/cache/search_index/lightrag/maps×3 + .obsidian/workspace×2)。
+- `root∉git-root` → **exit 2** ✓;`git_root:` 报告打印实际 repo 路径 ✓。
+
+### 4. profile + 跨 cwd（独立复跑）— PASS
+
+- `--profile risk` 在已有 `.wiki-schema.md` 的 vault 上:**schema checksum 不变** + 报告含 `profile summary skipped` + `.wiki-profile.json` 6 顶层字段齐全。
+- **非 repo cwd 调用 wiki_init 成功**(subprocess `cwd=engine_repo` 生效,自检 lint 跑通)——v2 阻塞 #1 真修了。
+
+### 5. 自检 + spec 保真 — PASS
+
+- init 末尾 `wiki_lint --check-only` exit 0;`wiki_graph` 出空图。
+- 稳定计数行 `created/skipped/conflicts/git_root/selfcheck` 全部输出,可机械解析。
+- 骨架不拷 llm-wiki meta(上下文层通用占位);capture_policy 完整默认值。
+
+### 6. 文档同步 + commit 卫生 — PASS
+
+- README 新增 wiki-init 段(用法/选项/稳定报告/退出码/生成内容);02-workflows 新增「实例初始化」段。
+- RFC-010 `Applied in 4c3d44e` 与 Step6 sha 对齐。
+- **透明度满分**:Execution log 如实记录"首次 `conda activate py312` 因非交互 shell 未初始化 conda 失败,随后用 `conda.sh` + `conda run -n py312` 重跑全过"——主动暴露环境踩坑而非掩盖。
+
+### 结论
+
+**PASS**。`wiki_init.py` 工具就绪,叠加安全/git/profile/跨 cwd 全部独立验证通过。最高风险(误动用户 vault)被 checksum 级证据排除。
+
+**下一步(不在本 task)**:用此工具正式 init 用户 `personal` vault:
+`python3 scripts/wiki_init.py --root /Users/zhangjunwu/workspace/obsidian/knowledge/personal --git --git-root /Users/zhangjunwu/workspace/obsidian/knowledge --profile personal`
+——多实例真正落地的时刻。无遗留。
 
 ## Spec review by codex · 2026-05-29
 
