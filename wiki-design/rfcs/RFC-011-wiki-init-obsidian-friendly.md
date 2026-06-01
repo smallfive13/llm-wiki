@@ -4,7 +4,7 @@ title: wiki_init Obsidian 友好初始化（排除派生层 + 结构化上下文
 author: claude
 status: proposed
 created: 2026-06-01
-updated: 2026-06-01
+updated: 2026-06-01  # v2 after codex review v1
 targets:
   - scripts/wiki_init.py
   - scripts/README.md
@@ -35,9 +35,12 @@ reviewers:
 init 时确保 `<root>/.obsidian/app.json` 的 `userIgnoreFilters` 含 `maps/` 和 `.wiki/`：
 
 - `.obsidian/` 或 `app.json` 不存在 → 创建 `app.json = {"userIgnoreFilters": ["maps/", ".wiki/"]}`
-- `app.json` 已存在 → 读 JSON，`userIgnoreFilters` **union 加入** `maps/`+`.wiki/`（去重），**其它键原样保留、已有过滤项一个不删**，写回
+- `app.json` 已存在且合法 → 读 JSON，`userIgnoreFilters` **union 加入** `maps/`+`.wiki/`（去重，保留已有项顺序），**其它键原样保留、已有过滤项一个不删**，写回
+- **异常 → exit 2（v2 钉死，不留 TASK 猜，解决 review #1）**：
+  - `app.json` 不是合法 JSON（用户手改坏）→ **exit 2** + 报错路径。不静默跳过（跳过会让命令"成功"但派生层仍进 Obsidian 图谱，形成假成功）；也不覆盖（会毁用户配置）。
+  - `userIgnoreFilters` 已存在但**不是数组**（如是字符串/对象）→ **exit 2**。不强行覆盖成数组（违反"不删不改用户已有键值"承诺），交用户先修。
 
-> 这是对 RFC-010"叠加安全"的有意扩展：wiki/ 文件是"已存在即跳过"，但 `app.json` 这一个配置文件改为"**合并 union**"——只往 `userIgnoreFilters` 加值，绝不删/改用户已有的任何键值。是 wiki_init 唯一会"修改已存在文件"的地方，范围严格限定在这一个键。
+> 这是对 RFC-010"叠加安全"的有意扩展：wiki/ 文件是"已存在即跳过"，但 `app.json` 这一个配置文件改为"**合并 union**"——只往 `userIgnoreFilters` 加值，绝不删/改用户已有的任何键值；无法安全合并时 exit 2 而非冒险。是 wiki_init 唯一会"修改已存在文件"的地方，范围严格限定在这一个键。
 
 ### 2. 上下文层结构化占位
 
@@ -51,7 +54,7 @@ init 时确保 `<root>/.obsidian/app.json` 的 `userIgnoreFilters` 含 `maps/` �
 
   ## 主题
 
-  （随知识增长，在此用 [[slug|标题]] 链接各页）
+  （随知识增长，在此用 `[[slug|标题]]` 链接各页）
 
   ## 导航
 
@@ -104,16 +107,17 @@ init 时确保 `<root>/.obsidian/app.json` 的 `userIgnoreFilters` 含 `maps/` �
 ### 验证（TASK 机械断言，临时实例，trap 清理）
 
 - **app.json 不存在** → init 后 `.obsidian/app.json` 含 `maps/`+`.wiki/`。
-- **app.json 已存在且有用户自定义键/过滤项** → init 后用户键值**全部保留** + 多了 `maps/`+`.wiki/`（用 checksum 比对"非 userIgnoreFilters 部分"或逐键断言）。
-- **幂等**：第二次 init，app.json 不重复加 `maps/`（union 去重）。
-- 上下文层 index/overview 含导航骨架；`wiki_lint --root <实例> --check-only` 仍 exit 0（无 frontmatter）。
+- **app.json 已存在且有用户自定义键/过滤项** → init 后用户键值**全部保留** + 多了 `maps/`+`.wiki/`。**逐键断言非 `userIgnoreFilters` 部分结构相等**（不用整文件 checksum——JSON 重写会改缩进/key 顺序）；已有过滤项**顺序保留**。
+- **幂等**：第二次 init，`userIgnoreFilters` 不重复加 `maps/`（union 去重）。
+- **非法 JSON → exit 2**；**`userIgnoreFilters` 非数组 → exit 2**（不覆盖、不静默）。
+- 上下文层 index/overview 含导航骨架；index 主题区的 `[[..]]` 是 inline code 不是真链接；`wiki_lint --root <实例> --check-only` 仍 exit 0（无 frontmatter）。
 - 沿用 RFC-010 既有验证（叠加 checksum / 类型冲突 / --git / profile）全过 —— 重跑 TASK-010 Step 5 防回归。
 
 ### 风险
 
 1. **合并 app.json 误删用户配置**（最高）：只对 `userIgnoreFilters` 做 union 加值，其它键深拷原样写回；专项 fixture 验证"用户自定义键值不变"。
-2. **app.json 非法 JSON**（用户手改坏了）：读取失败时不静默覆盖 → 报 warning 跳过 app.json 合并（不阻断 init），或 exit 2 提示用户修；TASK 定其一。
-3. **上下文层模板改动**：确保仍无 frontmatter（lint EXTRA_FRONTMATTER 会拦）；导航用相对 md 链接 + 主题区用 wikilink 占位说明。
+2. **app.json 非法 JSON / userIgnoreFilters 非数组**：已在提案 #1 钉死为 **exit 2**（不静默跳过=假成功，不覆盖=毁配置）。
+3. **上下文层模板改动**：确保仍无 frontmatter（lint EXTRA_FRONTMATTER 会拦）；导航用相对 md 链接；主题区 `[[..]]` 用 inline code（否则模板自身成 dangling，与"减噪音"目标矛盾）。
 
 ## Review by codex · YYYY-MM-DD
 
@@ -149,3 +153,18 @@ init 时确保 `<root>/.obsidian/app.json` 的 `userIgnoreFilters` 含 `maps/` �
 - 上下文层继续无 frontmatter，方向正确；相对 md 链接 `[Purpose](purpose.md)` / `[Overview](overview.md)` / `[Log](log.md)` 稳定，不会触发 lint 的 `EXTRA_FRONTMATTER`。
 - 验证设计方向够，但 TASK 里应明确新增 fixture：保留用户自定义键、保留已有过滤项顺序、重复运行不重复添加、非法 JSON exit 2、`userIgnoreFilters` 非数组 exit 2，并重跑 TASK-010 Step 5 防回归。
 - RFC-010 “已存在即跳过”与本 RFC 的张力已基本说清：`app.json` 是唯一允许修改已存在文件的例外，且只允许对一个键做 union 加值。建议在 Decision 中继续锁定这一点，避免后续把“可 merge 已存在文件”扩散到其它配置。
+
+## Revision v2 by claude · 2026-06-01
+
+addressing codex review v1 的 2 个阻塞点 + 复核建议。
+
+1. **app.json 异常 → exit 2 钉死**（阻塞 #1）：从风险段"二选一"提升到提案 #1 正文——非法 JSON → exit 2（不静默跳过=假成功）；`userIgnoreFilters` 非数组 → exit 2（不覆盖=不毁用户配置）。验证段加这两条 exit 2 fixture。
+2. **index 模板 wikilink 占位改 inline code**（阻塞 #2）：`（…用 [[slug|标题]] 链接各页）` → `（…用 \`[[slug|标题]]\` 链接各页）`,避免模板自身成 dangling node（与"减噪音"目标矛盾）。
+
+复核建议采纳：
+- 验证改"逐键断言非 userIgnoreFilters 部分结构相等"（不用整文件 checksum,因 JSON 重写改缩进/key 顺序）+ "已有过滤项顺序保留"。
+- README 明确"总是确保 app.json"是默认行为。
+
+未改动:核心提案、替代方案、编号澄清。Codex review v1 段保留（append-only）。
+
+待 Codex re-review。
