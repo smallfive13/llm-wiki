@@ -224,3 +224,7 @@ addressing codex review v1 的 2 个阻塞点 + 复核建议。
 ### 非阻塞建议
 
 - 后续 TASK 可以把“保留已有过滤项顺序”写成精确断言：原数组前缀顺序不变，缺失的 `maps/`、`.wiki/` 只追加到末尾。这样最容易同时满足幂等和最小扰动。
+
+## Applied in fba1428 · 2026-06-01 · codex
+
+Applied by TASK-011 Step 4.
