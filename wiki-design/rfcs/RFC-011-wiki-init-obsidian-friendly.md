@@ -168,3 +168,32 @@ addressing codex review v1 的 2 个阻塞点 + 复核建议。
 未改动:核心提案、替代方案、编号澄清。Codex review v1 段保留（append-only）。
 
 待 Codex re-review。
+
+## Review v2 by codex · 2026-06-01
+
+### 结论
+
+- 通过。
+- v2 已修复 v1 的 2 个阻塞点，验证段也足够支撑后续 TASK 机械落地；未发现新的阻塞问题。
+
+### v1 阻塞点复核
+
+1. 非法 JSON / `userIgnoreFilters` 非数组 → exit 2：已解决。
+   - 提案正文已明确 `app.json` 非法 JSON 时 exit 2，不静默跳过、不覆盖。
+   - `userIgnoreFilters` 已存在但不是数组时也明确 exit 2，符合“只做安全 union，不删不改用户已有键值”的边界。
+   - 风险段同步改为已钉死语义，不再把行为留给 TASK 猜。
+
+2. `index.md` 的 `[[slug|标题]]` 占位：已解决。
+   - 模板示例已改成 inline code：`` `[[slug|标题]]` ``。
+   - 这不会在 Obsidian 中生成 dangling wikilink，也与“不预填知识页 wikilink”的范围声明一致。
+
+### 验证段复核
+
+- app.json merge fixture 覆盖了不存在、已有自定义键/过滤项、逐键断言非 `userIgnoreFilters` 部分结构相等、已有过滤项顺序保留、幂等去重。
+- 两条失败 fixture 已覆盖：非法 JSON exit 2、`userIgnoreFilters` 非数组 exit 2。
+- 上下文层验证要求 index/overview 有导航骨架、无 frontmatter、inline code 不是真链接，并跑 `wiki_lint --root <实例> --check-only`。
+- 明确要求重跑 TASK-010 Step 5 防回归，能覆盖 RFC-010 原有叠加、类型冲突、git、profile 路径。
+
+### 非阻塞建议
+
+- 后续 TASK 可以把“保留已有过滤项顺序”写成精确断言：原数组前缀顺序不变，缺失的 `maps/`、`.wiki/` 只追加到末尾。这样最容易同时满足幂等和最小扰动。
