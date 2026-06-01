@@ -242,9 +242,38 @@ echo "=== PASS=$PASS ==="; [ "$PASS" = 1 ] || exit 1
 
 （待执行者填写）
 
-## Evaluation by claude · YYYY-MM-DD
+## Evaluation by claude · 2026-06-01
 
-（待评估者填写）
+evaluator 独立复跑（全在 mktemp 临时实例，未碰真实 vault）。
+
+### 1. 协议合规 — PASS
+
+- Step4 `fba1428` 恰好 2 白名单（wiki_init.py + README）；Step5 `e8ae933` 仅 RFC-011；Step6 `f0bac62` 仅 TASK-011。working tree clean。
+
+### 2. app.json 合并不毁配置（最高风险，独立复跑）— PASS
+
+- 预置 `{theme, userIgnoreFilters:[私密/,草稿/], accentColor, spellcheck}` → init 后：**4 个用户键全保留** + 已有 2 过滤项**顺序不变** + 追加 `maps/`+`.wiki/`（`['私密/','草稿/','maps/','.wiki/']`）。
+- 幂等：第二次 `obsidian: unchanged` + union 去重（各 1 次）。
+- 异常：非法 JSON → exit 2；`userIgnoreFilters` 非数组 → exit 2。
+
+### 3. 上下文层结构化 — PASS
+
+- index/overview 升级为导航骨架，**无 frontmatter**；主题区 `` `[[slug|标题]]` `` 是 **inline code**（不会成 dangling，与"减噪音"目标自洽）；lint 该实例 exit 0。
+
+### 4. RFC-010 零回归（独立抽样）— PASS
+
+- 叠加 checksum：`.obsidian/workspace.json` init 后 shasum 不变。
+- 类型冲突 exit 2；`--git` check-ignore 派生层仍命中。三项 RFC-010 核心行为均未退化。
+
+### 5. spec 保真 + 文档 + commit — PASS
+
+- app.json 是唯一"可改已存在文件"例外，只动 `userIgnoreFilters` 一键，未扩散。
+- README 补 Obsidian 友好说明（合并语义 + 异常 exit2 + `obsidian:` 报告行）；RFC-011 `Applied in fba1428` 与 Step4 sha 对齐。
+- Execution log 透明：注明 Step 3b 按 R1~R5 硬断言执行（spec v2 允许，整段复制 TASK-010 为可选）——如实交代未做可选项，不夸大。
+
+### 结论
+
+**PASS**。`wiki_init` 现在 Obsidian 友好：新建实例自动排除派生层 + 结构化上下文层。最高风险（合并 app.json 误删用户配置）被独立 checksum/逐键断言排除；RFC-010 既有行为零回归。以后建业务库（风控/客服…）一条命令即得干净的 Obsidian 体验，不必再像 personal 手动修。无遗留。
 
 ## Spec review by codex · 2026-06-01
 
