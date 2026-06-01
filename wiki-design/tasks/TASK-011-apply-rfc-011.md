@@ -6,7 +6,7 @@ executor: codex
 status: pending
 type: apply
 created: 2026-06-01
-updated: 2026-06-01
+updated: 2026-06-01  # v2 after codex spec review v1
 related_rfcs:
   - rfc_20260601_011
 ---
@@ -175,12 +175,46 @@ echo "=== 3a-6 上下文层结构化 + 无 frontmatter + lint exit 0 ==="
 E="$BASE/e"; mkdir -p "$E"
 python3 scripts/wiki_init.py --root "$E" >/dev/null 2>&1 || fail "3a-6 init"
 head -1 "$E/index.md" | grep -q '^---$' && fail "index 误带 frontmatter" || echo "  OK: index 无 frontmatter"
-grep -q '`\[\[slug|标题\]\]`' "$E/index.md" && echo "  OK: 主题区是 inline code" || echo "  (核对 index 主题区 inline code)"
+# 主题区 [[..]] 必须被反引号包裹（inline code）；裸 [[..]] 会成 dangling。断言失败要 fail（解决 review #2）
+grep -qF '`[[slug|标题]]`' "$E/index.md" && echo "  OK: 主题区是 inline code" || fail "index 主题区 [[..]] 不是 inline code（会成 dangling）"
 cd "$(git rev-parse --show-toplevel)" 2>/dev/null
 /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --root "$E" --check-only >/dev/null 2>&1; [ $? = 0 ] && echo "  OK: lint exit 0" || fail "lint"
 
-echo "=== 3b 重跑 TASK-010 Step 5 防回归 ==="
-echo "  >>> 逐字复制 TASK-010 Step 5（5a~5f）在此重跑;任一 FAIL = RFC-010 行为回归 = 本 task 失败 <<<"
+echo "=== 3b 防回归：RFC-010 既有行为内嵌实跑（解决 review #1）==="
+# 内嵌实际断言（接本脚本 fail，真跑真判，不手填）。覆盖 RFC-010 5 项核心：
+
+echo "--- R1 叠加 checksum：.obsidian/workspace.json + 笔记 init 后不变 ---"
+RV="$BASE/r1"; mkdir -p "$RV/.obsidian"
+printf '{"k":1}\n' > "$RV/.obsidian/workspace.json"; printf '# note\n' > "$RV/note.md"
+HW=$(shasum "$RV/.obsidian/workspace.json"|cut -d' ' -f1); HN=$(shasum "$RV/note.md"|cut -d' ' -f1)
+python3 scripts/wiki_init.py --root "$RV" >/dev/null 2>&1 || fail "R1 init"
+[ "$HW" = "$(shasum "$RV/.obsidian/workspace.json"|cut -d' ' -f1)" ] && echo "  OK: workspace.json 不变" || fail "R1 workspace.json 被改"
+[ "$HN" = "$(shasum "$RV/note.md"|cut -d' ' -f1)" ] && echo "  OK: note.md 不变" || fail "R1 note.md 被改"
+
+echo "--- R2 幂等：第二次 created: 0 ---"
+python3 scripts/wiki_init.py --root "$RV" 2>&1 | grep -qx "created: 0" && echo "  OK: created: 0" || fail "R2 非幂等"
+
+echo "--- R3 类型冲突 → exit 2 ---"
+RC="$BASE/r3"; mkdir -p "$RC"; printf 'x\n' > "$RC/wiki"
+python3 scripts/wiki_init.py --root "$RC" >/dev/null 2>&1; [ $? = 2 ] && echo "  OK: 类型冲突 exit 2" || fail "R3 未 exit2"
+
+echo "--- R4 --git：派生层 check-ignore + root∉git-root exit 2 ---"
+RG="$BASE/r4"; mkdir -p "$RG/inst"
+python3 scripts/wiki_init.py --root "$RG/inst" --git --git-root "$RG" >/dev/null 2>&1 || fail "R4 init --git"
+for p in inst/.wiki/id_index.json inst/maps/graph-data.json inst/.obsidian/workspace.json; do
+  git -C "$RG" check-ignore "$p" >/dev/null 2>&1 || fail "R4 未 ignore: $p"
+done
+RO="$BASE/r4out"; mkdir -p "$RO"
+python3 scripts/wiki_init.py --root "$RO" --git --git-root "$RG" >/dev/null 2>&1; [ $? = 2 ] && echo "  OK: --git 派生层 ignore + root∉git-root exit 2" || fail "R4 root∉git-root 未 exit2"
+
+echo "--- R5 profile：已有 .wiki-schema.md 不改 + 模板 6 字段 ---"
+RP="$BASE/r5"; mkdir -p "$RP"; printf 'EXISTING\n' > "$RP/.wiki-schema.md"; HS=$(shasum "$RP/.wiki-schema.md"|cut -d' ' -f1)
+python3 scripts/wiki_init.py --root "$RP" --profile risk >/dev/null 2>&1 || fail "R5 init"
+[ "$HS" = "$(shasum "$RP/.wiki-schema.md"|cut -d' ' -f1)" ] && echo "  OK: 已有 .wiki-schema.md 不改" || fail "R5 schema 被改"
+python3 -c "import json,sys;d=json.load(open('$RP/.wiki-profile.json'));need={'schema_version','profile','description','extra_page_types','extra_field_enums','extra_optional_fields'};sys.exit(0 if need<=set(d) else 1)" && echo "  OK: profile 6 字段" || fail "R5 profile 字段缺"
+
+# 完整重跑（含 TASK-010 Step 5 全部 5a~5f）也可：executor 可额外提取 TASK-010 Step5 整段跑一遍，
+# 把输出贴进 Execution log；但上面 R1~R5 已是接入 PASS 的硬断言，是本节判定依据。
 
 echo "=== 白名单(引擎仓库只动 2 文件)==="
 extra=$(git status --porcelain -uall | cut -c4- | grep -Ev '^scripts/wiki_init\.py$|^scripts/README\.md$|^wiki-design/tasks/TASK-011-apply-rfc-011\.md$')
@@ -250,3 +284,14 @@ echo "=== PASS=$PASS ==="; [ "$PASS" = 1 ] || exit 1
 - 把 TASK-010 Step 5 的 5a~5f 实际脚本内联到 Step 3b，并调整白名单为 TASK-011 的 2 文件 + TASK 自身。
 - 把 3a-6 inline-code grep 改成失败即 `fail`。
 - 补强 3a-2 / 3a-3 的顺序、去重和第二次 init exit code 断言。
+
+## Revision v2 by claude · 2026-06-01
+
+addressing codex spec review v1 的 2 个阻塞点（都是"验证假通过"）。
+
+1. **Step 3b 占位 → 内嵌实跑**（阻塞 #1）：原来只是"逐字复制 TASK-010 Step5"占位 echo，不真跑。改为**内嵌 R1~R5 实际断言**（接本脚本 fail）覆盖 RFC-010 五项核心：R1 叠加 checksum / R2 幂等 / R3 类型冲突 exit2 / R4 --git check-ignore + root∉git-root exit2 / R5 profile 不改已有 schema。真跑真判，不手填结果。
+2. **3a-6 inline-code grep 失败不 fail → 改 fail**（阻塞 #2）：`grep ... || echo "(核对)"` → `grep -qF '\`[[slug|标题]]\`' || fail`，主题区不是 inline code（会成 dangling）时硬失败。
+
+未改动：Step 1 实现约束、3a-1~3a-5、白名单。Codex Spec review v1 段保留（append-only）。
+
+待 Codex re-review。
