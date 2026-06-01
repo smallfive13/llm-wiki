@@ -211,3 +211,42 @@ echo "=== PASS=$PASS ==="; [ "$PASS" = 1 ] || exit 1
 ## Evaluation by claude · YYYY-MM-DD
 
 （待评估者填写）
+
+## Spec review by codex · 2026-06-01
+
+### 结论
+
+- 需修改。
+- spec 已覆盖 RFC-011 Decision 的主要实现面：只动 2 个 apply 文件、`app.json` 作为唯一 merge 例外、非法 JSON / 非数组 exit 2、上下文层仍无 frontmatter、README 同步、临时实例验证和不碰真实 vault 都写到了。
+- 但还有 2 个执行级阻塞点会导致后续 apply 出现假阳性或防回归验证缺失，需要先修 spec。
+
+### 阻塞点
+
+1. Step 3b 仍是占位，不是可执行验证。
+   - 当前 Step 3b 只输出 `>>> 逐字复制 TASK-010 Step 5 ... <<<`，没有实际跑 TASK-010 的 5a~5f。
+   - 这会让 `PASS=1` 即使 RFC-010 行为回归也仍然通过，违背 RFC-011 Decision #5 “重跑 TASK-010 Step 5 全部防回归”。
+   - 建议把 TASK-010 Step 5 的 5a~5f 脚本完整内联到 TASK-011 Step 3b，或给出明确可执行的抽取/执行方式，并保证输出纳入 Execution log。考虑 TASK-010 Step 5 本身是自包含 mktemp + trap，最稳妥是直接写死一份当前版本的 5a~5f，白名单改成 TASK-011 的 2 文件口径。
+
+2. Step 3a-6 的 inline code 检查失败不会影响 PASS。
+   - 当前命令是：
+     `grep -q '`\[\[slug|标题\]\]`' "$E/index.md" && echo ... || echo "  (核对 index 主题区 inline code)"`
+   - 如果实现忘记反引号或 grep 转义不匹配，只会打印核对提示，不会 `fail`，最终仍可能 `PASS=1`。
+   - 这是 RFC-011 v1 的阻塞点之一，必须成为硬门禁。建议改成 `... || fail "index 主题区不是 inline code"`。
+
+### 其它可执行性问题
+
+- Step 3a-2 只断言 `u[0]=='私密/'` 和包含 `maps/` / `.wiki/`，还不能捕获追加顺序或重复项。建议按 v2 review 的非阻塞建议钉成：`u == ['私密/', 'maps/', '.wiki/']`，或至少断言 `u[:1] == ['私密/']` 且 `u.count(...) == 1` 且 `u[-2:] == ['maps/', '.wiki/']`。
+- Step 3a-3 第二次 init 没有 `|| fail "3a-3 init"`，如果第二次 init 异常，后续 JSON 断言通常会失败，但错误定位不清。建议补上。
+- Step 1.1 写“其它键深拷原样保留，json.dump 允许缩进/顺序变化”。这可以接受；验证也不应比较整文件 checksum。后续实现应注意不要复用原 dict 时意外 mutate 嵌套对象再写其它键，不过只改 `data['userIgnoreFilters']` 本身即可满足语义。
+
+### 覆盖性复核
+
+- RFC-011 Decision 7 条大体都有对应步骤：app.json union、异常 exit 2、唯一 merge 例外、上下文层模板、验证项、不碰其它系统、py312 环境均已出现。
+- 边界总体正确：apply 白名单是 `scripts/wiki_init.py` 和 `scripts/README.md`；真实 `personal` / `obsidian/...` 明确不碰；RFC Applied 和 TASK 自身只在后续步骤编辑。
+- 但在 Step 3b 修成真实可执行防回归前，当前 spec 不能通过。
+
+### 最小修改建议
+
+- 把 TASK-010 Step 5 的 5a~5f 实际脚本内联到 Step 3b，并调整白名单为 TASK-011 的 2 文件 + TASK 自身。
+- 把 3a-6 inline-code grep 改成失败即 `fail`。
+- 补强 3a-2 / 3a-3 的顺序、去重和第二次 init exit code 断言。
