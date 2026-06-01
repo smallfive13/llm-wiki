@@ -60,6 +60,7 @@ class Counters:
     conflicts: List[str] = field(default_factory=list)
     git_root: str = "none"
     selfcheck: str = "fail"
+    obsidian: str = "unchanged"
     notes: List[str] = field(default_factory=list)
 
     def conflict(self, path: Path, detail: str) -> None:
@@ -95,6 +96,7 @@ def write_report(counters: Counters) -> None:
     print(f"conflicts: {len(counters.conflicts)}")
     print(f"git_root: {counters.git_root}")
     print(f"selfcheck: {counters.selfcheck}")
+    print(f"obsidian: {counters.obsidian}")
 
 
 def create_root(root: Path, counters: Counters) -> bool:
@@ -209,8 +211,30 @@ def create_skeleton(root: Path, engine: Path, profile: Optional[str], counters: 
     date = today()
     profile_name = profile or "base"
     ensure_text_file(root / "purpose.md", f"# Purpose\n\n> {instance_name} 知识库目的(占位,待填)。\n", counters)
-    ensure_text_file(root / "index.md", "# Index\n\n", counters)
-    ensure_text_file(root / "overview.md", "# Overview\n\n", counters)
+    ensure_text_file(
+        root / "index.md",
+        "# Index\n\n"
+        "知识库入口。\n\n"
+        "## 主题\n\n"
+        "（随知识增长，在此用 `[[slug|标题]]` 链接各页）\n\n"
+        "## 导航\n\n"
+        "- [Purpose](purpose.md) — 知识库目的\n"
+        "- [Overview](overview.md) — 主题总览\n"
+        "- [Log](log.md) — 变更日志\n",
+        counters,
+    )
+    ensure_text_file(
+        root / "overview.md",
+        "# Overview\n\n"
+        "> 这个知识库目前包含什么、围绕什么主题展开。\n\n"
+        "## 主题\n\n"
+        "（待填）\n\n"
+        "## 健康度\n\n"
+        "| 指标 | 当前值 |\n"
+        "| --- | --- |\n"
+        "| wiki 页面 | 0 |\n",
+        counters,
+    )
     ensure_text_file(
         root / "log.md",
         f"# Log\n\n## {date} · Initialized\n\nInitialized by wiki_init (engine: llm-wiki, profile: {profile_name})。\n",
@@ -253,6 +277,61 @@ def create_skeleton(root: Path, engine: Path, profile: Optional[str], counters: 
             },
             counters,
         )
+    return True
+
+
+def ensure_obsidian_app(root: Path, counters: Counters) -> bool:
+    obsidian_dir = root / ".obsidian"
+    app_path = obsidian_dir / "app.json"
+    required = ["maps/", ".wiki/"]
+    if not obsidian_dir.exists():
+        obsidian_dir.mkdir(parents=True, exist_ok=True)
+        counters.created += 1
+    elif not obsidian_dir.is_dir():
+        counters.conflict(obsidian_dir, "expected .obsidian directory but found file")
+        return False
+
+    if not app_path.exists():
+        ensure_json_file(app_path, {"userIgnoreFilters": required}, counters)
+        counters.obsidian = "created"
+        return True
+    if not app_path.is_file():
+        counters.conflict(app_path, "expected app.json file but found directory")
+        return False
+
+    try:
+        with app_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except json.JSONDecodeError as exc:
+        counters.conflict(app_path, f"invalid JSON: {exc}")
+        return False
+
+    if not isinstance(data, dict):
+        counters.conflict(app_path, "app.json top-level value must be an object")
+        return False
+
+    current = data.get("userIgnoreFilters")
+    if current is None:
+        data["userIgnoreFilters"] = list(required)
+        changed = True
+    elif isinstance(current, list):
+        changed = False
+        for item in required:
+            if item not in current:
+                current.append(item)
+                changed = True
+    else:
+        counters.conflict(app_path, "userIgnoreFilters must be a list")
+        return False
+
+    if changed:
+        with app_path.open("w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        counters.obsidian = "merged"
+    else:
+        counters.skipped += 1
+        counters.obsidian = "unchanged"
     return True
 
 
@@ -378,6 +457,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         return EXIT_CONFIG
     if args.profile and schema_preexisted:
         counters.notes.append("profile summary skipped: .wiki-schema.md exists")
+
+    if not ensure_obsidian_app(root, counters):
+        write_report(counters)
+        return EXIT_CONFIG
 
     if args.git and not ensure_git(root, args.git_root, engine, counters):
         write_report(counters)

@@ -179,6 +179,8 @@ MVP 只投影显式 canonical 数据、wikilink，以及由显式 source 字段�
 
 `wiki_init.py` 用于把任意目录初始化为合法 wiki 实例。它只补缺失骨架，已存在同类型路径会跳过；如果应建目录处已有文件，或应建文件处已有目录，会以 exit 2 报配置错误。它不会覆盖已有 Obsidian 配置、用户笔记或既有 wiki 契约文件。
 
+默认会确保实例根存在 `.obsidian/app.json`，并把 `maps/` 与 `.wiki/` 加入 Obsidian 的 `userIgnoreFilters`，避免派生层进入 Obsidian 图谱。已有 `app.json` 会做安全合并：只对 `userIgnoreFilters` append-missing union，保留已有过滤项顺序和其它键；非法 JSON 或 `userIgnoreFilters` 非数组会 exit 2，不静默跳过也不覆盖。
+
 ### 用法
 
 ```bash
@@ -201,6 +203,7 @@ skipped: M
 conflicts: K
 git_root: <path|none>
 selfcheck: ok|fail
+obsidian: created|merged|unchanged
 ```
 
 退出码：
@@ -211,11 +214,12 @@ selfcheck: ok|fail
 ### 生成内容
 
 - 14 个标准目录及 `.gitkeep`
-- `purpose.md` / `index.md` / `overview.md` / `log.md` 通用占位内容，不拷贝当前 `knowledge/` 的 llm-wiki meta
+- `purpose.md` / `index.md` / `overview.md` / `log.md` 通用占位内容，不拷贝当前 `knowledge/` 的 llm-wiki meta；`index.md` / `overview.md` 使用结构化导航骨架且无 frontmatter
 - `.wiki-schema.md` 从引擎 `knowledge/.wiki-schema.md` 拷贝，仅在目标缺失时写入
 - `raw/source_manifest.json`
 - `.wiki/review_queue.json`
 - `.wiki/capture_policy.json`，默认 `auto_capture: false`、`exclude_paths: []`、`max_inbox_files: 100`
+- `.obsidian/app.json`，默认创建或合并 `userIgnoreFilters: ["maps/", ".wiki/"]`
 
 ### git 与自检
 
