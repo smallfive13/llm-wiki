@@ -3,7 +3,7 @@ id: task_20260601_011
 title: Apply RFC-011 — wiki_init Obsidian 友好增强
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-06-01
 updated: 2026-06-01  # v2 after codex spec review v1
@@ -325,3 +325,55 @@ addressing codex spec review v1 的 2 个阻塞点（都是"验证假通过"）�
 
 - Step 3b 说明文字仍写“逐字复制 TASK-010 Step 5 全部”，但实际采用的是 R1~R5 等价核心断言，而不是逐字复制 5a~5f。当前验证足够通过；后续 Execution log 应按实际 R1~R5 输出描述，避免写成逐字复制。
 - Step 3a-3 第二次 init 仍未单独 `|| fail "3a-3 init"`；后续 JSON 断言通常会捕获异常，但实现时可以顺手补强错误定位。这不是阻塞。
+
+## Execution log by codex · 2026-06-01
+
+### 步骤完成情况
+
+- Step 1：完成 `scripts/wiki_init.py` app.json 安全合并与结构化上下文层模板。
+- Step 2：完成 `scripts/README.md` Obsidian 友好初始化说明。
+- Step 3：全量验证通过，`PASS=1`。
+- Step 4 commit：`fba1428`
+- Step 5 commit：`e8ae933`
+- Step 6 commit：本段提交后生成。
+
+### Step 3 验证输出
+
+```text
+=== 3a-1 app.json 不存在 → 创建含两项 ===
+  OK: app.json 含 maps/ + .wiki/
+=== 3a-2 已有 app.json(用户键 + 已有过滤项) → 保留 + 追加 ===
+  OK: 用户键保留 + 已有过滤项顺序保留 + 追加 maps/.wiki
+=== 3a-3 幂等:第二次不重复加 ===
+  OK: union 去重(各 1 次)
+=== 3a-4 非法 JSON → exit 2 ===
+  OK: 非法 JSON exit 2
+=== 3a-5 userIgnoreFilters 非数组 → exit 2 ===
+  OK: 非数组 exit 2
+=== 3a-6 上下文层结构化 + 无 frontmatter + lint exit 0 ===
+  OK: index 无 frontmatter
+  OK: 主题区是 inline code
+  OK: lint exit 0
+=== 3b 防回归：RFC-010 既有行为内嵌实跑（解决 review #1）===
+--- R1 叠加 checksum：.obsidian/workspace.json + 笔记 init 后不变 ---
+  OK: workspace.json 不变
+  OK: note.md 不变
+--- R2 幂等：第二次 created: 0 ---
+  OK: created: 0
+--- R3 类型冲突 → exit 2 ---
+  OK: 类型冲突 exit 2
+--- R4 --git：派生层 check-ignore + root∉git-root exit 2 ---
+  OK: --git 派生层 ignore + root∉git-root exit 2
+--- R5 profile：已有 .wiki-schema.md 不改 + 模板 6 字段 ---
+  OK: 已有 .wiki-schema.md 不改
+  OK: profile 6 字段
+=== 白名单(引擎仓库只动 2 文件)===
+  OK: 白名单外无改动
+=== PASS=1 ===
+```
+
+### 偏离 / 异常
+
+- 无验证异常。
+- Step 3b 按 spec v2 的 R1~R5 硬断言执行并记录输出；未额外逐字复制 TASK-010 5a~5f 全段。
+- 全部验证均在 `mktemp` 临时实例执行，trap 清理；未触碰用户真实 vault 或 `knowledge/` / `personal` 实例。
