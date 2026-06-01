@@ -2,9 +2,9 @@
 id: rfc_20260601_011
 title: wiki_init Obsidian 友好初始化（排除派生层 + 结构化上下文层占位）
 author: claude
-status: proposed
+status: accepted
 created: 2026-06-01
-updated: 2026-06-01  # v2 after codex review v1
+updated: 2026-06-01  # accepted; decision by claude (Path A)
 targets:
   - scripts/wiki_init.py
   - scripts/README.md
@@ -123,9 +123,36 @@ init 时确保 `<root>/.obsidian/app.json` 的 `userIgnoreFilters` 含 `maps/` �
 
 （待 Codex 追加）
 
-## Decision
+## Decision by claude · 2026-06-01（用户授权 Path A 代写）
 
-（待用户填写或授权 Agent 代写）
+**Accepted**。RFC-011 经 2 轮 review 收敛（v1 2 阻塞 → v2 通过）。本 Decision 锁定实现约束，移交 TASK-011。
+
+### 关键决策点
+
+| 决策点 | 选择 |
+| --- | --- |
+| app.json 处理 | **总是确保含排除规则（合并 union）**；`.obsidian/`/app.json 不存在则创建 |
+| 异常处理 | **非法 JSON / userIgnoreFilters 非数组 → exit 2**（不静默跳过=假成功，不覆盖=毁配置） |
+| 上下文层 | **结构化骨架 + 导航相对链接，不预填知识页 wikilink**（主题区 `[[..]]` 用 inline code） |
+
+### 锁定的实现约束（移交 TASK-011 spec）
+
+1. **app.json 合并**：`<root>/.obsidian/app.json` 的 `userIgnoreFilters` union 加入 `maps/`+`.wiki/`（去重、保留已有项顺序）；其它键深拷原样保留；不存在则创建。
+2. **异常 exit 2**：app.json 非法 JSON → exit 2 + 报路径；`userIgnoreFilters` 已存在但非数组 → exit 2。绝不静默跳过、绝不覆盖。
+3. **app.json 是 wiki_init 唯一允许"修改已存在文件"的例外**，且只对 `userIgnoreFilters` 一个键做 union 加值——**不得把"可 merge 已存在文件"扩散到其它配置/文件**（守住 RFC-010 叠加安全边界）。
+4. **上下文层模板**：index/overview 升级为结构化骨架（仍无 frontmatter）；导航用相对 md 链接 `[Purpose](purpose.md)` 等；主题区 `[[slug|标题]]` 用 inline code（不成真链接）。
+5. **验证**：app.json 不存在→创建含两项；已存在→逐键断言非 userIgnoreFilters 部分结构相等 + 已有过滤项顺序保留；幂等去重；非法 JSON exit2；非数组 exit2；上下文层 lint exit 0；**重跑 TASK-010 Step 5 全部防回归**。临时实例 + trap 清理。
+6. **不碰**：wiki_lint/graph/common/BASE_SCHEMA、RFC-010 其它行为、现有 personal 实例。
+7. **运行环境**：conda py312。
+
+### Apply 触发
+
+- 立即开 **TASK-011: apply RFC-011 — wiki_init Obsidian 友好增强**（type: apply，executor: codex）
+- TASK-011 done 后回本 RFC 追加 `## Applied in <commit-sha>`
+
+## Applied in working tree · 2026-06-01 · claude
+
+RFC accepted，targets 待 TASK-011 落地。apply 真正完成后由 TASK-011 evaluator 追加 commit sha。
 
 ## Review by codex · 2026-06-01
 
