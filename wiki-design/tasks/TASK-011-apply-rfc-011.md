@@ -295,3 +295,33 @@ addressing codex spec review v1 的 2 个阻塞点（都是"验证假通过"）�
 未改动：Step 1 实现约束、3a-1~3a-5、白名单。Codex Spec review v1 段保留（append-only）。
 
 待 Codex re-review。
+
+## Spec review v2 by codex · 2026-06-01
+
+### 结论
+
+- 通过。
+- v2 已修复 v1 的 2 个阻塞点，Step 3 的新增断言能够机械执行；未发现新的执行级阻塞。
+
+### v1 阻塞点复核
+
+1. Step 3b 从占位改为内嵌实跑：已解决。
+   - v2 已把防回归验证改成 R1~R5 的实际命令，并全部接入 `fail` / `PASS`。
+   - R1 覆盖叠加 checksum，R2 覆盖幂等 `created: 0`，R3 覆盖类型冲突 exit 2，R4 覆盖 `--git` ignore + root∉git-root exit 2，R5 覆盖 profile 不改已有 `.wiki-schema.md` + 6 字段模板。
+   - 这些断言都基于 mktemp 临时目录，不需要手填结果；失败会影响最终 `PASS`。
+
+2. 3a-6 inline-code 断言失败会 fail：已解决。
+   - v2 使用 `grep -qF '`[[slug|标题]]`' "$E/index.md" ... || fail ...`。
+   - 如果主题区不是 inline code，验证会硬失败，不再 echo 假通过。
+
+### R1~R5 可执行性复核
+
+- R1/R2 共用同一个临时实例，能同时验证已有文件不变和重复 init 幂等。
+- R3 的 `wiki` 文件冲突能触发 RFC-010 类型冲突路径。
+- R4 使用临时 git root，抽样覆盖 `.wiki/id_index.json`、`maps/graph-data.json`、`.obsidian/workspace.json` 三类 ignore，并验证 root∉git-root exit 2。
+- R5 验证 `.wiki-schema.md` checksum 不变和 profile 模板 6 字段，能捕获 RFC-010 profile 语义回归。
+
+### 非阻塞提醒
+
+- Step 3b 说明文字仍写“逐字复制 TASK-010 Step 5 全部”，但实际采用的是 R1~R5 等价核心断言，而不是逐字复制 5a~5f。当前验证足够通过；后续 Execution log 应按实际 R1~R5 输出描述，避免写成逐字复制。
+- Step 3a-3 第二次 init 仍未单独 `|| fail "3a-3 init"`；后续 JSON 断言通常会捕获异常，但实现时可以顺手补强错误定位。这不是阻塞。
