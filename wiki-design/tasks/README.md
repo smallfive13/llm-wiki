@@ -18,7 +18,7 @@ Task 回答"怎么做、谁来做"，与 RFC 回答"要不要这么改"互补。
 | [task_20260528_008](TASK-008-apply-rfc-008.md) | Apply RFC-008 — 实现 schema profile 机制（BASE_SCHEMA + overlay + --root） | done | claude | codex | RFC-008 |
 | [task_20260528_009](TASK-009-apply-rfc-009.md) | Apply RFC-009 — wikilink 约定（wiki_graph lookup + 迁移 4 页 + 文档同步） | done | claude | codex | RFC-009 |
 | [task_20260529_010](TASK-010-apply-rfc-010.md) | Apply RFC-010 — 实现 wiki_init.py 脚手架 | done | claude | codex | RFC-010 |
-| [task_20260601_011](TASK-011-apply-rfc-011.md) | Apply RFC-011 — wiki_init Obsidian 友好增强 | pending (待 codex spec review) | claude | codex | RFC-011 |
+| [task_20260601_011](TASK-011-apply-rfc-011.md) | Apply RFC-011 — wiki_init Obsidian 友好增强 | pending (spec v2 approved, ready to execute) | claude | codex | RFC-011 |
 
 ## 状态机
 
