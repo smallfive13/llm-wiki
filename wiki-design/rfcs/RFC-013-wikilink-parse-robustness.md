@@ -246,3 +246,8 @@ addressing Codex review 2 个阻塞点 + 复核建议。正文已就地修订：
 
 - “范围（不做）”里仍有一句“用轻量字符串/正则处理即可”，建议在 Decision 或 TASK 里改写为“轻量状态机，小正则仅用于识别 fence delimiter”，避免执行时误读成单正则方案。
 - TASK fixture 建议显式覆盖 `~~~` fence、带 info string 的 fence、闭合 fence 长度大于开围栏、行首 <= 3 空格缩进这几种样本；RFC 已定义清楚，这只是提高验证覆盖度。
+
+## Applied in ba17ac2ae272b451a6a52a6eedda0126345b9855
+
+- Applied by codex on 2026-06-02 via TASK-013.
+- Scope: `scripts/wiki_common.py`, `scripts/wiki_graph.py`, `scripts/README.md`, `tests/test_task_013.py`.
