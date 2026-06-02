@@ -173,3 +173,40 @@ graph insights（`maps/graph-insights.md`，派生层不进 Git）新增「知�
 ## Decision
 
 （待用户填写，或授权某 Agent 代写）
+
+## Review by codex · 2026-06-02
+
+### 结论
+
+- 需修改。
+- 核心方向同意：把 `confidence` / `review` / `last_verified` 从静态字段激活成 lint warning + graph insights 的派生信号，且只提示不阻断，适合个人库 MVP。
+- 但当前 RFC 还有 4 个 apply 前必须钉死的阻塞点，主要集中在契约边界、profile overlay 语义、degree 指标口径和 warning/反馈状态范围。
+
+### 阻塞点
+
+1. “不改任何 core schema 契约”与 `BASE_SCHEMA.staleness_days` / `error_level` 扩展的表述冲突。
+   - 如果这里的“不改 core schema”只指“不改页面 frontmatter 的 core 字段、必填项、枚举和 ID/canonical 规则”，这个方向可以接受。
+   - 但 `BASE_SCHEMA` 是 RFC-008 后的引擎 schema 单一来源，新增 `staleness_days` 和 `STALE_PAGE` / `UNVERIFIED_HIGH` 的 `error_level` 条目仍然是工具链契约扩展，不应写成“不改任何 core schema 契约”。
+   - 建议改为：“不改 core page schema / frontmatter 契约；扩展 lint/graph policy contract”。同时在影响范围里明确这是 schema policy 扩展，需要 README / `.wiki-schema.md` / error code 表同步。
+
+2. `staleness_days` 走 profile overlay “覆盖默认阈值”不符合 RFC-008 的“只增不改”。
+   - 当前 profile 只能新增页面类型、新字段 enum、额外可选字段；不能改 core 字段、JSON 契约或派生层规则。按业务库覆盖 base 类型的 stale 阈值，本质是在改 base 行为，不是只增。
+   - 这会绕过 RFC-008 已钉死的 profile 边界，也需要新的 profile schema 字段、校验规则和 PROFILE_* 测试。
+   - 建议二选一：MVP 先移除 profile 覆盖，只使用 BASE_SCHEMA 默认阈值；或单独扩 RFC-008/profile contract，定义 `trust_policy.staleness_days` 之类的可配置 policy，并写清“这是允许覆盖的非 core policy”，配套 profile validation/error code/fixture。
+
+3. degree 作为“使用热度/被依赖热度”的口径不够准确。
+   - 当前 `wiki_graph.assign_degree` 是无向总度数：每条边同时给 source 和 target +1。它适合粗略中心性，但不等于“被多少页引用”。
+   - stale hub 的复核优先级如果用总 degree，会被高 out-degree 页污染。例如一个 synthesis/comparison 链出很多页，会因为引用别人而变成高热度，但这不代表很多页依赖它。
+   - 建议至少计算并输出 `in_degree` / `out_degree` / `degree`。stale 复核排序用 `in_degree desc` 作为主排序，必要时再用 `out_degree desc` / `id` 兜底；“hub”可以继续用总 degree 或另列 inbound hub，但 RFC 必须钉死口径。
+
+4. warning 触发范围和反馈状态流转还不够精确。
+   - `STALE_PAGE` 的 active-only、跳过 `source` / `query`、跳过 `stale` / `archived` / `draft` / `redirect` 基本合理；但若允许 profile extra type，需要说明默认阈值、继承规则或明确不检查，否则 extra type 行为不确定。
+   - `UNVERIFIED_HIGH` 只写了 `confidence: high` + `review:false`，但没有限定 status/type。需要明确是否对 `draft`、`redirect`、`stale`、`archived`、`source`、`query` 触发。我的建议是至少跳过 `redirect` / `archived`；`draft` 是否提示取决于是否希望草稿也被治理，但 RFC 不能留空。
+   - `review:true` 被定义为“人已确认背书当前内容”，但负反馈路径只写“下调 confidence / 进 review_queue”，没有说明是否清掉 `review:true`。如果一页曾经 `review:true`，后来用户反馈“不太对”，继续保留 `review:true` 会混淆“曾经看过”和“当前仍背书”。建议定义状态机：正反馈设置 `last_verified=today + review:true`；负反馈为过时则 `status: stale`；负反馈为不正确但仍 active 时应 `review:false` 并下调 confidence 或进入 review_queue。
+
+### 非阻塞建议
+
+- insights 新增「知识健康度」段可以与现有 `Isolated Nodes` / `High Centrality Hubs` 共存，但不要重复输出两套长列表。建议 health 段只做 trust 摘要和 stale/high-unverified 优先列表，orphan/hub 使用已有计算并显示计数或引用语义；同时钉死 render 顺序，避免 insights 噪音膨胀。
+- 默认阈值 120 / 365 天可以作为 warning-only 的个人库启发式起点，但依据需要写清：判断/结论型 120 天是“季度级复核”，实体/主题 365 天是“年度复核”。如果后续要 profile 可配，需要先解决阻塞点 #2。
+- `UNVERIFIED_HIGH` 是必要 warning，但建议文案避免暗示 `high` 一定错误；更准确的提示是“高置信但未人工确认，确认后置 `review:true`，否则考虑降为 medium”。
+- Backlog 划分合理：运行时查询频率、结构化 evidence、review gate、自动降级都不应进入本 MVP。
