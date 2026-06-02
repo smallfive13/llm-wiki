@@ -2,9 +2,9 @@
 id: rfc_20260601_012
 title: 知识可信度信号（激活 review 语义 + 时间衰减 + 使用热度 + 用户反馈）
 author: claude
-status: proposed
+status: accepted
 created: 2026-06-01
-updated: 2026-06-01
+updated: 2026-06-02  # accepted; decision by claude (用户授权 Path A)，基于 codex v2 re-review 通过
 targets:
   - scripts/wiki_common.py
   - scripts/wiki_lint.py
@@ -131,7 +131,7 @@ base = confidence (high / medium / low)
   - 若 STALE_PAGE              → 降一级，标 needs-reverify
   - 若 high 且 review:false    → 标 "high (unverified)"，不计入最高可信
   - 若 review:true 且 fresh    → 标 "verified"（最高可信）
-  - 若 in_degree==0 且 out==0  → 标 orphan
+  - 若 in_degree==0 且 out_degree==0 → 标 orphan
   - 若 in_degree 进 top        → 标 inbound hub（stale 时优先级↑）
 ```
 
@@ -190,9 +190,34 @@ graph insights（`maps/graph-insights.md`，派生层不进 Git）新增「知�
 
 （待 Codex 追加）
 
-## Decision
+## Decision by claude · 2026-06-02（用户授权 Path A 代写）
 
-（待用户填写，或授权某 Agent 代写）
+**Accepted**。基于 Codex v2 re-review「通过(有非阻塞建议)」——4 个阻塞点已确认闭合。两条 re-review 非阻塞建议处理：§6 `out==0` 笔误已在正文改为 `out_degree==0`；related 边方向性留给 TASK-012 fixture 钉死。
+
+### 关键决策点（替代方案最终选择）
+
+| 决策点 | 选择 | 替代记录 |
+| --- | --- | --- |
+| confidence 动态化 | **新增派生 trust 状态，不动 confidence 字段** | 拒绝直接衰减 confidence（破坏 core enum） |
+| 契约边界 | **不改 core page schema / frontmatter；扩展工具链 policy 契约** | — |
+| staleness 阈值 | **按 type 分档 + BASE_SCHEMA 常量（MVP 不走 profile）** | profile 可配切 Backlog（违反 RFC-008 只增不改）；拒绝全局统一阈值 |
+| 使用热度来源 | **graph `in_degree`（被依赖度）+ 辅助 out_degree** | 拒绝无向总 degree（被高 out-degree 污染）；运行时查询频率切 Backlog |
+| 用户反馈载体 | **复用 `last_verified + review`，负反馈先撤 `review`** | 拒绝新增 feedback/verified_count 字段 |
+| 越界级别 | **warning（不 fail）** | 拒绝 error（个人库不阻断） |
+
+### 留给 TASK-012 spec 钉死的事项
+
+1. **related 边方向性 fixture**（codex re-review #2）：现状 `wiki_graph.py` 对 `A.related_ids:[B]` 产生 **A→B 单向边**，不自动补 B→A。TASK 必须加 fixture 固定该行为：覆盖①单向 related（只 A 写 B）②双向 related（A、B 互写）两种，断言各自 `in_degree` / `out_degree` 计数确定。
+2. **error code 表 + `.wiki-schema.md` 同步**：`STALE_PAGE` / `UNVERIFIED_HIGH` 两个 warning code 写进 `scripts/README.md` error code 表；`.wiki-schema.md` 补 `review` 语义 + trust 派生层说明 + staleness 阈值表。
+3. **触发集合测试**：`STALE_PAGE` 仅 active + type 在阈值表内；`UNVERIFIED_HIGH` 仅 active 且 type∉{source,query}。测试至少覆盖：active 超期(报)、stale/archived/draft/redirect(不报)、source/query(不报)、profile extra type(不报)。
+4. **insights health 段确定性**：render 顺序固定（概览 → stale → high-unverified）；stale 排序 `in_degree desc, out_degree desc, id`；与既有 `Isolated Nodes` / `High Centrality Hubs` 不重复长列表。
+5. **零回归**：现有 personal 5 页跑 lint 后只多出 warning（5 页都是 `high + review:false` → 应触发 5 条 `UNVERIFIED_HIGH`），无新 error；wiki_graph `--json` 对现有数据 content_hash 行为可控（新增 in/out degree 字段属预期结构变化）。
+
+### Apply 触发
+
+- targets 尚未改动（脚本未实现新 code）
+- 立即开 **TASK-012: apply RFC-012 — 实现 trust signal（lint 2 warning + graph in/out degree + insights health 段 + schema 文档同步）**（type: apply，executor: codex）
+- TASK-012 done 后回本 RFC 末尾追加 `## Applied in <commit-sha>`
 
 ## Review by codex · 2026-06-02
 

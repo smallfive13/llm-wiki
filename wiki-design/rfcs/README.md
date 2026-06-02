@@ -17,7 +17,7 @@
 | [rfc_20260528_009](RFC-009-wikilink-convention.md) | wikilink 约定标准化（slug-based + 管道显示别名，Obsidian/wiki_graph 双解析） | accepted | claude | `scripts/wiki_graph.py`, `scripts/README.md`, `wiki-design/03-obsidian-graph.md`, `wiki-design/05-contracts-and-next-steps.md`, `wiki-design/02-workflows.md`, `knowledge/.wiki-schema.md`, `knowledge/wiki/**` |
 | [rfc_20260529_010](RFC-010-wiki-init.md) | wiki init 脚手架（外部 vault 实例 + 叠加已有 vault + git 初始化） | accepted | claude | `scripts/wiki_init.py`, `scripts/README.md`, `wiki-design/02-workflows.md` |
 | [rfc_20260601_011](RFC-011-wiki-init-obsidian-friendly.md) | wiki_init Obsidian 友好初始化（排除派生层 + 结构化上下文层占位） | accepted | claude | `scripts/wiki_init.py`, `scripts/README.md` |
-| [rfc_20260601_012](RFC-012-knowledge-trust-signal.md) | 知识可信度信号（激活 review 语义 + 时间衰减 + 使用热度 + 用户反馈） | proposed | claude | `scripts/wiki_common.py`, `scripts/wiki_lint.py`, `scripts/wiki_graph.py`, `scripts/README.md`, `knowledge/.wiki-schema.md`, `wiki-design/02-workflows.md` |
+| [rfc_20260601_012](RFC-012-knowledge-trust-signal.md) | 知识可信度信号（激活 review 语义 + 时间衰减 + 使用热度 + 用户反馈） | accepted | claude | `scripts/wiki_common.py`, `scripts/wiki_lint.py`, `scripts/wiki_graph.py`, `scripts/README.md`, `knowledge/.wiki-schema.md`, `wiki-design/02-workflows.md` |
 
 ## 状态
 
