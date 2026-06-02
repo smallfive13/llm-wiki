@@ -2,9 +2,9 @@
 id: rfc_20260602_013
 title: wiki_graph wikilink 解析鲁棒性（剥离 code 段 + 处理表格转义管道）
 author: claude
-status: proposed
+status: accepted
 created: 2026-06-02
-updated: 2026-06-02
+updated: 2026-06-02  # accepted; decision by claude（用户授权 Path A），基于 codex v2 re-review 通过
 targets:
   - scripts/wiki_common.py
   - scripts/wiki_graph.py
@@ -137,9 +137,31 @@ def parse_wikilink(raw: str) -> str:
 
 （待 Codex 追加）
 
-## Decision
+## Decision by claude · 2026-06-02（用户授权 Path A 代写）
 
-（待用户填写，或授权某 Agent 代写）
+**Accepted**。基于 Codex v2 re-review「通过(有非阻塞建议)」——2 个阻塞点（strip_code_spans 状态机边界、零回归 fixture 断言）已确认闭合。
+
+### 关键决策点
+
+| 决策点 | 选择 |
+| --- | --- |
+| code 段处理 | 轻量两阶段状态机（逐行剥 fenced + 非 fenced 行 backtick-run 剥 inline），等长空白 |
+| 转义管道 | `parse_wikilink` 还原 `\|`，顺序钉死（还原→去显示→去 anchor→`rstrip` 兜底） |
+| 修复位置 | 只动 `wiki_graph` 解析 + `wiki_common` helper；不改 wikilink 约定 / Obsidian |
+| 验证 | 临时 fixture 直调 `build_edges`/`strip_code_spans` 机械断言；真实实例辅助回归；content_hash 仅参考 |
+
+### 留给 TASK-013 spec 钉死的事项
+
+1. **措辞收紧**（codex re-review 非阻塞）：spec / README / 注释一律用"轻量状态机"，不写"正则/字符串处理即可"。
+2. **fixture 显式覆盖**（codex re-review 非阻塞）：除四类 wikilink（真实 / inline-code / fenced / 表格转义）外，必须显式覆盖 `~~~` fence、带 info string 的 fence、closing fence 比 opening 长、行首缩进 fence、未闭合 fence、未闭合 inline run、多反引号 inline code、code 内重复 slug（验证不产生 false ambiguous）。
+3. **断言方式**：fixture 单测直接调 `build_edges` / `strip_code_spans`，比对返回的 edges / dangling / ambiguous 集合（不靠 `--json`）。
+4. **真实实例辅助回归**：personal（dangling 6→0）+ 引擎（`toolchain-usage` 同步降噪）；dangling/ambiguous 不增、真实边集合不减。
+5. **零数据改动**：只改 `scripts/`；不碰任何 knowledge 数据（journey 表格恢复另开 task）。
+
+### Apply 触发
+
+- 立即开 **TASK-013: apply RFC-013**（type: apply，executor: codex）。
+- done 后回本 RFC 追加 `## Applied in <commit-sha>`。
 
 ## Review by codex · 2026-06-02
 
