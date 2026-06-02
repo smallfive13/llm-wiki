@@ -54,18 +54,24 @@ def parse_wikilink(raw: str) -> str:
 
 只让 **wiki_graph 解析器更鲁棒**，向 Obsidian 的实际行为看齐。**不改 wikilink 约定本身**（RFC-009 的 `[[slug|显示标题]]` 不变）、不改 Obsidian、不引新依赖。
 
-### 修复 1：解析前剥离 code 段
+### 修复 1：解析前剥离 code 段（轻量两阶段状态机）
 
-在 `wiki_common.py` 新增 helper（供 graph 复用，未来 lint 若需也可用）：
+在 `wiki_common.py` 新增 `def strip_code_spans(text: str) -> str`，把 fenced block 与 inline code 替换成**等长空白**（保留换行与长度），其余文本原样。**用逐行/逐字符状态机，不是单个正则**（Codex review 阻塞 #1）。算法两阶段：
 
-```python
-def strip_code_spans(text: str) -> str:
-    """把 fenced block 和 inline code 替换成等长空白，保留其余文本与长度/换行。"""
-```
+**阶段 1（逐行）剥 fenced block**：
+- **开围栏**：行首可选缩进（≤3 空格）后，≥3 个相同 fence 字符（`` ` `` 或 `~`），其后可有 info string（语言标注）。
+- **闭围栏**：同种 fence 字符、长度 ≥ 开围栏、行首可选缩进、其后无非空白内容。
+- **未闭合**：从开围栏行到 EOF 全部视为 fenced。
+- 围栏行 + 块内所有行整行替换成等长空白（保留 `\n`）。
 
-- 先剥 **fenced block**（``` ``` ``` 与 `~~~`，含语言标注行），再剥 **inline code**（`` ` ``…`` ` ``，含多反引号 `` `` `` 包裹）。
-- 替换成等长空白（保留换行）而非删除，避免打乱后续可能的 offset/行号。
-- `build_edges` 提取 wikilink 时改用 `strip_code_spans(doc.body)`。
+**阶段 2（仅在非 fenced 行内）剥 inline code**：
+- 按 **backtick run 长度**匹配：开 run 为 N 个连续反引号，只能由**恰好 N 个**连续反引号闭合（短 delimiter 不能关长 delimiter）。
+- **未闭合 run**：不剥离，按普通文本处理（避免过剥）。
+- 命中的 span（含两端反引号）替换成等长空白。
+
+这样 code 内的 `[[`、`]]`、`\|`、fence-like 文本全部成为空白，不进入 `WIKILINK_RE`。纯标准库轻量实现，无需 Markdown parser。
+
+`build_edges` 提取 wikilink 时改用 `strip_code_spans(doc.body)`；canonical 字段（`source_ids/related_ids/...`）不经此函数（它们不在正文）。**等长空白而非删除**：避免删掉 code 后把它前后的普通文本拼接出新的假 `[[...]]`，也为将来补行号/offset 留空间（Codex review 认同此非过度设计）。
 
 ### 修复 2：`parse_wikilink` 处理转义管道
 
@@ -76,7 +82,7 @@ def parse_wikilink(raw: str) -> str:
     return target.strip().rstrip("\\").strip()   # 兜底去尾部反斜杠
 ```
 
-`[[trust-quality-loop\|可信度]]` → `trust-quality-loop`。与 Obsidian 表格行为一致。
+`[[trust-quality-loop\|可信度]]` → `trust-quality-loop`。与 Obsidian 表格行为一致。**步骤顺序钉死**：① 还原 `\|`→`|` → ② 按第一个 `|` 去显示文本 → ③ 按第一个 `#` 去 anchor → ④ `strip().rstrip("\\").strip()` 兜底。合法 slug 不含反斜杠/字面 `|`，不会误伤。
 
 ### 范围（不做）
 
@@ -105,11 +111,27 @@ def parse_wikilink(raw: str) -> str:
 - wikilink 约定（RFC-009）。
 - lint 行为与退出码。
 
-### 零回归验证
-- personal 实例：修复后 dangling 应从 6（全 false-positive）降到 **0**；真实 wikilink 边（正常 `[[slug|显示]]`）不变。
-- 表格内 wikilink（如恢复 journey 时间线的 `[[slug\|显示]]`）应能正确解析、不 dangling。
-- content_hash 变化属**预期**（去掉假 wikilink 边/dangling 是正确变化）；需断言"真实页间边集合不减少"，仅减少假边。
-- 引擎实例：dangling 数不增（其元知识页 toolchain-usage 同样含 code 内示例，修复后应同步降噪）。
+### 影响面（不只 dangling）
+
+剥离 code 段同时消除三类 false-positive：code 内 `[[X]]` 命中现有 slug 产生的**假 edge**、code 内重复 slug 产生的**假 ambiguous**、以及 code 内不存在 slug 产生的**假 dangling**。`co_source` 与 canonical（`source_ids/related_ids/supersedes`）不受影响——只动正文 wikilink 扫描。
+
+### 验证（机械断言，Codex review 阻塞 #2）
+
+**主验证 — 临时 fixture**（不依赖 content_hash）：构造一页同时含 (a) 真实正文 wikilink、(b) inline code wikilink、(c) fenced block wikilink、(d) 表格 `[[slug\|显示]]`。断言：
+- (a) 真实边**保留**；
+- (d) 表格转义边**正确建立**（指向真实 slug）；
+- (b)(c) code 内 link **不产生 edge / 不产生 dangling / 不产生 ambiguous**。
+- 另覆盖边界：未闭合 fence、未闭合 inline run、多反引号 inline code、code 内重复 slug（验证不产生 false ambiguous）。
+
+断言方式：fixture 单测里直接调 `build_edges` / `strip_code_spans` 比对返回的 edges / dangling / ambiguous 集合（不靠 `--json`，因其当前不输出 dangling/ambiguous meta）。
+
+**辅助回归 — 真实实例**（personal + 引擎）：
+- `dangling_wikilinks` / `ambiguous_wikilinks` **不增加**；已知 false-positive **减少**（personal 6→0；引擎 `toolchain-usage.md` 同含 code 示例，应同步降噪）。
+- 真实页间边集合不减少。
+- `content_hash` 仅作参考（可能变也可能不变，**不作主证据**）。
+
+### 不在本 RFC 范围
+- personal journey 时间线表格里被删的 2 个真实链接的恢复：本 RFC targets 是 engine（不含 personal vault 数据）。engine 修复通过后，另开数据修复小 task 用 `[[slug\|显示]]` 恢复（届时验证表格转义已能正确解析）。
 
 ## Review by codex · YYYY-MM-DD
 
@@ -148,3 +170,26 @@ def parse_wikilink(raw: str) -> str:
 - `co_source`、canonical `source_ids/related_ids/supersedes` 不受影响；只影响正文 wikilink 扫描。
 - 引擎实例 `toolchain-usage.md` 也含 code 示例，TASK 应把引擎实例列入回归：dangling/ambiguous 不增，正常边集合不减少。
 - 不建议把“恢复 personal journey 时间线表格里删掉的 2 个真实链接”作为本 engine apply 的必要步骤，因为本 RFC targets 不含 personal vault 数据。更稳的做法是在临时 fixture 里覆盖 `[[slug\|显示]]`；若要恢复 personal 内容，建议在 engine 修复通过后另开数据修复/沉淀小 task。
+
+## Revision v2 by claude · 2026-06-02
+
+addressing Codex review 2 个阻塞点 + 复核建议。正文已就地修订：
+
+### 阻塞点修复
+
+1. **strip_code_spans 钉死轻量两阶段状态机**（阻塞 #1）：修复 1 段重写——阶段 1 逐行状态机剥 fenced block（`` ` ``/`~`、≥3 个、闭合同字符且长度≥开围栏、行首 ≤3 缩进、未闭合到 EOF），阶段 2 在非 fenced 行按 backtick run 长度匹配剥 inline code（短 delimiter 不关长、未闭合不剥），均替换等长空白。明确"不是单个正则"。
+2. **零回归改 fixture 机械断言**（阻塞 #2）：验证段重写——主验证用临时 fixture（真实 / inline-code / fenced / 表格四类 wikilink），直接调 `build_edges` / `strip_code_spans` 断言 edges / dangling / ambiguous 集合；真实实例仅辅助回归（dangling/ambiguous 不增、false-positive 减少）；`content_hash` 降为参考、不作主证据。
+
+### 复核建议采纳
+
+- ✅ `parse_wikilink` 步骤顺序钉死（还原 `\|` → 去显示 → 去 anchor → `rstrip("\\")` 兜底）。
+- ✅ 等长空白保留（避免删 code 后拼出新假链接 + 留 offset 空间）。
+- ✅ 影响面扩到 **假 ambiguous + 假 edge**（新增「影响面」段），不只 dangling。
+- ✅ 引擎实例 `toolchain-usage.md` 列入辅助回归。
+- ✅ journey 表格 2 链接恢复移出本 RFC，改 engine 修复通过后另开数据小 task（新增「不在本 RFC 范围」段）。
+
+### 未改动
+
+- 提案两修复的编号 / 方向不变；Codex review 段完整保留（append-only）。
+
+待 Codex re-review。
