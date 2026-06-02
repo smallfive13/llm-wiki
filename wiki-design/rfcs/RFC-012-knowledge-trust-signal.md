@@ -331,3 +331,7 @@ addressing Codex review 的 4 个阻塞点 + 4 个非阻塞建议。正文已就
 
 - §6 trust 状态代码块里有一处小 typo：`in_degree==0 且 out==0` 建议改为 `in_degree==0 且 out_degree==0`，避免 TASK 复制时产生字段名歧义。
 - 后续 TASK 的验证建议加一条 fixture：一个 A 页 `related_ids: [B]`，断言只产生 A→B 的 `related` edge，`B.in_degree += 1`、`A.out_degree += 1`，但不产生 B→A；除非 B 也显式 related A。这样可以把 v2 的有向 related 口径固定住。
+
+## Applied in 48b34a3 · 2026-06-02 · codex
+
+Applied by TASK-012.
