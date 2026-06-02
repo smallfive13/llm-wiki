@@ -20,7 +20,8 @@ Task 回答"怎么做、谁来做"，与 RFC 回答"要不要这么改"互补。
 | [task_20260529_010](TASK-010-apply-rfc-010.md) | Apply RFC-010 — 实现 wiki_init.py 脚手架 | done | claude | codex | RFC-010 |
 | [task_20260601_011](TASK-011-apply-rfc-011.md) | Apply RFC-011 — wiki_init Obsidian 友好增强 | done | claude | codex | RFC-011 |
 | [task_20260602_012](TASK-012-apply-rfc-012.md) | Apply RFC-012 — 知识可信度信号（lint 2 warning + graph in/out degree + insights 健康度段） | done | claude | codex | RFC-012 |
-| [task_20260602_013](TASK-013-apply-rfc-013.md) | Apply RFC-013 — wiki_graph wikilink 解析鲁棒性（strip_code_spans + parse_wikilink 转义 + fixture） | pending | claude | codex | RFC-013 |
+| [task_20260602_013](TASK-013-apply-rfc-013.md) | Apply RFC-013 — wiki_graph wikilink 解析鲁棒性（strip_code_spans + parse_wikilink 转义 + fixture） | done | claude | codex | RFC-013 |
+| [task_20260602_014](TASK-014-apply-rfc-014.md) | Apply RFC-014 — wiki-eval 健康度量化（health score + 维度分解 + 趋势 + CI 闸） | pending | claude | codex | RFC-014 |
 
 ## 状态机
 

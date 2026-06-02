@@ -2,9 +2,9 @@
 id: rfc_20260602_014
 title: wiki-eval 知识库健康度量化（health score + 维度分解 + 趋势）
 author: claude
-status: proposed
+status: accepted
 created: 2026-06-02
-updated: 2026-06-02
+updated: 2026-06-02  # accepted; decision by claude（用户授权 Path A），基于 codex v2 re-review 通过
 targets:
   - scripts/wiki_eval.py
   - scripts/wiki_common.py
@@ -233,9 +233,36 @@ lint error 权重（100）高于 dangling/ambiguous（各 50）：error 是结�
 - 阈值和权重作为 BASE_SCHEMA 工具链 policy 常量可接受；MVP 不走 profile 覆盖是对的，避免 RFC-008 “只增不改”边界被绕开。后续 per-库配置应走单独 `trust_policy`。
 - 空库 `score=null` / `status=empty` 是合理特判，但 v2 最好补一句：empty 不写 snapshot、不参与 delta；`--check` 对 empty 是 exit 0 还是 exit 2 需要明确。
 
-## Decision
+## Decision by claude · 2026-06-02（用户授权 Path A 代写）
 
-（待用户填写，或授权某 Agent 代写）
+**Accepted**。基于 Codex v2 re-review「通过(有非阻塞建议)」——3 个阻塞点（integrity 公式、import 入口、验证写死）已确认闭合。
+
+### 关键决策点
+
+| 决策点 | 选择 |
+| --- | --- |
+| 工具形态 | 新脚本 `wiki_eval.py`（跨 lint+graph） |
+| 数据来源 | import `wiki_lint.evaluate_instance` / `wiki_graph.evaluate_instance` 只读 wrapper |
+| 算法 | 4 维加权（integrity 0.4 + freshness/endorsement/connectivity 各 0.2）+ 维度分解 |
+| integrity | 确定公式（分母 wiki_pages、error 100/dangling 50/ambiguous 50、clamp、floor 舍入） |
+| endorsement | 只盯 high 页（与 `UNVERIFIED_HIGH` 对齐） |
+| 趋势 | `--snapshot` 显式写 `.wiki/eval_history.jsonl`、进 git |
+| 阈值 | BASE_SCHEMA 常量（MVP 不走 profile；per-库进 Backlog `trust_policy`） |
+
+### 留给 TASK-014 spec 钉死的事项
+
+1. **integrity 确定公式**：照抄 RFC §「integrity 确定公式」；四舍五入统一 `floor(x+0.5)`。
+2. **两个只读 wrapper**：`wiki_lint.evaluate_instance`（强制 `check_only=True`、不写 `.wiki/*`）/ `wiki_graph.evaluate_instance`（不写 `maps/*`、profile issue 不 `sys.exit` 而回报 `config_errors`）。
+3. **`--check` 硬门**：`len(errors)==0` 且 `score>=阈值` 才 exit 0；空库 exit 0。
+4. **BASE_SCHEMA 常量**：`health_weights`（4 维）+ `health_threshold`（默认 70）。
+5. **fixture 主验证**：A 全绿 100 / B endorsement 偏低（weakest_dim==endorsement）/ C integrity 偏低（手算对照公式）/ 空库（score=null、status=empty、--check exit 0、不写 snapshot）；确定性（两次全等）。
+6. **真实实例只 smoke**：personal/引擎能跑、`--json` 完整、**断言 eval 运行前后不写 `.wiki/*` / `maps/*`**（mtime/内容不变）。
+7. **多 root 调用防全局状态串扰测试**（Codex re-review 非阻塞）：连续对两个不同 root 调用 `evaluate_instance`，断言结果互不污染（防 CLI 全局状态残留）。
+
+### Apply 触发
+
+- 立即开 **TASK-014: apply RFC-014**（type: apply，executor: codex）。
+- done 后回本 RFC 追加 `## Applied in <commit-sha>`。
 
 ## Revision v2 by claude · 2026-06-02
 
