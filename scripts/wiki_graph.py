@@ -73,6 +73,18 @@ def load_effective_schema(root: Path) -> Tuple[Dict[str, Any], str]:
     return merge_schema(BASE_SCHEMA, profile), profile_name(profile)
 
 
+def load_effective_schema_result(root: Path) -> Tuple[Optional[Dict[str, Any]], str, List[Dict[str, str]]]:
+    profile = load_profile(root)
+    issues = validate_profile(profile, BASE_SCHEMA)
+    if issues:
+        return (
+            None,
+            profile_name(profile),
+            [{"code": item.code, "field": item.field or "", "message": item.message, "hint": item.hint} for item in issues],
+        )
+    return merge_schema(BASE_SCHEMA, profile), profile_name(profile), []
+
+
 def rel_to_repo(path: Path, root: Path) -> str:
     return path.relative_to(root).as_posix()
 
@@ -592,6 +604,42 @@ def write_maps(root: Path, graph: Dict[str, Any], meta: Dict[str, Any], schema: 
     write_json_atomic(maps_root / "graph-data.json", graph)
     write_text_atomic(maps_root / "knowledge-graph.md", render_graph_overview(graph, meta))
     write_text_atomic(maps_root / "graph-insights.md", render_insights(graph, meta, schema, now_date))
+
+
+def evaluate_instance(root: Path) -> Dict[str, Any]:
+    root = Path(root).resolve()
+    if not root.is_dir():
+        return {
+            "exit_code": 2,
+            "graph": None,
+            "meta": None,
+            "profile": "base",
+            "config_errors": [
+                {
+                    "code": "ROOT_NOT_FOUND",
+                    "field": "root",
+                    "message": f"instance root not found: {root}",
+                    "hint": "pass an existing instance root",
+                }
+            ],
+        }
+    schema, active_profile, config_errors = load_effective_schema_result(root)
+    if config_errors or schema is None:
+        return {
+            "exit_code": 2,
+            "graph": None,
+            "meta": None,
+            "profile": active_profile,
+            "config_errors": config_errors,
+        }
+    graph, meta = build_graph(root, schema)
+    return {
+        "exit_code": 0,
+        "graph": graph,
+        "meta": meta,
+        "profile": active_profile,
+        "config_errors": [],
+    }
 
 
 def main() -> int:

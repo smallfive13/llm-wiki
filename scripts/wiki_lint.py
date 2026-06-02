@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from dataclasses import dataclass
@@ -795,6 +796,115 @@ def run_lint(args: argparse.Namespace) -> Tuple[int, Dict[str, Any], str]:
     }
     text = human_output(data, pii_hits, args)
     return (1 if issues["errors"] else 0), data, text
+
+
+def _lint_state() -> Dict[str, Any]:
+    return {
+        "ROOT": ROOT,
+        "INSTANCE_ROOT": INSTANCE_ROOT,
+        "SCHEMA": SCHEMA,
+        "PROFILE_NAME": PROFILE_NAME,
+        "PROFILE_ISSUES": list(PROFILE_ISSUES),
+        "PAGE_TYPES": set(PAGE_TYPES),
+        "PAGE_STATUSES": set(PAGE_STATUSES),
+        "CONFIDENCES": set(CONFIDENCES),
+        "INBOX_STATUSES": set(INBOX_STATUSES),
+        "SUGGESTED_TYPES": set(SUGGESTED_TYPES),
+        "SOURCE_TYPES": set(SOURCE_TYPES),
+        "SOURCE_STATUSES": set(SOURCE_STATUSES),
+        "SOURCE_ADAPTERS": set(SOURCE_ADAPTERS),
+        "REVIEW_TYPES": set(REVIEW_TYPES),
+        "REVIEW_STATUSES": set(REVIEW_STATUSES),
+        "PRIORITIES": set(PRIORITIES),
+        "TYPE_PREFIX": dict(TYPE_PREFIX),
+        "WIKI_ID_RE": WIKI_ID_RE,
+        "INBOX_ID_RE": INBOX_ID_RE,
+        "INBOX_FILE_RE": INBOX_FILE_RE,
+        "DATE_RE": DATE_RE,
+        "ISO_RE": ISO_RE,
+        "HASH_RE": HASH_RE,
+        "ERROR_LEVEL": dict(ERROR_LEVEL),
+    }
+
+
+def _restore_lint_state(state: Dict[str, Any]) -> None:
+    global ROOT, INSTANCE_ROOT, SCHEMA, PROFILE_NAME, PROFILE_ISSUES
+    global PAGE_TYPES, PAGE_STATUSES, CONFIDENCES, INBOX_STATUSES, SUGGESTED_TYPES
+    global SOURCE_TYPES, SOURCE_STATUSES, SOURCE_ADAPTERS, REVIEW_TYPES, REVIEW_STATUSES, PRIORITIES
+    global TYPE_PREFIX, WIKI_ID_RE, INBOX_ID_RE, INBOX_FILE_RE, DATE_RE, ISO_RE, HASH_RE, ERROR_LEVEL
+
+    ROOT = state["ROOT"]
+    INSTANCE_ROOT = state["INSTANCE_ROOT"]
+    SCHEMA = state["SCHEMA"]
+    PROFILE_NAME = state["PROFILE_NAME"]
+    PROFILE_ISSUES = state["PROFILE_ISSUES"]
+    PAGE_TYPES = state["PAGE_TYPES"]
+    PAGE_STATUSES = state["PAGE_STATUSES"]
+    CONFIDENCES = state["CONFIDENCES"]
+    INBOX_STATUSES = state["INBOX_STATUSES"]
+    SUGGESTED_TYPES = state["SUGGESTED_TYPES"]
+    SOURCE_TYPES = state["SOURCE_TYPES"]
+    SOURCE_STATUSES = state["SOURCE_STATUSES"]
+    SOURCE_ADAPTERS = state["SOURCE_ADAPTERS"]
+    REVIEW_TYPES = state["REVIEW_TYPES"]
+    REVIEW_STATUSES = state["REVIEW_STATUSES"]
+    PRIORITIES = state["PRIORITIES"]
+    TYPE_PREFIX = state["TYPE_PREFIX"]
+    WIKI_ID_RE = state["WIKI_ID_RE"]
+    INBOX_ID_RE = state["INBOX_ID_RE"]
+    INBOX_FILE_RE = state["INBOX_FILE_RE"]
+    DATE_RE = state["DATE_RE"]
+    ISO_RE = state["ISO_RE"]
+    HASH_RE = state["HASH_RE"]
+    ERROR_LEVEL = state["ERROR_LEVEL"]
+
+
+def evaluate_instance(root: Path, *, now: Optional[date_cls] = None, scan_wiki_pii: bool = False) -> Dict[str, Any]:
+    repo_root = Path(__file__).resolve().parents[1]
+    requested_root = Path(root).resolve()
+    if not requested_root.is_dir():
+        return {
+            "exit_code": 2,
+            "data": {
+                "wiki_lint_version": VERSION,
+                "ran_at": now_iso(),
+                "scanned": {"wiki_pages": 0, "inbox_drafts": 0, "inbox_archived": 0, "sources": 0, "review_queue_items": 0},
+                "errors": [],
+                "warnings": [],
+                "derived_layers": {"id_index_entries": 0, "normalized_alias_index_entries": 0, "inbox_index_drafts": 0, "written": False},
+            },
+            "human": f"wiki-lint config error: instance root not found: {requested_root}",
+        }
+    original_cwd = Path.cwd()
+    state = _lint_state()
+    args = argparse.Namespace(
+        root=str(requested_root),
+        check_only=True,
+        json_output=False,
+        scan_wiki_pii=scan_wiki_pii,
+        now=now or datetime.now(LOCAL_TZ).date(),
+    )
+    try:
+        os.chdir(repo_root)
+        configure(args)
+        code, data, human = run_lint(args)
+        return {"exit_code": code, "data": data, "human": human}
+    except SystemExit as exc:
+        return {
+            "exit_code": int(exc.code) if isinstance(exc.code, int) else 2,
+            "data": {
+                "wiki_lint_version": VERSION,
+                "ran_at": now_iso(),
+                "scanned": {"wiki_pages": 0, "inbox_drafts": 0, "inbox_archived": 0, "sources": 0, "review_queue_items": 0},
+                "errors": [],
+                "warnings": [],
+                "derived_layers": {"id_index_entries": 0, "normalized_alias_index_entries": 0, "inbox_index_drafts": 0, "written": False},
+            },
+            "human": "wiki-lint config error",
+        }
+    finally:
+        os.chdir(original_cwd)
+        _restore_lint_state(state)
 
 
 def status(ok: bool) -> str:

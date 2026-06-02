@@ -102,6 +102,13 @@ BASE_SCHEMA: Dict[str, Any] = {
         "topic": 365,
         "entity": 365,
     },
+    "health_weights": {
+        "integrity": 0.4,
+        "freshness": 0.2,
+        "endorsement": 0.2,
+        "connectivity": 0.2,
+    },
+    "health_threshold": 70,
     "field_enums": {},
     "extra_optional_fields": {},
     "error_level": {
@@ -187,6 +194,14 @@ def is_stale(page_type: Any, status: Any, last_verified: Any, now: date, schema:
     threshold = staleness_threshold(page_type, schema)
     age = staleness_age_days(last_verified, now)
     return status == "active" and threshold is not None and age is not None and age > threshold
+
+
+def clamp_0_100(value: float) -> float:
+    return max(0.0, min(100.0, value))
+
+
+def round_half_up(value: float) -> int:
+    return int(value + 0.5)
 
 
 def _blank_code_text(text: str) -> str:

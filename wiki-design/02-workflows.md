@@ -281,6 +281,32 @@ lint 一下 Wiki
 python3 scripts/wiki_graph.py
 ```
 
+## 健康度评估
+
+触发语义：
+
+```text
+评估知识库健康度
+看看当前 wiki score
+跑一次健康检查 / CI check
+记录一次趋势快照
+```
+
+流程：
+
+```bash
+python3 scripts/wiki_eval.py --root <实例路径>
+python3 scripts/wiki_eval.py --root <实例路径> --json
+python3 scripts/wiki_eval.py --root <实例路径> --snapshot
+python3 scripts/wiki_eval.py --root <实例路径> --check
+```
+
+运行时机：
+
+- 每次维护后可跑 `wiki_eval.py --json`，确认 lint/graph 聚合分数和最弱维度。
+- 定期巡检或人工确认后跑 `--snapshot`，把 `.wiki/eval_history.jsonl` 纳入 Git 作为趋势审计。
+- CI / release gate 使用 `--check`：非空实例必须 lint error 为 0、graph config error 为 0，且 score 不低于 `BASE_SCHEMA.health_threshold`；空库 exit 0。
+
 ## 推荐命令形态
 
 未来可以封装轻量 CLI。
@@ -293,6 +319,7 @@ wiki ingest path/to/source.pdf
 wiki crystallize path/to/chat.md
 wiki lint
 wiki graph refresh
+wiki eval
 wiki review
 wiki apply
 ```

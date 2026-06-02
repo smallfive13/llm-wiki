@@ -194,6 +194,41 @@ orphan/hub 长列表仍由既有 `Isolated Nodes` / `High Centrality Hubs` 段�
 - 交互式 HTML 可视化
 - 共享 tag、共同邻居、类型亲和、共现等后续计算关系
 
+## wiki-eval
+
+实现：见 [`wiki_eval.py`](wiki_eval.py)
+设计：见 [`../wiki-design/rfcs/RFC-014-wiki-eval-health-score.md`](../wiki-design/rfcs/RFC-014-wiki-eval-health-score.md)
+
+`wiki_eval.py` 只读复用 `wiki_lint.evaluate_instance` 和 `wiki_graph.evaluate_instance` 的结构化结果，聚合为 0-100 健康分、四个维度分解、趋势快照和 CI 闸。普通运行不写 `.wiki/*` 或 `maps/*`；只有显式 `--snapshot` 会追加 `<root>/.wiki/eval_history.jsonl`。
+
+### 用法
+
+```bash
+python3 scripts/wiki_eval.py
+python3 scripts/wiki_eval.py --root /abs/path/to/knowledge --json
+python3 scripts/wiki_eval.py --root knowledge --snapshot
+python3 scripts/wiki_eval.py --root knowledge --check
+```
+
+`--root` 与 wiki-lint / wiki-graph 一致，指向实例根；缺省为引擎仓库下的 `knowledge/`。
+
+### 维度
+
+| 维度 | 公式 |
+| --- | --- |
+| `integrity` | `clamp_0_100(100 - (100*error_rate + 50*dangling_rate + 50*ambiguous_rate))` |
+| `freshness` | `active` 页中非 `STALE_PAGE` 的比例；无 active 页记 100 |
+| `endorsement` | `active`、非 source/query、`confidence: high` 页中 `review: true` 的比例；无 high 页记 100 |
+| `connectivity` | `in_degree + out_degree > 0` 的节点比例；空图记 100 |
+
+`integrity` 的三个 rate 都以 `lint.scanned.wiki_pages` 为分母，并各自 `min(1.0, count/page_count)`。总分使用 `BASE_SCHEMA.health_weights`（默认 0.4/0.2/0.2/0.2）加权，统一 `floor(x+0.5)` 四舍五入。空库输出 `score: null`、`status: empty`、`dims: null`。
+
+### 退出码
+
+- 普通运行：能完成评估即 exit 0。
+- `--check`：空库 exit 0；非空实例需同时满足 lint error 为 0、graph config error 为 0、score >= `BASE_SCHEMA.health_threshold`（默认 70），否则 exit 1。
+- 配置错误由 lint/graph wrapper 收敛为结构化结果，不通过 `sys.exit` 泄漏到 eval。
+
 ## wiki-init
 
 实现：见 [`wiki_init.py`](wiki_init.py)

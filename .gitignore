@@ -32,3 +32,6 @@ knowledge/maps/graph-insights.md
 knowledge/.wiki/id_index.json
 knowledge/.wiki/inbox_index.json
 knowledge/.wiki/normalized_alias_index.json
+
+# wiki-eval 趋势快照不可重建，显式 --snapshot 时纳入版本管理。
+!knowledge/.wiki/eval_history.jsonl
