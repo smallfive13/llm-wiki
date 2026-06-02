@@ -313,3 +313,9 @@ addressing Codex review 3 个阻塞点 + 非阻塞补充。正文已就地修订
 - TASK 建议加一个 `--check` 专项 fixture：构造“总分仍高于阈值，但存在 1 个 lint error”的库，断言 exit 非 0。这样能专门证明 `len(errors)==0` 硬门生效，而不是只靠低 integrity 分间接覆盖。
 - 如果后续仍坚持脚本代码兼容 Python 3.9，实际实现签名建议用 `Optional[date]` 而不是 `date | None`；本仓日常环境是 py312，所以这不是 RFC 阻塞点。
 - snapshot JSONL 后续可考虑追加 `status` / `weakest_dim` / `threshold` 字段，便于历史审计；MVP 的 `{ts, score, dims, pages}` 已够用。
+
+## Applied in 47b1a9c02c4265b66e1b42c6d01f0d0af4be5e74
+
+- executor: codex
+- date: 2026-06-02
+- scope: implemented `scripts/wiki_eval.py`, lint/graph readonly wrappers, BASE_SCHEMA health constants, docs, `.gitignore` snapshot whitelist, and TASK-014 regression tests.

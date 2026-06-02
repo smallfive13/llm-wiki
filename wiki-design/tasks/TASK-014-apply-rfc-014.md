@@ -3,7 +3,7 @@ id: task_20260602_014
 title: Apply RFC-014 — wiki-eval 健康度量化（health score + 维度分解 + 趋势 + CI 闸）
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-06-02
 updated: 2026-06-02
@@ -108,9 +108,120 @@ cd $ENGINE && $PY -m unittest -v tests.test_task_012 tests.test_task_013
 - commit sha
 - 偏离或异常
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-06-02
 
-（执行者填写）
+### Step 0 spec-review
+
+结论：通过，可以执行。
+
+- `wiki_lint.run_lint(args)` 已返回 `(exit_code, data, human)`，但依赖 `configure(args)` 设置模块级全局状态；本 task 新增 `evaluate_instance()` 时必须保存/恢复这些全局变量，强制 `check_only=True`，并把 cwd 临时切到引擎仓库根后恢复。
+- `wiki_graph.build_graph(root, schema)` 已是纯构建函数，不写 `maps/`；风险点是 `load_effective_schema()` 遇 profile issue 会 `sys.exit(2)`。本 task 新增非退出版 `load_effective_schema_result()`，由 `evaluate_instance()` 返回 `config_errors`。
+- `wiki_eval -> wiki_lint/wiki_graph -> wiki_common` 无循环依赖；`is_stale()`、`clamp_0_100()`、`round_half_up()` 均在 `wiki_common`。
+- 无需修改既有 lint/graph CLI 行为或退出码。
+
+### 改动文件与关键位置
+
+- `scripts/wiki_common.py`：`BASE_SCHEMA` 增加 `health_weights` 和 `health_threshold`；新增 `clamp_0_100()` / `round_half_up()`。
+- `scripts/wiki_lint.py`：新增 `_lint_state()` / `_restore_lint_state()` / `evaluate_instance(root, *, now, scan_wiki_pii)`，强制 `check_only=True`，root/config 错误不写派生层。
+- `scripts/wiki_graph.py`：新增 `load_effective_schema_result()` / `evaluate_instance(root)`，profile/root 错误回报 `config_errors`，不写 `maps/`。
+- `scripts/wiki_eval.py`：新增健康度 CLI；`integrity` 公式落点在 `_integrity_score()`，总分落点在 `calculate_health()`，`--snapshot` 只在 `status: ok` 时追加 `.wiki/eval_history.jsonl`。
+- `.gitignore`：白名单 `knowledge/.wiki/eval_history.jsonl`。
+- `scripts/README.md`：补 wiki-eval 用法、四维公式、退出码。
+- `wiki-design/02-workflows.md`：补健康度评估触发语义、维护/定期/CI 运行时机。
+- `tests/test_task_014.py`：新增 TASK-014 fixture 和 wrapper 测试。
+
+### 验证输出
+
+```text
+# 1) 单测全绿
+Ran 9 tests in 1.084s
+OK
+
+fixture A: score=100, dims={integrity:100,freshness:100,endorsement:100,connectivity:100}
+fixture B: score=90, endorsement=50, weakest_dim=endorsement
+fixture C: score=90, integrity=75, dangling=1
+empty: score=null, status=empty, --check exit=0, --snapshot 不写 eval_history.jsonl
+hard gate fixture: score>=70 且 lint_errors>0 时 --check exit=1
+```
+
+```json
+// # 2) personal smoke: wiki_eval --json
+{
+  "dims": {
+    "connectivity": 100,
+    "endorsement": 100,
+    "freshness": 100,
+    "integrity": 100
+  },
+  "pages": 9,
+  "score": 100,
+  "status": "ok",
+  "ts": "2026-06-02T21:58:46+08:00",
+  "weakest_dim": "integrity"
+}
+```
+
+personal `.wiki/*` + `maps/*` 前后 `shasum` diff：无输出，确认未写派生层。
+
+```json
+// # 3) engine instance smoke: wiki_eval --json
+{
+  "dims": {
+    "connectivity": 100,
+    "endorsement": 0,
+    "freshness": 100,
+    "integrity": 100
+  },
+  "pages": 4,
+  "score": 80,
+  "status": "ok",
+  "ts": "2026-06-02T21:58:49+08:00",
+  "weakest_dim": "endorsement"
+}
+```
+
+engine `knowledge/.wiki/*` + `knowledge/maps/*` 前后 `shasum` diff：无输出，确认未写派生层。
+
+```text
+# 4) --check behavior personal
+score: 100/100
+lint_errors: 0
+graph_config_errors: 0
+exit=0
+
+# 4) --check low fixture behavior
+score: 40/100
+lint_errors: 1
+graph_config_errors: 0
+exit=1
+```
+
+```text
+# 5) 既有套件不回归
+Ran 11 tests in 0.468s
+OK
+```
+
+### 新增测试清单
+
+- `test_fixture_a_all_green_scores_100`
+- `test_fixture_b_endorsement_low_is_weakest_dimension`
+- `test_fixture_c_integrity_formula_counts_dangling_by_page_count`
+- `test_empty_instance_has_null_score_check_zero_and_no_snapshot`
+- `test_snapshot_appends_for_non_empty_ok_result`
+- `test_check_requires_zero_lint_errors_even_when_score_is_high`
+- `test_deterministic_except_timestamp`
+- `test_multi_root_calls_do_not_leak_lint_global_state`
+- `test_json_smoke_and_eval_does_not_write_derived_layers`
+
+### Commit
+
+- apply commit: `47b1a9c02c4265b66e1b42c6d01f0d0af4be5e74`
+
+### 偏离或异常
+
+- 首次手动 smoke 使用 `PY="/path/conda run -n py312 python"` 字符串变量，zsh 将其当作单一路径导致 `exit=127`，未实际运行 eval。已改为 zsh 数组 `PY=(/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python)` 后重跑，验证通过。
+- 低分 fixture 的 `conda run` 在子命令 exit 1 时会额外输出 `ERROR conda.cli.main_run...`，这是预期的非零退出包装信息；脚本实际输出 `exit=1`，符合 `--check` 失败语义。
 
 ## Evaluation by claude · <date>
 
