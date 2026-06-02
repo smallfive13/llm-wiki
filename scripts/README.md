@@ -178,12 +178,14 @@ orphan/hub 长列表仍由既有 `Isolated Nodes` / `High Centrality Hubs` 段�
 
 ### Wikilink 解析
 
-`wiki_graph.py` 保留 Obsidian 兼容写法，解析时只取 `|` 前、`#` 前的 target：
+`wiki_graph.py` 保留 Obsidian 兼容写法：正文 wikilink 扫描会先用轻量状态机跳过 fenced / inline code 段，解析 target 时兼容表格转义管道 `\|`，并只取 `|` 前、`#` 前的 target：
 
 - alias 优先：先查 `normalized_alias_index.json`，避免同名 slug/title 覆盖 RFC-004 entity 别名。
 - slug 匹配：`[[rfc-task-protocol|RFC + Task 协作协议]]` 按文件 basename 匹配；basename 全局唯一才建边。
 - 路径消歧：`[[wiki/topics/rfc-task-protocol|RFC + Task 协作协议]]` 按实例根相对路径去 `.md` 精确匹配。
 - ambiguous：basename 重复时不建边，只在 `graph-insights.md` 的 `Ambiguous Wikilinks` 段提示；不写入 `graph-data.json`。
+- code 段跳过：`` `[[example]]` `` 与 fenced block 内的 `[[example]]` 不建边、不报 dangling / ambiguous。
+- 表格转义：Markdown 表格里的 `[[slug\|显示标题]]` 会还原为 `slug` 解析。
 
 ### MVP 不覆盖
 

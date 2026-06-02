@@ -30,6 +30,7 @@ from wiki_common import (
     profile_name,
     staleness_age_days,
     staleness_threshold,
+    strip_code_spans,
     validate_profile,
     write_json_atomic,
 )
@@ -214,8 +215,9 @@ def build_wikilink_lookup(root: Path, docs: List[MarkdownDoc], redirects: Dict[s
 
 
 def parse_wikilink(raw: str) -> str:
+    raw = raw.replace("\\|", "|")
     target = raw.split("|", 1)[0].split("#", 1)[0]
-    return target.strip()
+    return target.strip().rstrip("\\").strip()
 
 
 def resolve_wikilink_target(raw_target: str, lookups: WikilinkLookups) -> Tuple[Optional[str], str]:
@@ -289,7 +291,7 @@ def build_edges(
             add_edge(edges, nodes, redirects, pid, target, "related", "canonical", 2)
         for target in list_field(doc, "supersedes"):
             add_edge(edges, nodes, redirects, pid, target, "supersedes", "canonical", 2)
-        for match in WIKILINK_RE.finditer(doc.body):
+        for match in WIKILINK_RE.finditer(strip_code_spans(doc.body)):
             raw_target = parse_wikilink(match.group(1))
             if not raw_target:
                 continue

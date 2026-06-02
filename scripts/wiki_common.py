@@ -189,6 +189,100 @@ def is_stale(page_type: Any, status: Any, last_verified: Any, now: date, schema:
     return status == "active" and threshold is not None and age is not None and age > threshold
 
 
+def _blank_code_text(text: str) -> str:
+    return "".join(char if char in "\r\n" else " " for char in text)
+
+
+def _fence_run(line: str) -> Optional[tuple[str, int, int]]:
+    indent = 0
+    while indent < len(line) and line[indent] == " ":
+        indent += 1
+    if indent > 3 or indent >= len(line) or line[indent] not in "`~":
+        return None
+    char = line[indent]
+    end = indent
+    while end < len(line) and line[end] == char:
+        end += 1
+    length = end - indent
+    return (char, length, end) if length >= 3 else None
+
+
+def _is_closing_fence(line: str, fence_char: str, fence_len: int) -> bool:
+    run = _fence_run(line)
+    if run is None:
+        return False
+    char, length, end = run
+    return char == fence_char and length >= fence_len and line[end:].strip() == ""
+
+
+def _strip_fenced_blocks(text: str) -> str:
+    output: List[str] = []
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+    for line in text.splitlines(keepends=True):
+        line_without_eol = line.rstrip("\r\n")
+        if in_fence:
+            output.append(_blank_code_text(line))
+            if _is_closing_fence(line_without_eol, fence_char, fence_len):
+                in_fence = False
+            continue
+        run = _fence_run(line_without_eol)
+        if run is not None:
+            fence_char, fence_len, _end = run
+            in_fence = True
+            output.append(_blank_code_text(line))
+            continue
+        output.append(line)
+    return "".join(output)
+
+
+def _strip_inline_code_line(line: str) -> str:
+    chars = list(line)
+    i = 0
+    while i < len(line):
+        if line[i] != "`":
+            i += 1
+            continue
+        opener_start = i
+        opener_end = i
+        while opener_end < len(line) and line[opener_end] == "`":
+            opener_end += 1
+        run_len = opener_end - opener_start
+        j = opener_end
+        closer_end: Optional[int] = None
+        while j < len(line):
+            if line[j] != "`":
+                j += 1
+                continue
+            run_start = j
+            run_end = j
+            while run_end < len(line) and line[run_end] == "`":
+                run_end += 1
+            if run_end - run_start == run_len:
+                closer_end = run_end
+                break
+            j = run_end
+        if closer_end is None:
+            i = opener_end
+            continue
+        for index in range(opener_start, closer_end):
+            chars[index] = " "
+        i = closer_end
+    return "".join(chars)
+
+
+def strip_code_spans(text: str) -> str:
+    """Blank Markdown fenced and inline code spans with a lightweight state machine."""
+    without_fences = _strip_fenced_blocks(text)
+    stripped_lines = []
+    for line in without_fences.splitlines(keepends=True):
+        content = line.rstrip("\r\n")
+        eol = line[len(content) :]
+        stripped_lines.append(_strip_inline_code_line(content) + eol)
+    return "".join(stripped_lines)
+
+
 def rel_to_knowledge(path: Path, root: Path) -> str:
     path = path.resolve()
     root = root.resolve()
