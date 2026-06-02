@@ -255,6 +255,36 @@ dangling_after=0 ambiguous_after=0
 - 运行 graph 生成/刷新了被 ignore 的 `maps/*` 派生层；未纳入 Git。
 - `git diff --check` 通过；提交实现后非 ignored working tree clean。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-02
 
-（评估者填写）
+**Verdict: PASS。** 独立复跑全部验证，与 Execution log 一致；状态机边界、零回归、零数据改动均达标。
+
+### 独立复跑
+
+| 验证 | 结果 |
+| --- | --- |
+| `unittest tests.test_task_013` | Ran 8 tests OK |
+| personal graph | 8 节点 / 47 边，Dangling **(none)** / Ambiguous (none)（6→0） |
+| 引擎实例 graph | 4 节点 / 16 边，Dangling **(none)**（toolchain-usage 同步降噪） |
+| personal lint `--check-only` | exit 0，0 error / 8 warning（既有 `UNVERIFIED_HIGH`） |
+
+### 核查点
+
+1. **零回归（核心）**：personal 边数 47→47、engine 16→16；Codex edge compare `missing_before=0 added=0`——**真实边集合一条不减**，仅消掉假 dangling。dangling 6→0、ambiguous 0、lint exit 0。
+2. **strip_code_spans 状态机边界**：8 单测覆盖 `~~~` fence / info string / closing 比 opening 长 / 行首缩进 fence / 未闭合 fence 到 EOF / 未闭合 inline run 不剥 / 多反引号短不关长 / code 内重复 slug 不产生 false ambiguous——RFC-013 codex re-review 的显式覆盖要求全部命中。
+3. **parse_wikilink 顺序钉死**：表格 `[[slug\|显示]]` 解析到真实 slug（单测 `test_parse_wikilink_unescapes_table_pipe_before_display_and_anchor`）。
+4. **canonical 不经 strip_code_spans**：单测 `test_canonical_edges_do_not_use_stripped_body` 确认 `related_ids` 等仍建 canonical edge。
+5. **改动范围**：实现 commit 仅 `scripts/README.md` + `wiki_common.py` + `wiki_graph.py` + `tests/test_task_013.py`，零 knowledge 数据改动；working tree clean。
+
+### 偏离评估（均合理）
+
+- zsh 下 `PY="conda run …"` 变量未拆分报错——正是本项目反复确认的 zsh 不 word-split 坑；执行者未改仓库、改用显式路径重跑。接受。
+- `conda run … python - <<heredoc` 不带出 stdout——已知问题，改用显式 `envs/py312/bin/python`。接受。
+
+### 后续（spec 明确移出本 task）
+
+- personal `llm-wiki-journey` 时间线表格里之前被删的 2 个链接，现可用 `[[slug\|显示]]` 恢复——RFC-013 已使表格转义解析正确（本评估的 personal graph 仍 0 dangling 可佐证）。建议另开数据小 task 恢复 + 顺验真实库表格转义。
+
+### 结论
+
+RFC-013 闭环达成：wiki_graph wikilink 解析向 Obsidian 行为看齐，false-positive dangling 根除（personal 6→0、引擎降噪），真实边零回归。TASK-013 done 确认有效。
