@@ -43,7 +43,7 @@ python3 scripts/wiki_lint.py --scan-wiki-pii  # 额外扫 wiki/ PII（默认只�
 python3 scripts/wiki_lint.py --root knowledge-bizA   # 指定实例根
 ```
 
-退出码：`0` 无 error / `1` 有 error / `2` 配置或脚本错误。覆盖 8 类校验（schema / ID 唯一 / canonical 引用 + supersedes 对称 / source 单主键 / entity 别名 / inbox / PII / 跨流程一致性）+ 33 个 error code（含 10 个 `PROFILE_*`）。生成派生层 `id_index` / `normalized_alias_index` / `inbox_index`。
+退出码：`0` 无 error / `1` 有 error / `2` 配置或脚本错误。覆盖 8 类校验（schema / ID 唯一 / canonical 引用 + supersedes 对称 / source 单主键 / entity 别名 / inbox / PII / 跨流程一致性）+ 可信度 warning（`STALE_PAGE` / `UNVERIFIED_HIGH`）+ profile error code。生成派生层 `id_index` / `normalized_alias_index` / `inbox_index`。
 
 ## wiki-graph（第二层增强图谱）
 
@@ -53,7 +53,7 @@ python3 scripts/wiki_graph.py --json     # 输出 graph-data，不落盘（只�
 python3 scripts/wiki_graph.py --root knowledge-bizA
 ```
 
-产出（全部 gitignore 派生层）：`maps/graph-data.json`（节点 + 边 + 社区 + content_hash）、`maps/knowledge-graph.md`（概览）、`maps/graph-insights.md`（孤立 / hub / 社区 / 跨类型连接 / dangling wikilink）。5 类边：`source_ref` / `related` / `supersedes` / `wikilink` / `co_source`。
+产出（全部 gitignore 派生层）：`maps/graph-data.json`（节点 + 边 + 社区 + content_hash）、`maps/knowledge-graph.md`（概览）、`maps/graph-insights.md`（知识健康度 / 孤立 / hub / 社区 / 跨类型连接 / dangling wikilink）。5 类边：`source_ref` / `related` / `supersedes` / `wikilink` / `co_source`。节点包含 `degree`、`in_degree`、`out_degree`；`related_ids[]` 是当前页到目标页的单向边。
 
 ## 多实例复用
 

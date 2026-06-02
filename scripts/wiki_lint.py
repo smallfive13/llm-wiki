@@ -14,6 +14,7 @@ import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime
+from datetime import date as date_cls
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -31,12 +32,15 @@ from wiki_common import (
     ProfileIssue,
     effective_id_regex,
     first_h1,
+    is_stale,
     load_markdown as common_load_markdown,
     load_profile,
     merge_schema,
     normalize_alias,
     now_iso,
     profile_name,
+    staleness_age_days,
+    staleness_threshold,
     rel_to_knowledge as common_rel_to_knowledge,
     type_prefix,
     validate_profile,
@@ -95,6 +99,8 @@ ERROR_CODES = {
     "PII_HIT_DRAFT",
     "PII_HIT_ARCHIVE",
     "PII_HIT_WIKI",
+    "STALE_PAGE",
+    "UNVERIFIED_HIGH",
 } | PROFILE_ERROR_CODES
 
 ERROR_LEVEL = dict(BASE_SCHEMA["error_level"])
@@ -323,6 +329,43 @@ def check_date_field(doc: MarkdownDoc, field: str, issues: Dict[str, List[Issue]
         add_issue(issues, issue("DATE_FORMAT", doc.rel, line_for(doc, field), field, f"{field} 必须是 YYYY-MM-DD", "使用有效日期"))
 
 
+def add_trust_warnings(doc: MarkdownDoc, now: date_cls, issues: Dict[str, List[Issue]]) -> None:
+    page_type = doc.fm.get("type")
+    status_value = doc.fm.get("status")
+    last_verified = doc.fm.get("last_verified")
+    threshold = staleness_threshold(page_type, SCHEMA)
+    age = staleness_age_days(last_verified, now)
+    if is_stale(page_type, status_value, last_verified, now, SCHEMA):
+        add_issue(
+            issues,
+            issue(
+                "STALE_PAGE",
+                doc.rel,
+                line_for(doc, "last_verified"),
+                "last_verified",
+                f"距上次核实 {age} 天，超过阈值 {threshold} 天",
+                "复核后更新 last_verified，或下调 confidence / 改 status: stale",
+            ),
+        )
+    if (
+        status_value == "active"
+        and page_type not in {"source", "query"}
+        and doc.fm.get("confidence") == "high"
+        and doc.fm.get("review") is False
+    ):
+        add_issue(
+            issues,
+            issue(
+                "UNVERIFIED_HIGH",
+                doc.rel,
+                line_for(doc, "review"),
+                "review",
+                "高置信但未经人工确认：确认后置 `review: true`，否则考虑降为 medium。",
+                "确认后置 review: true，否则考虑降为 medium",
+            ),
+        )
+
+
 def is_list(value: Any) -> bool:
     return isinstance(value, list)
 
@@ -389,7 +432,7 @@ def build_id_index(wiki_docs: List[MarkdownDoc], issues: Dict[str, List[Issue]])
     return index
 
 
-def validate_wiki_docs(wiki_docs: List[MarkdownDoc], issues: Dict[str, List[Issue]]) -> None:
+def validate_wiki_docs(wiki_docs: List[MarkdownDoc], issues: Dict[str, List[Issue]], now: date_cls) -> None:
     required_common = SCHEMA["core_required_fields"]
     for doc in wiki_docs:
         if not doc.has_frontmatter:
@@ -402,6 +445,7 @@ def validate_wiki_docs(wiki_docs: List[MarkdownDoc], issues: Dict[str, List[Issu
         check_bool(doc, "review", issues)
         for field in ("created", "updated", "last_verified"):
             check_date_field(doc, field, issues)
+        add_trust_warnings(doc, now, issues)
         if "id" in doc.fm and not validate_wiki_id(doc.fm.get("id"), doc.fm.get("type")):
             add_issue(issues, issue("ID_FORMAT", doc.rel, line_for(doc, "id"), "id", "wiki 页面 id 格式不符或 prefix 与 type 不匹配", "使用 <prefix>_YYYYMMDD_<slug>"))
         if doc.fm.get("status") == "redirect" and doc.fm.get("type") != "entity":
@@ -710,7 +754,7 @@ def run_lint(args: argparse.Namespace) -> Tuple[int, Dict[str, Any], str]:
 
     validate_context_docs(issues)
     wiki_docs, inbox_docs, archived_docs = scan_markdown_files()
-    validate_wiki_docs(wiki_docs, issues)
+    validate_wiki_docs(wiki_docs, issues, args.now)
     validate_inbox_docs(inbox_docs, archived_docs, issues)
     id_index = build_id_index(wiki_docs, issues)
     validate_canonical(wiki_docs, id_index, issues)
@@ -811,7 +855,10 @@ def main() -> int:
     parser.add_argument("--check-only", action="store_true")
     parser.add_argument("--json", action="store_true", dest="json_output")
     parser.add_argument("--scan-wiki-pii", action="store_true")
+    parser.add_argument("--now", type=lambda value: datetime.strptime(value, "%Y-%m-%d").date(), help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.now is None:
+        args.now = datetime.now(LOCAL_TZ).date()
     configure(args)
     print(f"wiki-lint instance root: {INSTANCE_ROOT} · profile: {PROFILE_NAME}", file=sys.stderr)
     code, data, text = run_lint(args)

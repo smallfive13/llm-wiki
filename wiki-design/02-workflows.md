@@ -229,12 +229,41 @@ lint 一下 Wiki
 
 - 没有 frontmatter 的页面。
 - 没有来源的强结论。
-- `review: true` 的页面。
+- `confidence: high` 但 `review: false` 的 active 页面。
+- 长时间未复核的 active 页面（`STALE_PAGE` warning）。
 - 孤立节点。
 - 断开的 wikilink。
 - 重复主题。
-- 长时间未更新的 active 页面。
 - 同一主题下的冲突结论。
+
+## 复核 / 确认
+
+触发语义：
+
+```text
+确认这条知识还对
+复核 <page_id>
+这条已经过时了
+这条不太对但先保留
+```
+
+流程：
+
+```text
+正反馈 / 认可当前内容
+-> 设置 review: true
+-> 设置 last_verified: 今天
+
+负反馈 / 已过时
+-> 先设置 review: false
+-> 设置 status: stale
+
+负反馈 / 不太对但仍现役
+-> 先设置 review: false
+-> 下调 confidence，必要时写入 review_queue type: stale_claim
+```
+
+不变量：`review: true` 表示“当前仍背书”，不是“曾经看过”。任何负反馈必须先撤回 `review`。
 
 ## 图谱刷新
 

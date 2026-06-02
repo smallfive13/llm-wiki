@@ -94,6 +94,14 @@ BASE_SCHEMA: Dict[str, Any] = {
         },
     },
     "context_docs": ["purpose.md", "index.md", "overview.md", "log.md"],
+    "staleness_days": {
+        "decision": 120,
+        "synthesis": 120,
+        "comparison": 120,
+        "open-question": 120,
+        "topic": 365,
+        "entity": 365,
+    },
     "field_enums": {},
     "extra_optional_fields": {},
     "error_level": {
@@ -101,6 +109,8 @@ BASE_SCHEMA: Dict[str, Any] = {
         "STATUS_NOT_ARCHIVED": "warning",
         "PII_HIT_ARCHIVE": "warning",
         "PII_HIT_WIKI": "warning",
+        "STALE_PAGE": "warning",
+        "UNVERIFIED_HIGH": "warning",
     },
 }
 
@@ -143,6 +153,40 @@ class ProfileIssue:
 
 def now_iso() -> str:
     return datetime.now(LOCAL_TZ).replace(microsecond=0).isoformat()
+
+
+def parse_ymd_date(value: Any) -> Optional[date]:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def staleness_threshold(page_type: Any, schema: Dict[str, Any]) -> Optional[int]:
+    thresholds = schema.get("staleness_days", {})
+    if not isinstance(thresholds, dict):
+        return None
+    value = thresholds.get(str(page_type))
+    return value if isinstance(value, int) and value >= 0 else None
+
+
+def staleness_age_days(last_verified: Any, now: date) -> Optional[int]:
+    verified = parse_ymd_date(last_verified)
+    if verified is None:
+        return None
+    return (now - verified).days
+
+
+def is_stale(page_type: Any, status: Any, last_verified: Any, now: date, schema: Dict[str, Any]) -> bool:
+    threshold = staleness_threshold(page_type, schema)
+    age = staleness_age_days(last_verified, now)
+    return status == "active" and threshold is not None and age is not None and age > threshold
 
 
 def rel_to_knowledge(path: Path, root: Path) -> str:

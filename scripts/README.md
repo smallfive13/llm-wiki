@@ -74,6 +74,8 @@ python3 scripts/wiki_lint.py --scan-wiki-pii  # 加扫 wiki/ PII（默认只扫 
 | `PII_HIT_DRAFT` | error | inbox draft 命中 PII |
 | `PII_HIT_ARCHIVE` | warning | inbox archive 命中 PII |
 | `PII_HIT_WIKI` | warning | wiki/ 命中 PII（仅 `--scan-wiki-pii`） |
+| `STALE_PAGE` | warning | active 页超过对应 type 的 staleness 阈值未复核 |
+| `UNVERIFIED_HIGH` | warning | active 非 source/query 页 `confidence: high` 但 `review: false` |
 | `PROFILE_SCHEMA_VERSION` | error | `.wiki-profile.json` schema_version 与引擎不兼容 |
 | `PROFILE_PREFIX_FORMAT` | error | profile `id_prefix` 不是 2-5 位小写字母 |
 | `PROFILE_PREFIX_COLLISION` | error | profile `id_prefix` 撞 base/inbox/其它 profile prefix |
@@ -155,6 +157,24 @@ MVP 只投影显式 canonical 数据、wikilink，以及由显式 source 字段�
 - `supersedes`：`supersedes[]`，`source_kind: canonical`
 - `wikilink`：正文 `[[slug|显示文本]]` 解析，`source_kind: wikilink`
 - `co_source`：两个页面共享 `source_ids[]`，`source_kind: computed`
+
+### 度数与知识健康度
+
+graph 节点同时输出三类度数：
+
+- `degree`：既有无向总度数，所有边都给 source/target 各 +1，用于粗略中心性。
+- `in_degree`：有向边 target 被指向次数，用作"被依赖度"主指标。
+- `out_degree`：有向边 source 指出次数，用作辅助排序。
+
+`source_ref` / `related` / `supersedes` / `wikilink` 贡献 `in_degree` / `out_degree`；`co_source` 只进入总 `degree`，不进入 in/out。`related_ids[]` 按现有实现是当前页到目标页的单向边，不自动补反向边。
+
+`maps/graph-insights.md` 含「知识健康度」段，固定输出：
+
+1. trust 概览：`verified / unverified-high / stale / orphan / total`
+2. stale 优先列表：按 `in_degree desc, out_degree desc, id` 排序
+3. high-unverified 列表
+
+orphan/hub 长列表仍由既有 `Isolated Nodes` / `High Centrality Hubs` 段提供，健康度段不重复展开。
 
 ### Wikilink 解析
 

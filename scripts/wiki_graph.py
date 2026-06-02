@@ -11,20 +11,25 @@ import re
 import sys
 import uuid
 from collections import Counter, defaultdict
+from datetime import datetime
 from itertools import combinations
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from wiki_common import (
     BASE_SCHEMA,
+    LOCAL_TZ,
     MarkdownDoc,
     first_h1,
+    is_stale,
     load_markdown,
     load_profile,
     merge_schema,
     normalize_alias,
     now_iso,
     profile_name,
+    staleness_age_days,
+    staleness_threshold,
     validate_profile,
     write_json_atomic,
 )
@@ -141,7 +146,12 @@ def build_nodes(docs: Iterable[MarkdownDoc], schema: Dict[str, Any]) -> Tuple[Di
             "label": node_label(doc),
             "type": page_type,
             "status": doc.fm.get("status"),
+            "confidence": doc.fm.get("confidence"),
+            "review": doc.fm.get("review"),
+            "last_verified": doc.fm.get("last_verified"),
             "degree": 0,
+            "in_degree": 0,
+            "out_degree": 0,
             "community": None,
         }
     return dict(sorted(nodes.items())), unknown_types
@@ -323,11 +333,19 @@ def build_adjacency(nodes: Dict[str, Node], edges: List[Edge]) -> Dict[str, Set[
 
 def assign_degree(nodes: Dict[str, Node], edges: List[Edge]) -> Dict[str, int]:
     degree = {pid: 0 for pid in nodes}
+    in_degree = {pid: 0 for pid in nodes}
+    out_degree = {pid: 0 for pid in nodes}
     for edge in edges:
-        degree[edge["source"]] = degree.get(edge["source"], 0) + 1
-        degree[edge["target"]] = degree.get(edge["target"], 0) + 1
+        source, target = edge["source"], edge["target"]
+        degree[source] = degree.get(source, 0) + 1
+        degree[target] = degree.get(target, 0) + 1
+        if edge.get("relation") != "co_source":
+            out_degree[source] = out_degree.get(source, 0) + 1
+            in_degree[target] = in_degree.get(target, 0) + 1
     for pid, value in degree.items():
         nodes[pid]["degree"] = value
+        nodes[pid]["in_degree"] = in_degree.get(pid, 0)
+        nodes[pid]["out_degree"] = out_degree.get(pid, 0)
     return degree
 
 
@@ -445,7 +463,65 @@ def render_graph_overview(graph: Dict[str, Any], meta: Dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def render_insights(graph: Dict[str, Any], meta: Dict[str, Any]) -> str:
+def is_high_unverified(node: Node) -> bool:
+    return (
+        node.get("status") == "active"
+        and node.get("type") not in {"source", "query"}
+        and node.get("confidence") == "high"
+        and node.get("review") is False
+    )
+
+
+def render_health(graph: Dict[str, Any], schema: Dict[str, Any], now_date) -> List[str]:
+    nodes = graph["nodes"]
+    stale = [
+        node
+        for node in nodes
+        if is_stale(node.get("type"), node.get("status"), node.get("last_verified"), now_date, schema)
+    ]
+    high_unverified = [node for node in nodes if is_high_unverified(node)]
+    verified = [
+        node
+        for node in nodes
+        if node.get("status") == "active"
+        and node.get("review") is True
+        and not is_stale(node.get("type"), node.get("status"), node.get("last_verified"), now_date, schema)
+    ]
+    orphan = [
+        node
+        for node in nodes
+        if int(node.get("in_degree", 0)) == 0 and int(node.get("out_degree", 0)) == 0
+    ]
+    stale_sorted = sorted(stale, key=lambda node: (-int(node.get("in_degree", 0)), -int(node.get("out_degree", 0)), node["id"]))
+    high_sorted = sorted(high_unverified, key=lambda node: (-int(node.get("in_degree", 0)), -int(node.get("out_degree", 0)), node["id"]))
+
+    def stale_line(node: Node) -> str:
+        age = staleness_age_days(node.get("last_verified"), now_date)
+        threshold = staleness_threshold(node.get("type"), schema)
+        return (
+            f"- {node['id']} · in {node.get('in_degree', 0)} · out {node.get('out_degree', 0)}"
+            f" · age {age} / threshold {threshold} days"
+        )
+
+    def unverified_line(node: Node) -> str:
+        return f"- {node['id']} · in {node.get('in_degree', 0)} · out {node.get('out_degree', 0)}"
+
+    return [
+        "## 知识健康度",
+        "",
+        f"verified {len(verified)} · unverified-high {len(high_unverified)} · stale {len(stale)} · orphan {len(orphan)} · total {len(nodes)}",
+        "",
+        "### Stale Priority",
+        "",
+        *table_or_none([stale_line(node) for node in stale_sorted]),
+        "",
+        "### High (Unverified)",
+        "",
+        *table_or_none([unverified_line(node) for node in high_sorted]),
+    ]
+
+
+def render_insights(graph: Dict[str, Any], meta: Dict[str, Any], schema: Dict[str, Any], now_date) -> str:
     nodes = graph["nodes"]
     edges = graph["edges"]
     node_by_id = {node["id"]: node for node in nodes}
@@ -475,6 +551,8 @@ def render_insights(graph: Dict[str, Any], meta: Dict[str, Any]) -> str:
         "# Graph Insights",
         "",
         f"generated_at: {graph['generated_at']}",
+        "",
+        *render_health(graph, schema, now_date),
         "",
         "## Isolated Nodes",
         "",
@@ -507,11 +585,11 @@ def render_insights(graph: Dict[str, Any], meta: Dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def write_maps(root: Path, graph: Dict[str, Any], meta: Dict[str, Any]) -> None:
+def write_maps(root: Path, graph: Dict[str, Any], meta: Dict[str, Any], schema: Dict[str, Any], now_date) -> None:
     maps_root = root / "maps"
     write_json_atomic(maps_root / "graph-data.json", graph)
     write_text_atomic(maps_root / "knowledge-graph.md", render_graph_overview(graph, meta))
-    write_text_atomic(maps_root / "graph-insights.md", render_insights(graph, meta))
+    write_text_atomic(maps_root / "graph-insights.md", render_insights(graph, meta, schema, now_date))
 
 
 def main() -> int:
@@ -522,11 +600,12 @@ def main() -> int:
     root = instance_root(find_root(), args.root)
     schema, active_profile = load_effective_schema(root)
     print(f"wiki-graph instance root: {root} · profile: {active_profile}", file=sys.stderr)
+    now_date = datetime.now(LOCAL_TZ).date()
     graph, meta = build_graph(root, schema)
     if args.json_output:
         print(json.dumps(graph, ensure_ascii=False, indent=2, sort_keys=True))
     else:
-        write_maps(root, graph, meta)
+        write_maps(root, graph, meta, schema, now_date)
         print(
             "wiki-graph: "
             f"{graph['stats']['nodes']} nodes, {graph['stats']['edges']} edges, "

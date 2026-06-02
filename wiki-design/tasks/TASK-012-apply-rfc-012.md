@@ -3,7 +3,7 @@ id: task_20260602_012
 title: Apply RFC-012 — 实现知识可信度信号（lint 2 warning + graph in/out degree + insights 健康度段 + 文档同步）
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-06-02
 updated: 2026-06-02
@@ -108,9 +108,128 @@ executor 完成后贴在 Execution log 段：
 - commit sha（逐个）
 - 偏离或异常
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-06-02
 
-（执行者填写）
+### Step 0 spec-review 结论
+
+- 结论：spec 可执行，未发现需要停止实现的阻塞歧义。
+- 代码结构契合点：
+  - `wiki_lint.py` 没有名为 `check_page` 的函数；实际 wiki page 校验入口是 `validate_wiki_docs()`。两条 warning 已插入在 `created/updated/last_verified` 的 `check_date_field()` 之后，符合“date 校验后插入”的意图。
+  - `wiki_graph.py` 的 edge 当前不保存 `undirected` 字段；现有唯一无向边是 `relation == "co_source"`，实现按该 relation 跳过 in/out，保留 `degree` 既有算法。
+  - `build_nodes()` 原本已有 `type/status`，缺 `confidence/review/last_verified`；本 task 已补入 node，只读 frontmatter。
+  - `is_stale()` 抽到 `wiki_common.py` 不产生循环依赖：`wiki_common` 不 import lint/graph，lint 和 graph 单向 import common。
+- 验证脚本注意点：
+  - 本地 shell 是 zsh，spec 中 `PY="conda run ..."` 后直接 `$PY` 需要 bash 语义；zsh 下会把整串当命令路径。正式验证用 `bash -lc` 重跑。
+  - 验证 #4 原命令把 `d["nodes"]` 当 dict 使用，但 graph-data 中 `nodes` 是 list；原命令会失败。已原样记录失败，并补跑等价修正版：取 `d["nodes"][0]` 检查 `in_degree/out_degree`。
+
+### 实际改动
+
+- `.gitignore`
+  - 新增 `tests/` 白名单，确保 task fixture 可版本管理；继续忽略 `tests/__pycache__/`。
+- `scripts/wiki_common.py`
+  - `BASE_SCHEMA` 新增 `staleness_days` 常量：`decision/synthesis/comparison/open-question=120`，`topic/entity=365`。
+  - `error_level` 新增 `STALE_PAGE` / `UNVERIFIED_HIGH`，均为 warning。
+  - 新增 `parse_ymd_date()` / `staleness_threshold()` / `staleness_age_days()` / `is_stale()`。
+- `scripts/wiki_lint.py`
+  - `ERROR_CODES` 新增两条 warning code。
+  - 新增隐藏参数 `--now YYYY-MM-DD`，默认当天。
+  - `validate_wiki_docs()` 在日期校验后调用 `add_trust_warnings()`。
+  - `STALE_PAGE`：仅 `status: active` 且 type 有阈值且 `age > threshold`。
+  - `UNVERIFIED_HIGH`：`status: active` 且 `type ∉ {source, query}` 且 `confidence: high` 且 `review is False`。
+- `scripts/wiki_graph.py`
+  - node 补 `confidence/review/last_verified/in_degree/out_degree`。
+  - `assign_degree()` 保持既有 `degree` 算法不变，额外计算 in/out；`co_source` 不进 in/out。
+  - `graph-insights.md` 新增「知识健康度」段：概览 → stale priority → high unverified。
+- 文档同步：
+  - `scripts/README.md`：error code 表、graph in/out degree、健康度段。
+  - `knowledge/.wiki-schema.md`：review 语义、负反馈撤背书、staleness 阈值、trust 派生层。
+  - `wiki-design/02-workflows.md`：健康检查项与“复核 / 确认”流程。
+  - `knowledge/wiki/topics/toolchain-usage.md`：工具链知识页同步 warning 与 graph degree/health 说明。
+- 测试：
+  - 新增 `tests/test_task_012.py`，使用临时实例 + 标准库 unittest。
+
+### 验证输出
+
+1. 引擎实例 lint，无新 error，exit 0：
+
+```text
+wiki-lint instance root: /Users/zhangjunwu/workspace/llm-wiki/llm-wiki/knowledge · profile: base
+错误: 0 · 警告: 4
+exit=0
+```
+
+4 条 warning 均为本仓库现有 4 页 `UNVERIFIED_HIGH`，符合新 warning 语义，不影响 exit。
+
+2. personal 实例 lint，预期 0 error / 5 UNVERIFIED_HIGH：
+
+```text
+errors 0 unverified_high 5
+```
+
+3. personal 实例未来日期 staleness，预期 stale > 0：
+
+```text
+stale 5
+```
+
+4. graph in/out degree 字段：
+
+原 spec pipeline 因 `conda run | conda run` stdin 与 `nodes` list/dict 断言问题失败，已补跑修正版：
+
+```text
+has in/out True
+```
+
+5. 测试套件：
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m pytest -q
+/Users/zhangjunwu/soft/anaconda3/envs/py312/bin/python: No module named pytest
+```
+
+py312 当前没有 pytest。按本 task 新增的标准库 unittest fixture 补跑：
+
+```text
+test_co_source_keeps_degree_but_skips_in_out ... ok
+test_related_edges_are_directed ... ok
+test_stale_and_unverified_trigger_sets ... ok
+
+Ran 3 tests in 0.293s
+OK
+```
+
+额外验证：
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m py_compile scripts/wiki_common.py scripts/wiki_lint.py scripts/wiki_graph.py tests/test_task_012.py
+# exit 0
+
+$ git diff --check
+# exit 0
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --check-only
+错误: 0 · 警告: 4
+```
+
+### 新增/修改测试清单
+
+- `Task012LintTest.test_stale_and_unverified_trigger_sets`
+  - 覆盖 active 超期报、阈值边界不报、stale/archived/draft/redirect 不报、source/query 不报、profile extra type 不报。
+  - 覆盖 `UNVERIFIED_HIGH` 的 active+high+review:false 报、review:true/medium/status/type 排除不报。
+- `Task012GraphTest.test_related_edges_are_directed`
+  - 覆盖 A→B 单向 related 不自动补 B→A，以及 A/B 互写时双方 in/out 各计一次。
+- `Task012GraphTest.test_co_source_keeps_degree_but_skips_in_out`
+  - 覆盖 `co_source` 保留总 `degree`，但不计入 in/out；同时 source_ref 计入 in/out。
+
+### commit sha
+
+- 本 commit（`[apply rfc-012] implement trust signals`；最终 sha 见执行者报告）
+
+### 偏离或异常
+
+- 验证 #2/#3 原 `conda run | conda run` pipeline 在本机出现下游 JSONDecodeError / 上游 BrokenPipe；改为先保存 JSON 再解析，结果符合预期。
+- 验证 #4 原断言命令把 `nodes` list 当 dict；补跑 `d["nodes"][0]` 版本，结果符合预期。
+- py312 没有 pytest，因此 `python -m pytest -q` 不可用；已用标准库 unittest 覆盖本 task fixture。
 
 ## Evaluation by claude · <date>
 

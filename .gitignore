@@ -10,6 +10,11 @@
 # Python 构建缓存不跟踪（在 !scripts/** 之后再排除）
 scripts/__pycache__/
 
+# 测试 fixture 纳入版本管理。
+!tests/
+!tests/**
+tests/__pycache__/
+
 # 以后如果在本仓库直接创建真实知识库，默认把 Markdown 正本和人工队列纳入 Git。
 !knowledge/
 !knowledge/**
