@@ -231,6 +231,42 @@ $ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_li
 - 验证 #4 原断言命令把 `nodes` list 当 dict；补跑 `d["nodes"][0]` 版本，结果符合预期。
 - py312 没有 pytest，因此 `python -m pytest -q` 不可用；已用标准库 unittest 覆盖本 task fixture。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-02
 
-（评估者填写）
+**Verdict: PASS。** 独立复跑全部验证，与 Execution log 一致；实现口径、零回归、触发集合均符合 RFC-012。
+
+### 独立复跑（evaluator 亲自跑，未只信报告）
+
+| 验证 | 结果 |
+| --- | --- |
+| V1 引擎实例 lint `--check-only` | exit 0，errors 0（零回归核心通过） |
+| V2 personal `--json` | errors 0 / `UNVERIFIED_HIGH` **5**（5 页均 active+high+review:false） |
+| V3 personal `--now 2027-12-31` | errors 0 / `STALE_PAGE` **5** |
+| V4 graph `--json` | 5 节点全部含 `in_degree`/`out_degree`；degree=in+out（无 co_source，符合预期） |
+| V5 `unittest tests.test_task_012` | Ran 3 tests OK |
+
+### 核查点逐项
+
+1. **零回归**：引擎 lint exit 0；`assign_degree` 既有 degree 算法（source/target 各 +1）保留不变（diff 确认 + unittest `test_co_source_keeps_degree_but_skips_in_out` 覆盖）。
+2. **degree 口径（RFC §3）**：`if edge.relation != "co_source": out[source]+=1; in[target]+=1` —— 无向边只入 degree、不入 in/out，口径正确。
+3. **两条 warning 触发集合（RFC §2/§4）**：`STALE_PAGE` 仅 active+有阈值 type；`UNVERIFIED_HIGH` 仅 active 且 type∉{source,query}。unittest 覆盖 stale/archived/draft/redirect/source/query/extra type 全不报。
+4. **insights health 段（RFC §6）**：render 顺序「概览→stale→high-unverified」、stale 排序键 `(-in_degree,-out_degree,id)`、orphan=in&out 均 0、不重复 orphan/hub 长列表——全部符合。
+5. **is_stale 单点共享（强约束 #3）**：抽到 `wiki_common`，lint 与 graph 共用，无循环依赖。
+6. **related 方向性 fixture（codex re-review #2）**：单向 A→B 不补反向、双向各计一次，已钉死。
+7. **文档同步**：README error code 表 + .wiki-schema.md（review 语义/负反馈撤背书/staleness/trust）+ 02-workflows.md + toolchain-usage.md 工具链页，齐全。
+8. **--now 注入**：实现，staleness 边界可测。
+
+### 偏离评估（均合理，已诚实记录）
+
+- **pytest 不可用 → 标准库 unittest**：py312 未装 pytest，非执行者过失；改用 unittest 反而更贴合本仓"零额外依赖"原则。接受。
+- **spec 验证 #4 命令 list/dict bug**：是我 spec 的笔误（`nodes` 是 list 却按 dict 取），Codex 正确修正并记录。spec 缺陷，非实现缺陷。
+- **`check_page` → `validate_wiki_docs`**：spec 里函数名是我推测，Codex 找到真实入口并说明。接受。
+
+### Minor observations（不阻断 PASS，记此备后）
+
+1. **toolchain-usage.md 改正文未 bump frontmatter `updated`**：该工具链知识页正文同步了新能力，但 `updated` / `last_verified` 仍是旧值。不违反 lint、不影响功能，但严格的知识卫生应在改内容时更新 `updated`。建议后续 bookkeeping 顺手补（或留待该页首次"复核"时一并更新）。
+2. **pytest 环境缺失**：spec/README 若默认"跑 pytest"，未来会反复踩。建议二选一：py312 装 pytest，或把测试入口正式标准化为 `unittest`。Backlog 级，非本 task 范围。
+
+### 结论
+
+RFC-012 形态 A 闭环达成：`review` 语义激活、`STALE_PAGE`/`UNVERIFIED_HIGH` 上线、in/out degree 被依赖度、insights 健康度段全部落地，零 error、零回归。TASK-012 done 确认有效。
