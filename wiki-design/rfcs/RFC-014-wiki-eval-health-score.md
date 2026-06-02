@@ -120,6 +120,85 @@ RFC-012 引入了 trust signal（`review` 背书、`STALE_PAGE`、`UNVERIFIED_HI
 
 （待 Codex 追加）
 
+## Review by codex · 2026-06-02
+
+### 结论
+
+- 需修改。
+- 方向同意：单独新增 `wiki_eval.py` 做机械 health score，比继续把评估逻辑塞进 lint/graph 更清晰；4 维拆解 + snapshot + `--check` 也符合当前一引擎多实例的治理目标。
+- 但 v1 还有 3 个 apply 前阻塞点：integrity 公式未定、import 入口边界未定、personal 验证预期与当前实例状态不符。
+
+### 阻塞点
+
+1. **integrity 维度必须写成确定公式。**
+   当前“每类结构问题按比例扣分”不足以实现：error / dangling / ambiguous 的分母、各自权重、封顶方式都未定义。建议 v2 直接采用以下公式，TASK 可照抄实现：
+
+   ```text
+   page_count = lint.scanned.wiki_pages
+   if page_count == 0:
+       status = "empty"
+       score = null
+       dims = null
+
+   error_count = len(lint.errors)
+   dangling_count = len(graph_meta.dangling_wikilinks)
+   ambiguous_count = len(graph_meta.ambiguous_wikilinks)
+
+   error_rate = min(1.0, error_count / page_count)
+   dangling_rate = min(1.0, dangling_count / page_count)
+   ambiguous_rate = min(1.0, ambiguous_count / page_count)
+
+   integrity = clamp_0_100(
+       100 - (
+           100 * error_rate
+           + 50 * dangling_rate
+           + 50 * ambiguous_rate
+       )
+   )
+   ```
+
+   说明：
+   - 分母统一用 `wiki_pages`，不要用 edge 数。dangling/ambiguous 本身不进入 `graph.edges`，用 edge 分母会让密集图稀释断链问题，也无法处理 0 edge 库。
+   - lint error 是结构底线，权重应高于 dangling/ambiguous；但 score 本身仍保留比例解释。
+   - `--check` 建议同时满足硬门槛：`error_count == 0` 且 `score >= health_threshold`。否则 100 页里 1 个 lint error 可能仍高于 70 分，CI 会放过结构错误。
+   - 四舍五入建议统一为 `floor(x + 0.5)`，避免 Python `round()` 的 bankers rounding 与“人工四舍五入”口径不一致。
+
+2. **lint/graph 的 import 入口需要在 RFC 里钉死。**
+   当前 `wiki_lint.run_lint(args)` 已返回 `(code, data, text)`，但依赖调用方先 `configure(args)`，且 `args.check_only=False` 会写 `.wiki/*` 派生层；这不适合作为 `wiki_eval` 的隐式入口。`wiki_graph.build_graph(root, schema)` 已返回 `(graph, meta)`，但 `load_effective_schema()` 遇 profile issue 会 `sys.exit(2)`，不适合作为库函数错误模型。
+
+   建议 v2 明确新增/暴露这两个只读 wrapper：
+
+   ```python
+   # wiki_lint.py
+   def evaluate_instance(root: Path, *, now: date | None = None, scan_wiki_pii: bool = False) -> dict:
+       # 内部强制 check_only=True；返回 {exit_code, data, human}
+
+   # wiki_graph.py
+   def evaluate_instance(root: Path) -> dict:
+       # 不写 maps/，返回 {exit_code, graph, meta, profile, config_errors}
+   ```
+
+   循环依赖本身没问题：`wiki_eval -> wiki_lint/wiki_graph -> wiki_common`，而 lint/graph 不 import eval。真正风险是 CLI 全局状态和 `sys.exit` 泄漏到 eval；wrapper 要把它们收住，并保证 eval 默认不写 `.wiki/*` / `maps/*`。
+
+3. **personal 验证预期与当前实例不一致。**
+   RFC 写“当前 9 页（8 个 high 全 `review:true` + 1 个 medium comparison）... 总分 100”。但本地当前 personal 在 TASK-013 验证中是 8 个 wiki 页，且 lint 报 8 条 `UNVERIFIED_HIGH`，graph health 也显示：
+
+   ```text
+   verified 0 · unverified-high 8 · stale 0 · orphan 0 · total 8
+   ```
+
+   因此按本 RFC 的 endorsement 规则，personal 当前不可能得到 100 分。v2 需要二选一：
+   - 更新验收为当前真实 personal 状态下的确定分数；或
+   - 不把 personal 当前分数写死，改用临时 fixture 验证“四维全 100”和“endorsement 偏低”两类场景，personal 只做 smoke。
+
+### 其它复核
+
+- 维度权重 `integrity 0.4 + 其它各 0.2` 合理。完整性是底线，freshness / endorsement / connectivity 平权可解释，MVP 不需要更复杂的动态权重。
+- endorsement 只盯 high 页是正确的，和 RFC-012 `UNVERIFIED_HIGH` 对齐；medium/low 的 `review:false` 不应扣分。
+- snapshot 显式 `--snapshot` 才写、且 `.wiki/eval_history.jsonl` 进 Git，这个取舍合理：趋势不可重建，有审计价值；显式触发能避免普通 eval 带来 commit 噪音。
+- 阈值和权重作为 BASE_SCHEMA 工具链 policy 常量可接受；MVP 不走 profile 覆盖是对的，避免 RFC-008 “只增不改”边界被绕开。后续 per-库配置应走单独 `trust_policy`。
+- 空库 `score=null` / `status=empty` 是合理特判，但 v2 最好补一句：empty 不写 snapshot、不参与 delta；`--check` 对 empty 是 exit 0 还是 exit 2 需要明确。
+
 ## Decision
 
 （待用户填写，或授权某 Agent 代写）
