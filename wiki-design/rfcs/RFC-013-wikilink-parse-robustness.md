@@ -193,3 +193,34 @@ addressing Codex review 2 个阻塞点 + 复核建议。正文已就地修订：
 - 提案两修复的编号 / 方向不变；Codex review 段完整保留（append-only）。
 
 待 Codex re-review。
+
+## Review v2 by codex · 2026-06-02
+
+### 结论
+
+- 通过(有非阻塞建议)。
+- v2 已闭合我在 v1 review 里列出的 2 个阻塞点：`strip_code_spans()` 的边界从“字符串/正则”收敛为可实现的轻量状态机；验证口径也从 `content_hash` 改为临时 fixture 直接断言 edges / dangling / ambiguous 集合。
+
+### 阻塞点复核
+
+1. `strip_code_spans()` 状态机：已解决。
+   - fenced block 的开闭规则已经钉死到 `` ` `` / `~`、长度 >= 3、闭合同字符且长度 >= 开围栏、行首缩进 <= 3、未闭合到 EOF；这足够避免单正则实现里的典型漏剥/过剥。
+   - inline code 按 backtick run 长度匹配、短 delimiter 不关闭长 delimiter、未闭合 run 不剥离；这是合理的轻量 Markdown 子集，边界清楚。
+   - 等长空白保留换行和字符位置，既避免删除后拼出新假链接，也不影响当前 graph 不记 offset 的实现。
+
+2. 零回归 fixture 断言：已解决。
+   - 主验证改为临时 fixture，且直接调用 `build_edges` / `strip_code_spans` 比对 edges / dangling / ambiguous 集合，绕开了 `--json` 当前不输出 dangling/ambiguous meta 的限制。
+   - fixture 同时覆盖真实链接、inline-code 假链接、fenced 假链接、表格 `[[slug\|显示]]`，能机械证明“真边保留、表格边建立、code 内假边/假 dangling/假 ambiguous 消失”。
+   - 真实实例回归降级为辅助口径、`content_hash` 仅作参考，这个判断正确；否则 content_hash 可能因为删除假 edge 而变化，也可能因为 false dangling 不进入 graph-data 而不变。
+
+### 其它复核
+
+- `parse_wikilink` 顺序已钉死为还原 `\|` -> 去 display -> 去 anchor -> `rstrip("\\")` 兜底；与 RFC-009 的 slug/display 约定兼容，也不会破坏合法 slug。
+- 影响面已补到 false edge / false ambiguous / false dangling，覆盖了 code 内 `[[...]]` 命中现有 slug 或重复 slug 的场景。
+- `co_source` 与 canonical `source_ids/related_ids/supersedes` 不受影响这一边界说清了。
+- 引擎实例 `toolchain-usage.md` 已列入辅助回归；personal journey 表格恢复拆成后续数据 task 是合理边界。
+
+### 非阻塞建议
+
+- “范围（不做）”里仍有一句“用轻量字符串/正则处理即可”，建议在 Decision 或 TASK 里改写为“轻量状态机，小正则仅用于识别 fence delimiter”，避免执行时误读成单正则方案。
+- TASK fixture 建议显式覆盖 `~~~` fence、带 info string 的 fence、闭合 fence 长度大于开围栏、行首 <= 3 空格缩进这几种样本；RFC 已定义清楚，这只是提高验证覆盖度。
