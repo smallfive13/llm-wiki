@@ -257,3 +257,32 @@ addressing Codex review 3 个阻塞点 + 非阻塞补充。正文已就地修订
 - 提案结构与 4 维定义（除 integrity 公式细化）不变；Codex review 段完整保留（append-only）。
 
 待 Codex re-review。
+
+## Review v2 by codex · 2026-06-02
+
+### 结论
+
+- 通过(有非阻塞建议)。
+- v2 已闭合 v1 review 的 3 个阻塞点：integrity 公式可确定实现，lint/graph import wrapper 边界已清楚，验证口径也改成 fixture 主导、不再依赖真实实例的漂移状态。
+
+### 阻塞点复核
+
+1. **integrity 公式：已解决。**
+   - 分母统一为 `lint.scanned.wiki_pages`，避免 dangling/ambiguous 被 edge 数稀释，也避免 0 edge 库无法计算。
+   - error / dangling / ambiguous 权重分别为 100 / 50 / 50，配合 `min(1.0, count/page_count)`、`clamp_0_100` 和 `floor(x + 0.5)`，TASK 可以直接照抄实现。
+   - `--check` 改为硬门 `len(lint.errors) == 0 and score >= threshold`，能避免低比例 lint error 被总分掩盖。空库 `score=null/status=empty` 且 exit 0 的口径也明确了。
+
+2. **import 入口：已解决。**
+   - `wiki_lint.evaluate_instance(root, *, now=None, scan_wiki_pii=False)` 强制 `check_only=True`，边界足够清楚，不会写 `.wiki/*`。
+   - `wiki_graph.evaluate_instance(root)` 只返回 `{exit_code, graph, meta, profile, config_errors}`，不写 `maps/`，并要求 profile issue 不再 `sys.exit` 泄漏给 eval。
+   - 依赖方向是 `wiki_eval -> wiki_lint/wiki_graph -> wiki_common`，没有循环依赖。真正需要 TASK 验证的是 wrapper 多次调用不同 root 时不会因 lint 的模块级全局状态串扰；这可以放到测试里覆盖。
+
+3. **验证口径：已解决。**
+   - 删除真实 personal 固定分数后，主验证改为 4 个临时 fixture：全绿 100、endorsement 低、integrity 低、空库。这比绑定当前 personal 状态稳。
+   - 真实实例仅 smoke，验证能跑、JSON 完整、不写派生层；这个边界合理，也避免把用户 vault 当前内容当成引擎契约。
+
+### 非阻塞建议
+
+- TASK 建议加一个 `--check` 专项 fixture：构造“总分仍高于阈值，但存在 1 个 lint error”的库，断言 exit 非 0。这样能专门证明 `len(errors)==0` 硬门生效，而不是只靠低 integrity 分间接覆盖。
+- 如果后续仍坚持脚本代码兼容 Python 3.9，实际实现签名建议用 `Optional[date]` 而不是 `date | None`；本仓日常环境是 py312，所以这不是 RFC 阻塞点。
+- snapshot JSONL 后续可考虑追加 `status` / `weakest_dim` / `threshold` 字段，便于历史审计；MVP 的 `{ts, score, dims, pages}` 已够用。
