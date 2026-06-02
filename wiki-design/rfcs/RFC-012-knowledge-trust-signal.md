@@ -272,3 +272,37 @@ addressing Codex review 的 4 个阻塞点 + 4 个非阻塞建议。正文已就
 - 占位的 `## Review by codex · YYYY-MM-DD` / `## Decision` 模板段保留不动。
 
 待 Codex re-review。
+
+## Review v2 by codex · 2026-06-02
+
+### 结论
+
+- 通过(有非阻塞建议)。
+- v2 已闭合 v1 的 4 个阻塞点：契约边界、profile 覆盖、degree 口径、warning 触发范围与反馈状态机都已收敛到可写 TASK spec 的程度。
+- 当前未发现新的阻塞问题。
+
+### v1 阻塞点复核
+
+1. 契约措辞：已解决。
+   - 主体已改为“不改 core page schema / frontmatter 契约；扩展工具链 policy 契约”，并明确 `staleness_days` / 新 warning code / insights 段属于 schema policy 扩展。
+   - 影响范围也同步标注“工具链 policy 扩展，非 core page schema”。这个边界足够清楚，不会再把 BASE_SCHEMA/error code 变更伪装成“无契约变更”。
+
+2. profile 覆盖：已解决。
+   - 主体已移除 profile 覆盖，`staleness_days` 降为 BASE_SCHEMA 常量，所有实例统一。
+   - “profile 可配 staleness 阈值”只保留在 Backlog / rejected alternative 中，且明确触发条件是另开 RFC-008 扩展 `trust_policy.staleness_days`。这不再是本 RFC 的 active proposal。
+   - 未发现仍要求 profile 覆盖 base 行为的残留表述。
+
+3. degree 口径：已解决。
+   - v2 已把“使用热度”从无向总 `degree` 收敛为 `in_degree` 主指标、`out_degree` 辅助、保留 `degree` 做总中心性。
+   - `source_ref` / `related` / `supersedes` / `wikilink` 作为有向边贡献 in/out，`co_source` 只计总 degree，这个规则可机械实现。
+   - 我核对了当前 `wiki_graph.py`：`related_ids` 现状是从当前页 `pid` 指向 `target` 的单向 canonical edge，不会自动补反向边；`co_source` 是 computed undirected edge。TASK spec 只需明确沿用现有方向性，不要因为 “related” 语义看起来对称而隐式加双向边。
+
+4. 触发范围 + 反馈状态机：已解决。
+   - `STALE_PAGE` 已钉死为仅 `status: active`，并跳过 `source` / `query`；profile extra type 默认不检查，避免无阈值误报。
+   - `UNVERIFIED_HIGH` 已钉死为 `status: active` 且 `type ∉ {source, query}` 且 `confidence: high` 且 `review:false`。draft / redirect / stale / archived / source / query 都有明确处理，不再有 status/type 空洞。
+   - `review:true` 的语义也已收紧为“当前仍背书”，任何负反馈必须先撤回到 `review:false`。这解决了“曾经看过”和“当前背书”混用的问题。
+
+### 非阻塞建议
+
+- §6 trust 状态代码块里有一处小 typo：`in_degree==0 且 out==0` 建议改为 `in_degree==0 且 out_degree==0`，避免 TASK 复制时产生字段名歧义。
+- 后续 TASK 的验证建议加一条 fixture：一个 A 页 `related_ids: [B]`，断言只产生 A→B 的 `related` edge，`B.in_degree += 1`、`A.out_degree += 1`，但不产生 B→A；除非 B 也显式 related A。这样可以把 v2 的有向 related 口径固定住。
