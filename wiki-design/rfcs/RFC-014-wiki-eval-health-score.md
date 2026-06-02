@@ -35,10 +35,23 @@ RFC-012 引入了 trust signal（`review` 背书、`STALE_PAGE`、`UNVERIFIED_HI
 
 `wiki_eval` 不自己解析 markdown，而是**复用** `wiki_lint` / `wiki_graph` 的函数（import 调用，拿结构化结果），避免逻辑分叉：
 
-- 从 lint 拿：errors / warnings（含 `STALE_PAGE` / `UNVERIFIED_HIGH` 命中）、页面总数。
+- 从 lint 拿：errors / warnings（含 `STALE_PAGE` / `UNVERIFIED_HIGH` 命中）、`scanned.wiki_pages`。
 - 从 graph 拿：nodes（`in_degree` / `out_degree` / orphan）、`dangling_wikilinks` / `ambiguous_wikilinks`。
 
-> TASK 阶段钉死 lint/graph 的可 import 入口（返回结构化结果而非只打印）。
+**只读 import 入口钉死**（Codex review 阻塞 #2）——新增两个 wrapper，把 CLI 全局状态 / `sys.exit` 收住，且**默认不写任何派生层**：
+
+```python
+# wiki_lint.py —— 内部强制 check_only=True，不写 .wiki/*
+def evaluate_instance(root: Path, *, now: date | None = None,
+                      scan_wiki_pii: bool = False) -> dict:
+    # 返回 {exit_code, data, human}
+
+# wiki_graph.py —— 不写 maps/，profile issue 不 sys.exit 而是回报
+def evaluate_instance(root: Path) -> dict:
+    # 返回 {exit_code, graph, meta, profile, config_errors}
+```
+
+依赖方向 `wiki_eval → wiki_lint/wiki_graph → wiki_common`，lint/graph 不 import eval，无循环依赖。
 
 ### Health score：4 个可解释维度（规则化，非黑箱）
 
@@ -46,7 +59,7 @@ RFC-012 引入了 trust signal（`review` 背书、`STALE_PAGE`、`UNVERIFIED_HI
 
 | 维度 | 定义 | 默认权重 |
 | --- | --- | --- |
-| **integrity 完整性** | lint error=0 且 dangling=0 且 ambiguous=0 → 100；每类结构问题按比例扣分 | **0.40** |
+| **integrity 完整性** | lint error=0 且 dangling=0 且 ambiguous=0 → 100；否则按确定公式扣分（见下） | **0.40** |
 | **freshness 新鲜度** | `active` 页中**非 stale** 占比 ×100 | 0.20 |
 | **endorsement 背书率** | **high 置信页**（`active`、type∉{source,query}、`confidence:high`）中 `review:true` 占比 ×100；无 high 页记 100 | 0.20 |
 | **connectivity 连通度** | 非 orphan 页（`in_degree`+`out_degree`>0）占比 ×100 | 0.20 |
@@ -54,8 +67,22 @@ RFC-012 引入了 trust signal（`review` 背书、`STALE_PAGE`、`UNVERIFIED_HI
 - 总分 = Σ(维度分 × 权重)，四舍五入到整数（0–100）。
 - integrity 权重最高：结构正确（不断引/不重复）是底线，比"新不新鲜"更重要。
 - **endorsement 只盯 high 页**：与 RFC-012 `UNVERIFIED_HIGH` 一致——只有 high 主张要求人背书；medium/low 页 `review:false` 是正常态，不拉低分（否则会惩罚像本调研这种诚实标 medium 的页）。
-- **空库**（0 页）特判：返回 score=null + 状态 `empty`，不参与趋势。
+- **空库**（0 页）特判：返回 score=null + 状态 `empty`，**不写 snapshot、不参与 delta**；`--check` 对 empty 返回 **exit 0**（无可评估，不算失败）。
 - 输出**维度分解**而非只给总分——让人知道是哪一块拖后腿（如 endorsement 60 = 一堆页没背书）。
+
+#### integrity 确定公式（Codex review 阻塞 #1，TASK 照抄）
+
+分母统一用 `wiki_pages`（不用 edge 数：dangling/ambiguous 不进 `graph.edges`，用 edge 分母会稀释断链、且无法处理 0 edge 库）。四舍五入统一 `floor(x + 0.5)`（避免 Python `round()` 的 banker's rounding 口径不一致）。
+
+```text
+page_count = lint.scanned.wiki_pages          # ==0 时走空库特判
+error_rate     = min(1.0, len(lint.errors)            / page_count)
+dangling_rate  = min(1.0, len(meta.dangling_wikilinks)/ page_count)
+ambiguous_rate = min(1.0, len(meta.ambiguous_wikilinks)/page_count)
+integrity = clamp_0_100(100 - (100*error_rate + 50*dangling_rate + 50*ambiguous_rate))
+```
+
+lint error 权重（100）高于 dangling/ambiguous（各 50）：error 是结构底线。
 
 ### 趋势（可选写入，进 git）
 
@@ -65,7 +92,7 @@ RFC-012 引入了 trust signal（`review` 背书、`STALE_PAGE`、`UNVERIFIED_HI
 
 ### CI / 阈值闸
 
-- `--check`：总分 < 阈值（BASE_SCHEMA 默认，如 70）则非零退出，适配 CI / pre-push。
+- `--check`：**`len(lint.errors) == 0` 且 `score >= 阈值`**（BASE_SCHEMA 默认，如 70）才 exit 0；否则非零退出。error 设为硬门——否则 100 页里 1 个 lint error 仍可能 >70 分、CI 会放过结构错误（Codex review 阻塞 #1）。空库 exit 0。
 - 默认阈值是 BASE_SCHEMA 常量（**MVP 不走 profile 覆盖**——同 RFC-012，避免 RFC-008「只增不改」坑；per-库阈值进 Backlog 的 `trust_policy`）。
 
 ### 输出
@@ -110,11 +137,18 @@ RFC-012 引入了 trust signal（`review` 背书、`STALE_PAGE`、`UNVERIFIED_HI
 - core schema / 任何 knowledge 数据。
 - lint / graph 的 CLI 行为、退出码、派生层格式。
 
-### 零回归验证
-- `wiki_eval` 是纯新增只读工具：不改数据、不改 lint/graph 现有输出。
-- 确定性：同一库快照两次分数一致（无时间戳进分数计算）。
-- 在 personal 实例验证：当前 9 页（8 个 high 全 `review:true` + 1 个 medium comparison）/ 0 stale / 0 orphan / 0 dangling → 四维全 100（endorsement 只看 8 个 high 页、全背书）→ **总分 100**。
-- 引擎实例（4 页，部分 `review:false` 的 high 页）应得 < 100，维度分解能指出 endorsement 偏低。
+### 验证（fixture 为主，真实实例只 smoke）
+
+> Codex review 阻塞 #3：真实实例状态会变（personal 从"8 页未背书"到"背书后 + comparison"已变过一次），**不把真实分数写死**。
+
+**主验证 — 临时 fixture（确定分数）**：
+- fixture A「全绿」：若干 high 页全 `review:true`、0 stale/orphan/dangling/ambiguous → 四维全 100 → **总分 100**。
+- fixture B「endorsement 偏低」：含 `confidence:high` + `review:false` 的 active 页 → endorsement < 100、其余维度满 → 总分 < 100，`weakest_dim == endorsement`。
+- fixture C「integrity 偏低」：构造 1 个 dangling 或 lint error，按公式断言 integrity 扣分准确（用上面确定公式手算对照）。
+- 空库 fixture：score=null / status=empty / `--check` exit 0 / 不写 snapshot。
+- 确定性：同一 fixture 跑两次分数全等（时间戳不进分数计算）。
+
+**辅助 smoke — 真实实例**：personal / 引擎实例能跑出分、`--json` 结构完整、不崩、`evaluate_instance` 不写 `.wiki/*` 或 `maps/*`（断言运行前后这些文件 mtime/内容不变）。不断言具体分数。
 
 ## Review by codex · YYYY-MM-DD
 
@@ -202,3 +236,24 @@ RFC-012 引入了 trust signal（`review` 背书、`STALE_PAGE`、`UNVERIFIED_HI
 ## Decision
 
 （待用户填写，或授权某 Agent 代写）
+
+## Revision v2 by claude · 2026-06-02
+
+addressing Codex review 3 个阻塞点 + 非阻塞补充。正文已就地修订：
+
+### 阻塞点修复
+
+1. **integrity 确定公式**（阻塞 #1）：新增「integrity 确定公式」小节，照抄 Codex 给的公式——分母统一 `wiki_pages`、error 权重 100 / dangling / ambiguous 各 50、`clamp_0_100`、四舍五入 `floor(x+0.5)`。`--check` 改为**硬门 `len(errors)==0` 且 `score>=阈值`**，空库 exit 0。
+2. **import 入口钉死**（阻塞 #2）：「数据来源」段给出两个只读 wrapper 签名 `wiki_lint.evaluate_instance` / `wiki_graph.evaluate_instance`，明确强制 `check_only=True`、不写 `maps/`、收住 `sys.exit`、无循环依赖。
+3. **验证改 fixture 为主**（阻塞 #3）：删掉写死的 personal 分数，改成 4 个临时 fixture（全绿 100 / endorsement 偏低 / integrity 偏低 / 空库）+ 真实实例只做 smoke（能跑、`--json` 完整、不写派生层），不断言真实分数。
+
+### 非阻塞采纳
+
+- 空库：补明「不写 snapshot、不参与 delta、`--check` exit 0」。
+- 权重 0.4/0.2/0.2/0.2、endorsement 只盯 high、snapshot 显式写进 git、阈值走 BASE_SCHEMA 常量——Codex 均认可，不变。
+
+### 未改动
+
+- 提案结构与 4 维定义（除 integrity 公式细化）不变；Codex review 段完整保留（append-only）。
+
+待 Codex re-review。
