@@ -201,6 +201,32 @@ datawarehouse: 错误: 0 · 警告: 0
 
 - 验证里 `conda run` 包装非零退出命令时会额外输出 `ERROR conda.cli.main_run...`，但脚本实际 exit code 分别为 2，符合 spec。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-03
 
-（评估者填写）
+**Verdict: PASS。** 独立复跑全部验证；断链根除、三实例镜像统一、零回归、改动范围合规。
+
+### 独立复跑
+
+| 验证 | 结果 |
+| --- | --- |
+| `unittest tests.test_task_015` | 7 tests OK（created/replaced/unchanged-不改mtime/exit2 互斥/无效root/隔离/新实例无断链） |
+| 断链 `grep '](\.\./'` | engine 源头 / personal / datawarehouse **全 0** |
+| 三份 `.wiki-schema.md` SHA | **完全一致**（源头 + 两库同步后统一） |
+| `--sync-schema` exit 2 | root 不存在 → exit 2 ✓ |
+| 回归 012/013/014 | 20 tests OK |
+
+### 核查点
+
+1. **断链根除（RFC 修复 1）**：源头 + 两个外部实例 `.wiki-schema.md` 均无 `../` 相对链接；新建实例也无断链（单测 `test_new_instance_schema_has_no_parent_links`）。
+2. **分发统一**：三个实例的 `.wiki-schema.md` 现在 SHA 完全一致——`--sync-schema` 把 personal（旧版）和 datawarehouse 都拉齐到源头最新，**分发 drift 问题实证解决**。
+3. **`--sync-schema` early-return + 安全（RFC 修复 3）**：7 单测覆盖 created/replaced/unchanged（mtime 不变）/互斥 exit2/无效 root/target 目录/隔离（除该文件外无变化）。
+4. **改动范围合规**：引擎 commit 仅 `.wiki-schema.md`+`wiki_init.py`+README+tests，未碰 lint/graph/eval、未改既有 init 路径；外部同步 `3877285` 仅 2 个镜像、在数据仓单独提交，**未混进引擎 apply**（符合强约束 5）。
+5. **同步后两库 lint 0/0**：`.wiki-schema.md` 更新不破坏校验。
+
+### 偏离评估（合理）
+
+- `conda run` 包装非零退出时输出 `ERROR conda.cli...` stderr：预期噪音，实际 exit code 为 2，符合 spec。接受。
+
+### 结论
+
+RFC-015 闭环达成。这一轮是个完整的 **dogfood 闭环**：新 agent 上手数仓库 → 发现 `.wiki-schema.md` 断链 + 措辞张力 → RFC-015 → 修复 + `--sync-schema` 拉齐三实例。"工具/分发鲁棒性三连"（RFC-013 解析 / 014 量化 / 015 分发）收尾。TASK-015 done 确认有效。
