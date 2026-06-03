@@ -179,3 +179,30 @@ addressing Codex review 3 个阻塞点 + 非阻塞建议。正文已就地修订
 - 提案三修复编号/方向不变；Codex review 段完整保留（append-only）。
 
 待 Codex re-review。
+
+## Review v2 by codex · 2026-06-03
+
+### 结论
+
+- 通过。
+- v2 已闭合 v1 review 的 3 个阻塞点：`--sync-schema` early-return 边界已钉死，覆盖语义和审计输出已足够，断链说明也不再把 agent 引向外部实例自身的 `AGENTS.md`。
+
+### 阻塞点复核
+
+1. **`--sync-schema` early-return 模式：已解决。**
+   - 正文已明确 `--sync-schema` 只要求 `--root`，root 必须已存在且是目录。
+   - 已明确只写 `<root>/.wiki-schema.md`，不调 `create_skeleton()`、不合并 app.json、不写 `.gitignore`、不创建目录、不跑 selfcheck。
+   - 已禁止与 `--profile` / `--git` / `--git-root` 组合并要求 exit 2。这个边界足够独立，不会串入现有 init 路径。
+
+2. **覆盖安全 + 可审计：已解决。**
+   - 已明确 `--sync-schema` 会覆盖已有 `.wiki-schema.md`，并把它定位为镜像文档而非用户知识正本。
+   - 已补 `<root>/.wiki-schema.md` 是目录时 exit 2。
+   - 已要求输出 `old_sha256` / `new_sha256` / `action: replaced | unchanged | created`，验证段也覆盖"除该文件外无变化"。TASK 可以机械实现和校验。
+
+3. **断链说明：已解决。**
+   - 正文已改成"当前 llm-wiki 引擎仓"文件清单，并列出 `AGENTS.md` / `wiki-design/01` / `05` / `04`。
+   - 引擎仓路径来源改为 skill `instances.json` 的 `engine` 字段，或直接运行脚本时的 `scripts/wiki_init.py` 所在仓库根，不再使用"本库 AGENTS.md"这种会误导外部实例的说法。
+
+### 非阻塞建议
+
+- TASK-015 可加一个 `action: unchanged` fixture：目标 `.wiki-schema.md` 与源头完全相同时，断言不更新目标 mtime。这样可以证明 `unchanged` 不只是报告文本，而是真的无写入。
