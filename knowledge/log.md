@@ -2,6 +2,17 @@
 
 > 重要知识库更新（ingest / promote / 决策 / 综合 / schema 变更）追加到此文件，按时间倒序排列。
 
+## 2026-06-03 · 样板实例维护：填实 purpose + 同步 overview + 4 页降级
+
+外部评估指出本实例（引擎自带样板）数据不实：purpose 占位、overview 报 RFC-001~008（实际 14）、4 页 high 但 review:false（unverified-high 全标红）。处理：
+
+- **purpose.md** 填实：明确本实例 = base schema 最小样板 + 工具自测样本，**非权威**；权威说明转交 `wiki-design/rfcs/` + personal 库。
+- **overview.md** 同步：RFC-001~008 → **001~014**；开放问题更新（部署形态已部分落地）；健康度改用 `wiki_eval` 口径。
+- **4 页 confidence high → medium**（诚实降级，非背书）：它们是 2026-05-28 样板快照、滞后 RFC-006~014、无人背书，声称 high 不实。降级后 `UNVERIFIED_HIGH` 清零、eval endorsement 不再被惩罚。
+- 决定：本样板不与 personal 重复维护「最新系统说明」，保持「永远合法、可自测」即可。
+
+校验：`wiki_lint --root knowledge` exit 0；投影：`wiki_graph`；评估：`wiki_eval`。
+
 ## 2026-05-28 · 首次结晶化：llm-wiki 自身架构
 
 把本知识库系统的设计结晶化进 `wiki/`（首次真实写入，crystallization）。新建 4 个页面：

@@ -2,10 +2,10 @@
 id: top_20260528_rfc-task-protocol
 type: topic
 status: active
-confidence: high
+confidence: medium
 created: 2026-05-28
-updated: 2026-05-28
-last_verified: 2026-05-28
+updated: 2026-06-03
+last_verified: 2026-06-03
 review: false
 source_ids: []
 related_ids:

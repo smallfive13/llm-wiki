@@ -2,10 +2,10 @@
 id: syn_20260528_llm-wiki-architecture
 type: synthesis
 status: active
-confidence: high
+confidence: medium
 created: 2026-05-28
-updated: 2026-05-28
-last_verified: 2026-05-28
+updated: 2026-06-03
+last_verified: 2026-06-03
 review: false
 source_ids: []
 related_ids:
