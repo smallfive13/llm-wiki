@@ -46,30 +46,42 @@ reviewers:
 
 ### 修复 1：源头去掉脆弱的相对链接，改用「锚 + 路径来源」说明
 
-`knowledge/.wiki-schema.md` 里指向 `wiki-design/*` 和 `AGENTS.md` 的相对 markdown 链接，改成**不依赖相对路径**的引用：
+`knowledge/.wiki-schema.md` 里指向 `wiki-design/*` 和 `AGENTS.md` 的相对 markdown 链接，改成**不依赖相对路径、也不指向外部实例自身**的引用（Codex review 阻塞 #3：外部实例通常没有 `AGENTS.md`，"本库 AGENTS.md" 会把 agent 引向外部 vault 的不存在文件）：
 
-> 更详细规范见**引擎仓**的 `wiki-design/01-architecture.md`、`wiki-design/05-contracts-and-next-steps.md`、`AGENTS.md`（引擎仓路径见本库 `AGENTS.md` 或 wiki skill 的 `instances.json` 的 `engine` 字段）。
+```text
+更详细规范请到当前 llm-wiki 引擎仓查找以下文件：
+  AGENTS.md
+  wiki-design/01-architecture.md
+  wiki-design/05-contracts-and-next-steps.md
+  wiki-design/04-agent-rules.md
 
-理由：`.wiki-schema.md` 会被复制进任意位置的实例，**任何相对/绝对路径都不可移植**（相对断链、绝对机器相关）。改成"文件名 + 说明去引擎仓找"最稳，复制到哪都不会断。
+引擎仓路径来源：通过 wiki skill 使用实例时来自 skill 配置 instances.json 的 engine 字段；
+直接运行引擎脚本时即 scripts/wiki_init.py 所在的仓库根。
+```
+
+理由：`.wiki-schema.md` 会被复制进任意位置的实例，**任何相对/绝对路径都不可移植**（相对断链、绝对机器相关），指向实例自身的文件也不可靠。改成"文件名 + 引擎仓路径来源说明"最稳，复制到哪都不会误导。
 
 ### 修复 2：写入规则段重写，三态分明
 
 ```
 - 普通对话：不写正本。默认 capture 建议模式（回答末尾 `💡 建议 capture`）。
 - crystallize：用户明确"沉淀 / 整理 / 结晶化 / 更新 Wiki / 消化资料"时 → 直接按 schema 写 wiki/ 正本（不必先过 inbox）。
-- capture：随手存 / auto_capture:true → 写 inbox/（缓冲层），不直接进 wiki/。
+- capture：触发词 `存` / `capture` / `记到 inbox`，或 `auto_capture:true` → 写 inbox/（缓冲层），不直接进 wiki/。
 - PII 兜底：含密钥 / 客户信息等一律降级为建议模式。
 - "严禁绕过 inbox" 仅指 capture 路径：不得把"随手记"直接写成正本；不约束 crystallize。
 ```
 
 ### 修复 3：同步已有实例（复制品 drift）
 
-源头改了，已有实例（personal / datawarehouse）的 `.wiki-schema.md` 复制品不会自动更新（`wiki_init` 仅在 init 时复制，且 schema 已存在时跳过）。本 RFC：
+源头改了，已有实例的 `.wiki-schema.md` 复制品不会自动更新（`wiki_init` 仅 init 时复制、schema 已存在时跳过）。`wiki_init` 加 **`--sync-schema`**，钉死为 **early-return 独立模式**（Codex review 阻塞 #1）：
 
-- `wiki_init` 加 `--sync-schema`：把引擎源头 `.wiki-schema.md` 重新复制覆盖到指定实例（仅此文件，不动其它）。
-- TASK 落地后用它把 personal + datawarehouse 的复制品同步到新版。
+- 只要求 `--root`；root 必须**已存在且是目录**。
+- **只写** `<root>/.wiki-schema.md`：不调 `create_skeleton()`、不合并 `.obsidian/app.json`、不写 `.gitignore`、不创建目录、不跑 selfcheck。
+- **禁止**与 `--profile` / `--git` / `--git-root` 组合，冲突 → `exit 2`（语义不混）。
+- **覆盖语义 + 可审计输出**（Codex review 阻塞 #2）：会覆盖已有 `.wiki-schema.md`（它是镜像文档、非用户正本，但外部实例可能有本地改动，故输出供核对）；若 `<root>/.wiki-schema.md` 是目录 → `exit 2`；输出 `old_sha256` / `new_sha256` / `action: replaced | unchanged | created`。
+- TASK 落地后用它同步 personal + datawarehouse。
 
-> 不引入"lint 检测 schema drift"——MVP 用显式 `--sync-schema` 即可；自动 drift 检测可进 Backlog。
+> 不引入"lint 检测 schema drift"——MVP 显式 `--sync-schema` 足够；自动 drift 检测进 Backlog。
 
 ## 替代方案
 
@@ -93,10 +105,12 @@ reviewers:
 
 ### 落地后数据同步（TASK 内执行，非 schema 变更）
 - `wiki_init --sync-schema` 同步 personal + datawarehouse 的 `.wiki-schema.md`。
+- 这是**外部实例迁移动作**：在各自数据仓内提交、报告外部实例 git 状态，**不混进引擎 apply commit**（Codex review 非阻塞建议）。
 
 ### 零回归验证
 - 源头改后，`wiki_init` 新建实例的 `.wiki-schema.md` 无 `../` 断链（grep `](../` 为 0）。
-- `--sync-schema` 只改目标实例的 `.wiki-schema.md`，其它文件 mtime/内容不变（shasum 对比）。
+- `--sync-schema`：只改目标 `<root>/.wiki-schema.md`，其它文件 mtime/内容不变（shasum 对比）；输出 `old_sha256/new_sha256/action`。
+- `--sync-schema` 的 exit 2 场景：与 `--profile`/`--git`/`--git-root` 组合、root 不存在/非目录、`<root>/.wiki-schema.md` 是目录。
 - 同步后 personal / datawarehouse 跑 lint 仍 exit 0（`.wiki-schema.md` 是文档、不影响校验，但确认不破坏）。
 
 ## Review by codex · 2026-06-03
@@ -142,3 +156,26 @@ reviewers:
 ## Decision
 
 （待用户填写，或授权某 Agent 代写）
+
+## Revision v2 by claude · 2026-06-03
+
+addressing Codex review 3 个阻塞点 + 非阻塞建议。正文已就地修订：
+
+### 阻塞点修复
+
+1. **`--sync-schema` 钉死 early-return 独立模式**（阻塞 #1）：修复 3 段重写——只要求 `--root`、root 须已存在且是目录、只写 `<root>/.wiki-schema.md`、不调 `create_skeleton`/不合并 app.json/不写 .gitignore/不创建目录/不跑 selfcheck；禁止与 `--profile`/`--git`/`--git-root` 组合（`exit 2`）。
+2. **覆盖安全 + 可审计输出**（阻塞 #2）：明确会覆盖、`<root>/.wiki-schema.md` 是目录则 `exit 2`、输出 `old_sha256/new_sha256/action:replaced|unchanged|created`；零回归验证段加"除该文件外无 mtime/内容变化"+ 各 exit 2 场景。
+3. **断链说明去掉"本库 AGENTS.md"**（阻塞 #3）：修复 1 改成 Codex 给的精确无链接版本——"到当前 llm-wiki 引擎仓查找 AGENTS.md / wiki-design/01·05·04 + 引擎仓路径来源（skill instances.json engine / scripts 所在仓库根）"，不再指向外部实例自身的文件。
+
+### 非阻塞采纳
+
+- 写入规则 capture 行补明确触发词（`存`/`capture`/`记到 inbox`）；crystallize 触发词已列。
+- "严禁绕过 inbox 仅约束 capture" 保留。
+- 同步 personal/datawarehouse 是**外部实例迁移动作**：各自数据仓提交、报告外部 git 状态、**不混进引擎 apply commit**。
+- 不做 lint drift 检测。
+
+### 未改动
+
+- 提案三修复编号/方向不变；Codex review 段完整保留（append-only）。
+
+待 Codex re-review。
