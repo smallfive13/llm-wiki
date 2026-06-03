@@ -99,9 +99,45 @@ reviewers:
 - `--sync-schema` 只改目标实例的 `.wiki-schema.md`，其它文件 mtime/内容不变（shasum 对比）。
 - 同步后 personal / datawarehouse 跑 lint 仍 exit 0（`.wiki-schema.md` 是文档、不影响校验，但确认不破坏）。
 
-## Review by codex · YYYY-MM-DD
+## Review by codex · 2026-06-03
 
-（待 Codex 追加）
+### 结论
+
+- 需修改。
+- 方向同意：`.wiki-schema.md` 作为可复制镜像文档，不应依赖 `../wiki-design` 这类相对链接；写入规则也确实需要把 crystallize / capture / 普通对话拆开。
+
+### 阻塞点
+
+1. **`--sync-schema` 执行模式不够清楚。**
+   - 当前 `wiki_init.py` 主流程会创建骨架、合并 Obsidian app.json、可选写 gitignore、跑 selfcheck。RFC 说 `--sync-schema` "只重新复制 `.wiki-schema.md`，不碰其它文件"，但没有明确它应是 early-return 独立模式。
+   - 建议钉死：`--sync-schema` 只要求 `--root`；root 必须已存在且是目录；只检查源模板和目标 `.wiki-schema.md`；只写 `<root>/.wiki-schema.md`；不调用 `create_skeleton()`、不合并 `.obsidian/app.json`、不写 `.gitignore`、不创建目录、不跑 selfcheck。
+   - 建议禁止 `--sync-schema` 与 `--profile` / `--git` / `--git-root` 组合，冲突时 exit 2，避免语义混杂。
+
+2. **覆盖已有 `.wiki-schema.md` 的安全策略不足。**
+   - 虽然 `.wiki-schema.md` 原则上是镜像文档，不是用户知识正本，但外部实例里仍可能有本地改动。直接覆盖可以接受，但需要显式定义风险和可验证输出。
+   - 建议钉死：`--sync-schema` 会覆盖已有 `.wiki-schema.md`；target 是目录时 exit 2；输出 `old_sha256` / `new_sha256` / `action: replaced|unchanged|created`。
+   - TASK 验证应证明除 `.wiki-schema.md` 外没有任何文件 mtime/内容变化。
+
+3. **断链修法里的"本库 `AGENTS.md`"表述仍可能误导。**
+   - 外部实例通常没有 `AGENTS.md`，即使有，也未必包含引擎仓路径。把路径来源写成"本库 `AGENTS.md` 或 wiki skill 的 `instances.json`"可能把 agent 引向外部 vault 的 `AGENTS.md`。
+   - 建议改成更精确的无链接说明：
+     ```text
+     更详细规范请到当前 llm-wiki 引擎仓查找以下文件：
+     AGENTS.md
+     wiki-design/01-architecture.md
+     wiki-design/05-contracts-and-next-steps.md
+     wiki-design/04-agent-rules.md
+
+     若通过 wiki skill 使用实例，引擎仓路径来自 skill 配置 instances.json 的 engine 字段；
+     若直接运行引擎脚本，引擎仓即 scripts/wiki_init.py 所在仓库根。
+     ```
+
+### 非阻塞建议
+
+- 写入规则三态方向正确。建议明确触发词：`存` / `capture` 进 inbox；`沉淀` / `结晶化` / `整理进知识库` / `更新 Wiki` / `消化资料` 可直接写 `wiki/` 正本。
+- "严禁绕过 inbox 仅约束 capture 路径"应保留，这正是当前 `.wiki-schema.md` 的歧义来源。
+- personal / datawarehouse 同步放 TASK 执行、且不算 schema 语义变更，这个边界合理；TASK 里建议明确这是外部实例迁移动作，并报告外部实例 git 状态，不混进引擎 apply commit。
+- 不引入 lint drift 检测合理，MVP 用显式 `--sync-schema` 足够。
 
 ## Decision
 
