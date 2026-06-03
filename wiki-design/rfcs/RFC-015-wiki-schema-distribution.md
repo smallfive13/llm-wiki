@@ -1,0 +1,108 @@
+---
+id: rfc_20260603_015
+title: .wiki-schema.md 分发鲁棒性（外部实例断链修复 + 写入规则措辞澄清 + 同步机制）
+author: claude
+status: proposed
+created: 2026-06-03
+updated: 2026-06-03
+targets:
+  - knowledge/.wiki-schema.md
+  - scripts/wiki_init.py
+  - scripts/README.md
+reviewers:
+  - codex
+  - user
+---
+
+# RFC-015: .wiki-schema.md 分发鲁棒性
+
+## 背景
+
+一个**新 agent 首次在 datawarehouse 库验证整理流程**时（真实使用驱动 gap），发现 `.wiki-schema.md` 两处问题。`.wiki-schema.md` 是 `wiki_init` 从引擎仓 `knowledge/.wiki-schema.md` **原样复制**到实例的（`scripts/wiki_init.py:195` `source = engine / "knowledge/.wiki-schema.md"`）。
+
+### 缺陷 1：外部实例里相对链接断裂
+
+源头 `knowledge/.wiki-schema.md` 内有指向设计正本的**相对 markdown 链接**：
+
+- line 3：`[wiki-design/01-architecture.md](../wiki-design/01-architecture.md)`、`../wiki-design/05-...`
+- 写入规则段末：`[../AGENTS.md](../AGENTS.md)`、`[../wiki-design/04-agent-rules.md](../wiki-design/04-agent-rules.md)`
+
+这些 `../` 在引擎仓内（`knowledge/` 旁边就是 `wiki-design/` / `AGENTS.md`）是对的，但 `wiki_init` 原样复制到**外部实例**（如 `obsidian/knowledge/datawarehouse/`）后，`../wiki-design` 指向 `obsidian/knowledge/wiki-design`——**不存在**（已验证）。后续 agent 想深入查设计规范会迷路。**影响所有外部实例**（personal + datawarehouse + 未来业务库）。
+
+### 缺陷 2：写入规则措辞有张力
+
+`.wiki-schema.md` 写入规则段：
+
+- "**只有**用户明确说'存下来 / 沉淀 / 整理进知识库 / …'时才写 `wiki/`"
+- 段末："**严禁绕过 inbox 直接写 `wiki/`**"
+
+两句并列让 agent 困惑：明确"沉淀"时，到底是直接写正本，还是必须先过 inbox？正确语义（新 agent 自己推对了，但不该靠猜）：
+
+- **crystallize**（用户明确"沉淀 / 整理 / 结晶化 / 更新 Wiki"）→ 直接按 schema 写 `wiki/` 正本；
+- **capture**（随手 / `auto_capture`）→ 进 `inbox/`；
+- "严禁绕过 inbox" 实际只约束 **capture 路径**（不得把随手记伪装成正本），**不**禁止 crystallize 直接写正本。
+
+## 提案
+
+### 修复 1：源头去掉脆弱的相对链接，改用「锚 + 路径来源」说明
+
+`knowledge/.wiki-schema.md` 里指向 `wiki-design/*` 和 `AGENTS.md` 的相对 markdown 链接，改成**不依赖相对路径**的引用：
+
+> 更详细规范见**引擎仓**的 `wiki-design/01-architecture.md`、`wiki-design/05-contracts-and-next-steps.md`、`AGENTS.md`（引擎仓路径见本库 `AGENTS.md` 或 wiki skill 的 `instances.json` 的 `engine` 字段）。
+
+理由：`.wiki-schema.md` 会被复制进任意位置的实例，**任何相对/绝对路径都不可移植**（相对断链、绝对机器相关）。改成"文件名 + 说明去引擎仓找"最稳，复制到哪都不会断。
+
+### 修复 2：写入规则段重写，三态分明
+
+```
+- 普通对话：不写正本。默认 capture 建议模式（回答末尾 `💡 建议 capture`）。
+- crystallize：用户明确"沉淀 / 整理 / 结晶化 / 更新 Wiki / 消化资料"时 → 直接按 schema 写 wiki/ 正本（不必先过 inbox）。
+- capture：随手存 / auto_capture:true → 写 inbox/（缓冲层），不直接进 wiki/。
+- PII 兜底：含密钥 / 客户信息等一律降级为建议模式。
+- "严禁绕过 inbox" 仅指 capture 路径：不得把"随手记"直接写成正本；不约束 crystallize。
+```
+
+### 修复 3：同步已有实例（复制品 drift）
+
+源头改了，已有实例（personal / datawarehouse）的 `.wiki-schema.md` 复制品不会自动更新（`wiki_init` 仅在 init 时复制，且 schema 已存在时跳过）。本 RFC：
+
+- `wiki_init` 加 `--sync-schema`：把引擎源头 `.wiki-schema.md` 重新复制覆盖到指定实例（仅此文件，不动其它）。
+- TASK 落地后用它把 personal + datawarehouse 的复制品同步到新版。
+
+> 不引入"lint 检测 schema drift"——MVP 用显式 `--sync-schema` 即可；自动 drift 检测可进 Backlog。
+
+## 替代方案
+
+| 决策点 | 选择 | 拒绝 |
+| --- | --- | --- |
+| 断链 | **去链接，改文字说明 + 路径来源** | 相对路径（外部实例断）/ 绝对路径（机器相关、不进 git 友好）/ 把 wiki-design 复制进实例（违背引擎单源） |
+| 措辞 | **三态分明（crystallize / capture / 普通对话）** | 保留模糊措辞 |
+| 同步 | **`wiki_init --sync-schema` 显式重新复制** | lint 自动 drift 检测（MVP 过重，进 Backlog）/ 手动 cp（易漏） |
+
+## 影响范围
+
+### 改动
+- `knowledge/.wiki-schema.md`（源头）：去相对链接 + 重写写入规则段。
+- `scripts/wiki_init.py`：新增 `--sync-schema`（只重新复制 `.wiki-schema.md`，不碰其它文件/不动数据）。
+- `scripts/README.md`：`--sync-schema` 用法说明。
+
+### 不改动
+- core schema 语义、frontmatter 契约、8 类页面、ID/canonical 规则。
+- 任何 knowledge 数据正本（只动 `.wiki-schema.md` 这份**镜像文档**）。
+- lint / graph / eval 行为与退出码。
+
+### 落地后数据同步（TASK 内执行，非 schema 变更）
+- `wiki_init --sync-schema` 同步 personal + datawarehouse 的 `.wiki-schema.md`。
+
+### 零回归验证
+- 源头改后，`wiki_init` 新建实例的 `.wiki-schema.md` 无 `../` 断链（grep `](../` 为 0）。
+- `--sync-schema` 只改目标实例的 `.wiki-schema.md`，其它文件 mtime/内容不变（shasum 对比）。
+- 同步后 personal / datawarehouse 跑 lint 仍 exit 0（`.wiki-schema.md` 是文档、不影响校验，但确认不破坏）。
+
+## Review by codex · YYYY-MM-DD
+
+（待 Codex 追加）
+
+## Decision
+
+（待用户填写，或授权某 Agent 代写）

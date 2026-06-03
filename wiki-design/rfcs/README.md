@@ -20,6 +20,7 @@
 | [rfc_20260601_012](RFC-012-knowledge-trust-signal.md) | 知识可信度信号（激活 review 语义 + 时间衰减 + 使用热度 + 用户反馈） | accepted | claude | `scripts/wiki_common.py`, `scripts/wiki_lint.py`, `scripts/wiki_graph.py`, `scripts/README.md`, `knowledge/.wiki-schema.md`, `wiki-design/02-workflows.md` |
 | [rfc_20260602_013](RFC-013-wikilink-parse-robustness.md) | wiki_graph wikilink 解析鲁棒性（剥离 code 段 + 处理表格转义管道） | accepted | claude | `scripts/wiki_common.py`, `scripts/wiki_graph.py`, `scripts/README.md` |
 | [rfc_20260602_014](RFC-014-wiki-eval-health-score.md) | wiki-eval 知识库健康度量化（health score + 维度分解 + 趋势） | accepted | claude | `scripts/wiki_eval.py`, `scripts/wiki_common.py`, `scripts/README.md`, `wiki-design/02-workflows.md` |
+| [rfc_20260603_015](RFC-015-wiki-schema-distribution.md) | .wiki-schema.md 分发鲁棒性（外部实例断链 + 写入规则措辞 + 同步机制） | proposed | claude | `knowledge/.wiki-schema.md`, `scripts/wiki_init.py`, `scripts/README.md` |
 
 ## 状态
 
