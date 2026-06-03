@@ -1,0 +1,13 @@
+{
+  "_comment": "复制为 instances.json，把下面所有 /ABSOLUTE/PATH/... 换成本机真实绝对路径。skill 只读 default/engine/python/instances，_comment 会被忽略。",
+  "default": "personal",
+  "engine": "/ABSOLUTE/PATH/TO/llm-wiki/llm-wiki",
+  "python": "python3",
+  "instances": {
+    "personal": {
+      "root": "/ABSOLUTE/PATH/TO/your-vault/personal",
+      "label": "个人知识库",
+      "aliases": ["个人", "personal", "个人库"]
+    }
+  }
+}

@@ -15,6 +15,10 @@ scripts/__pycache__/
 !tests/**
 tests/__pycache__/
 
+# wiki skill 可分发副本（SKILL.md / schema / 模板 / README），跨项目安装用，纳入版本管理。
+!skill/
+!skill/**
+
 # 以后如果在本仓库直接创建真实知识库，默认把 Markdown 正本和人工队列纳入 Git。
 !knowledge/
 !knowledge/**
