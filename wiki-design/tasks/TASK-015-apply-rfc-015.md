@@ -3,7 +3,7 @@ id: task_20260603_015
 title: Apply RFC-015 — .wiki-schema.md 分发鲁棒性（断链修复 + 写入规则 + --sync-schema）
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-06-03
 updated: 2026-06-03
@@ -99,9 +99,107 @@ $PY scripts/wiki_init.py --sync-schema --root /Users/zhangjunwu/workspace/obsidi
 - commit sha（引擎 apply 与数据仓同步分开）
 - 偏离或异常
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-06-03
 
-（执行者填写）
+### Step 0 spec-review
+
+结论：通过，可以执行。
+
+- `wiki_init.py` 主流程在 `main()` 中依次进入 `create_root -> create_skeleton -> ensure_obsidian_app -> ensure_git -> run_selfcheck`。
+- `--sync-schema` 必须放在参数解析、`engine_repo()` / `resolve_from_engine()` 之后，并在 `create_root()` 之前 early-return，才能保证不触达 skeleton、app.json、gitignore、目录创建和 selfcheck。
+- 无歧义或偏离需要先提。
+
+### 改动文件与关键位置
+
+- `knowledge/.wiki-schema.md`：顶部去掉 `../wiki-design` 相对链接，改成"当前 llm-wiki 引擎仓 + 文件清单 + 引擎路径来源"文字块；`## 写入规则` 改为普通对话 / crystallize / capture 三态，明确"严禁绕过 inbox"只约束 capture 路径。
+- `scripts/wiki_init.py`：新增 `sha256_file()` / `write_sync_report()` / `sync_schema()`；`build_parser()` 增加 `--sync-schema`；`main()` 在既有 init 主流程前新增 early-return 分支，并禁止与 `--profile` / `--git` / `--git-root` 组合。
+- `scripts/README.md`：补 `--sync-schema` 用法、互斥规则、报告字段和退出码语义。
+- `tests/test_task_015.py`：新增 sync-schema CLI 测试。
+
+### 验证 1~5 输出
+
+```text
+# 1) 单测全绿
+test_new_instance_schema_has_no_parent_links ... ok
+test_sync_schema_creates_missing_file ... ok
+test_sync_schema_only_changes_schema_file ... ok
+test_sync_schema_rejects_conflicting_options ... ok
+test_sync_schema_rejects_invalid_roots_and_directory_target ... ok
+test_sync_schema_replaces_existing_file ... ok
+test_sync_schema_unchanged_does_not_touch_mtime ... ok
+
+Ran 7 tests in 2.208s
+OK
+```
+
+```text
+# 2) 源头无断链
+OK 无 ../ 链接
+```
+
+```text
+# 3) sync-schema 互斥与退出码
+config error: --sync-schema root must exist and be a directory: /private/tmp/nonexist-task015
+root 不存在 exit=2
+
+config error: --sync-schema cannot be combined with --profile/--git/--git-root
+组合 --git exit=2
+```
+
+```text
+# 4) 新建实例无断链
+created: 39
+skipped: 0
+conflicts: 0
+git_root: none
+selfcheck: ok
+obsidian: created
+
+OK 新实例无断链
+```
+
+```text
+# 5) 既有套件不回归
+Ran 20 tests in 1.666s
+OK
+```
+
+### 落地同步（Step 7）
+
+```text
+# personal sync
+old_sha256: 0ace5bd83ea6512ddb0c9dfc67e83b573337784af547f580a24c1c78fe9bf39e
+new_sha256: 6f416bebba5085a1dd1dba264a46bd0cdbc094ce8b4a7c04e1bc2d6834203ea9
+action: replaced
+
+# datawarehouse sync
+old_sha256: e6b7f93328576e8d7f3c1e2ec63b6419e17905ee9155ed364941ff93207a6320
+new_sha256: 6f416bebba5085a1dd1dba264a46bd0cdbc094ce8b4a7c04e1bc2d6834203ea9
+action: replaced
+```
+
+同步后 lint：
+
+```text
+personal: 错误: 0 · 警告: 0
+datawarehouse: 错误: 0 · 警告: 0
+```
+
+外部数据仓 `/Users/zhangjunwu/workspace/obsidian/knowledge`：
+
+- 同步前 git status：clean，branch `main`。
+- 只修改 `personal/.wiki-schema.md` 和 `datawarehouse/.wiki-schema.md`。
+- 外部数据仓 commit：`3877285fcd26593e31f493256ce784e7046a46a8` (`[sync schema] refresh llm-wiki schema mirrors`)。
+- 同步后 git status：clean。
+
+### Commit
+
+- 引擎 apply commit：`a836db43eed9074be8cc1c8fd10e654c4f7ba1e6`
+- 外部数据仓同步 commit：`3877285fcd26593e31f493256ce784e7046a46a8`
+
+### 偏离或异常
+
+- 验证里 `conda run` 包装非零退出命令时会额外输出 `ERROR conda.cli.main_run...`，但脚本实际 exit code 分别为 2，符合 spec。
 
 ## Evaluation by claude · <date>
 

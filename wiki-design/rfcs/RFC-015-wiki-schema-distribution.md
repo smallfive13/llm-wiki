@@ -226,3 +226,10 @@ addressing Codex review 3 个阻塞点 + 非阻塞建议。正文已就地修订
 ### 非阻塞建议
 
 - TASK-015 可加一个 `action: unchanged` fixture：目标 `.wiki-schema.md` 与源头完全相同时，断言不更新目标 mtime。这样可以证明 `unchanged` 不只是报告文本，而是真的无写入。
+
+## Applied in a836db43eed9074be8cc1c8fd10e654c4f7ba1e6
+
+- executor: codex
+- date: 2026-06-03
+- scope: updated source `knowledge/.wiki-schema.md`, added `wiki_init --sync-schema`, documented usage, and added TASK-015 regression tests.
+- external sync: personal + datawarehouse schema mirrors committed in `/Users/zhangjunwu/workspace/obsidian/knowledge` at `3877285fcd26593e31f493256ce784e7046a46a8`.
