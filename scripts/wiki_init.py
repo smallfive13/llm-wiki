@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import shutil
@@ -97,6 +98,45 @@ def write_report(counters: Counters) -> None:
     print(f"git_root: {counters.git_root}")
     print(f"selfcheck: {counters.selfcheck}")
     print(f"obsidian: {counters.obsidian}")
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def write_sync_report(action: str, old_sha256: Optional[str], new_sha256: str) -> None:
+    print(f"old_sha256: {old_sha256 if old_sha256 is not None else 'null'}")
+    print(f"new_sha256: {new_sha256}")
+    print(f"action: {action}")
+
+
+def sync_schema(root: Path, engine: Path) -> int:
+    if not root.exists() or not root.is_dir():
+        print(f"config error: --sync-schema root must exist and be a directory: {root}", file=sys.stderr)
+        return EXIT_CONFIG
+
+    source = engine / "knowledge/.wiki-schema.md"
+    target = root / ".wiki-schema.md"
+    if not source.is_file():
+        print(f"config error: engine schema template missing: {source}", file=sys.stderr)
+        return EXIT_CONFIG
+    if target.exists() and not target.is_file():
+        print(f"config error: target .wiki-schema.md must be a file, found directory: {target}", file=sys.stderr)
+        return EXIT_CONFIG
+
+    new_sha = sha256_file(source)
+    old_sha = sha256_file(target) if target.exists() else None
+    if old_sha == new_sha:
+        write_sync_report("unchanged", old_sha, new_sha)
+        return 0
+
+    target.write_bytes(source.read_bytes())
+    write_sync_report("replaced" if old_sha is not None else "created", old_sha, new_sha)
+    return 0
 
 
 def create_root(root: Path, counters: Counters) -> bool:
@@ -428,6 +468,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--profile", help="创建最小 .wiki-profile.json 模板")
     parser.add_argument("--git", action="store_true", help="确保实例进入 git，并写入派生层 .gitignore")
     parser.add_argument("--git-root", help="git repo 根目录；相对路径按引擎仓库根解析")
+    parser.add_argument("--sync-schema", action="store_true", help="仅同步 .wiki-schema.md 镜像文档并退出")
     return parser
 
 
@@ -436,6 +477,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     engine = engine_repo()
     root = resolve_from_engine(args.root, engine)
     counters = Counters()
+
+    if args.sync_schema:
+        if args.profile or args.git or args.git_root:
+            print("config error: --sync-schema cannot be combined with --profile/--git/--git-root", file=sys.stderr)
+            return EXIT_CONFIG
+        return sync_schema(root, engine)
 
     if args.profile and not PROFILE_RE.match(args.profile):
         counters.notes.append("config error: --profile must match ^[a-z][a-z0-9-]*$")
