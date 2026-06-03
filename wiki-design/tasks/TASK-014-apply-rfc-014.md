@@ -223,6 +223,39 @@ OK
 - 首次手动 smoke 使用 `PY="/path/conda run -n py312 python"` 字符串变量，zsh 将其当作单一路径导致 `exit=127`，未实际运行 eval。已改为 zsh 数组 `PY=(/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python)` 后重跑，验证通过。
 - 低分 fixture 的 `conda run` 在子命令 exit 1 时会额外输出 `ERROR conda.cli.main_run...`，这是预期的非零退出包装信息；脚本实际输出 `exit=1`，符合 `--check` 失败语义。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-02
 
-（评估者填写）
+**Verdict: PASS。** 独立复跑全部验证 + 手算公式对照，与 Execution log 一致；不写派生层、零回归、import 隔离均达标。
+
+### 独立复跑
+
+| 验证 | 结果 |
+| --- | --- |
+| `unittest tests.test_task_014` | 9 tests OK |
+| personal eval `--json` | score 100 / status ok / endorsement 100 / weakest integrity |
+| engine eval `--json` | score 80 / endorsement 0 / weakest endorsement |
+| personal `--check` | exit 0 |
+| **不写派生层** | eval 前后 `personal/.wiki` + `personal/maps`（10 文件）shasum **完全不变** |
+| `unittest tests.test_task_012/013` | 11 tests OK（零回归） |
+
+### 核查点
+
+1. **integrity 确定公式**：手算对照全自洽——engine `100×0.4+20+20+0=80`；fixture C `2 页+1 dangling → dangling_rate 0.5 → integrity 75 → 总分 90`；fixture B `endorsement 50×0.2=10 + 80 = 90`。
+2. **不写派生层（强约束 #1）**：独立 shasum 对比证明 `evaluate_instance` 默认只读，`.wiki/*` / `maps/*` 一字节未动。
+3. **import 隔离**：`wiki_lint.evaluate_instance` 强制 check_only、保存/恢复全局状态；`wiki_graph` 用非退出版 `load_effective_schema_result`（profile issue 回报而非 sys.exit）。`test_multi_root_calls_do_not_leak_lint_global_state` 覆盖串扰。
+4. **--check 硬门**：`test_check_requires_zero_lint_errors_even_when_score_is_high` 证明 score≥70 但有 lint error 仍 exit 1。
+5. **空库 / snapshot / 确定性**：均有专测覆盖（empty null/exit0/不写、snapshot 仅 ok 时追加、时间戳不进分数）。
+6. **改动范围**：仅 scripts（common/eval/graph/lint）+ tests + .gitignore + README + 02-workflows，零 knowledge 数据改动。
+
+### 偏离评估（均合理）
+
+- zsh `PY="conda run …"` 变量当单一路径 → exit 127：本项目反复确认的 zsh 不 word-split 坑；执行者改 zsh 数组重跑。接受。
+- 低分 fixture 的 `conda run` 在子命令 exit 1 时输出 `ERROR conda.cli…` 包装：预期非零退出噪音，脚本实际 `exit=1` 正确。接受。
+
+### 副产品（eval 价值的真实演示）
+
+engine 实例（引擎自带 4 页知识）得 **80 分、endorsement 0**——一眼暴露"这 4 页全 high 但没人背书"。这正是 health score 的设计目的：把质量短板量化、可定位。
+
+### 结论
+
+RFC-014 闭环达成。**质量闭环三部曲（RFC-012 trust signal → RFC-013 解析鲁棒 → RFC-014 量化 eval）全部落地**：知识库现在能"机械校验 + 人背书 + 量化健康分 + 趋势 + CI 闸"，且一引擎多库各自可评、横向可比。TASK-014 done 确认有效。
