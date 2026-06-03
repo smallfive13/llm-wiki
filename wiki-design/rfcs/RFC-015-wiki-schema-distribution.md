@@ -2,9 +2,9 @@
 id: rfc_20260603_015
 title: .wiki-schema.md 分发鲁棒性（外部实例断链修复 + 写入规则措辞澄清 + 同步机制）
 author: claude
-status: proposed
+status: accepted
 created: 2026-06-03
-updated: 2026-06-03
+updated: 2026-06-03  # accepted; decision by claude（用户授权 Path A），基于 codex v2 re-review 通过
 targets:
   - knowledge/.wiki-schema.md
   - scripts/wiki_init.py
@@ -153,9 +153,29 @@ reviewers:
 - personal / datawarehouse 同步放 TASK 执行、且不算 schema 语义变更，这个边界合理；TASK 里建议明确这是外部实例迁移动作，并报告外部实例 git 状态，不混进引擎 apply commit。
 - 不引入 lint drift 检测合理，MVP 用显式 `--sync-schema` 足够。
 
-## Decision
+## Decision by claude · 2026-06-03（用户授权 Path A 代写）
 
-（待用户填写，或授权某 Agent 代写）
+**Accepted**。基于 Codex v2 re-review「通过」——3 个阻塞点已确认闭合。
+
+### 关键决策点
+
+| 决策点 | 选择 |
+| --- | --- |
+| 断链 | 源头去相对/绝对链接，改"到引擎仓查找 + 路径来源"文字说明（不指向实例自身） |
+| 写入规则 | 三态分明（普通对话 / crystallize 直接写正本 / capture 进 inbox）+ 触发词 |
+| 同步 | `wiki_init --sync-schema` early-return 独立模式 |
+
+### 留给 TASK-015 spec 钉死的事项
+
+1. **源头 `knowledge/.wiki-schema.md`**：line 3 + 写入规则段末的 `../wiki-design/`、`../AGENTS.md` 链接换成 RFC 修复 1 的无链接文字块；写入规则段按修复 2 三态重写。验证 `grep '](\.\./' knowledge/.wiki-schema.md` 为 0。
+2. **`wiki_init --sync-schema`**（修复 3）：early-return 独立模式——只要求 `--root`、root 须已存在且是目录、只写 `<root>/.wiki-schema.md`、不调 `create_skeleton`/不合并 app.json/不写 .gitignore/不创建目录/不跑 selfcheck；与 `--profile`/`--git`/`--git-root` 组合 → `exit 2`；`<root>/.wiki-schema.md` 是目录 → `exit 2`；输出 `old_sha256/new_sha256/action: replaced|unchanged|created`。
+3. **fixture**（标准库 unittest）：覆盖 `replaced`（目标旧内容→更新）/ `created`（目标缺失）/ **`unchanged`（目标已一致 → 不写、不更新 mtime）**（Codex re-review 非阻塞建议）；各 `exit 2` 场景（组合 flag / root 不存在 / 非目录 / target 是目录）；断言"除 `.wiki-schema.md` 外无文件 mtime/内容变化"。
+4. **落地同步**（TASK 内、非 schema 变更）：对 personal + datawarehouse 跑 `--sync-schema`，**在各自数据仓提交、报告外部 git 状态、不混进引擎 apply commit**；同步后两库 lint 仍 exit 0。
+
+### Apply 触发
+
+- 立即开 **TASK-015: apply RFC-015**（type: apply，executor: codex）。
+- done 后回本 RFC 追加 `## Applied in <commit-sha>`。
 
 ## Revision v2 by claude · 2026-06-03
 
