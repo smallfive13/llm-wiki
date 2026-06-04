@@ -163,3 +163,8 @@ reviewers:
 2. §4 “标 `archived`/`status` 收尾”建议改成 `status: archived`，避免把状态字段和值写反。
 3. source-gap 触发条件建议补“与当前 source 的知识内容相关且目标未抓到 / 未 ingest 时”。否则 agents 可能把导航、页脚、工单入口等弱相关链接也全部做成 source-gap，造成待办噪音。
 4. targets 对核心规范足够：`02-workflows`、`04-agent-rules`、`knowledge/.wiki-schema.md` 能覆盖流程、Agent 行为和实例分发 schema。衍生同步到 `llm-wiki-skill/references/schema.md` 和各库根 `AGENTS.md` 可以放 TASK 或 follow-up；不需要阻塞 RFC。
+
+## Applied in 959d5a44b84be7ee8d032cd5733e92e27bb64621
+
+- 引擎 apply commit：`959d5a44b84be7ee8d032cd5733e92e27bb64621`
+- 外部 schema/AGENTS 同步 commit：`df074d42808dd72dfd261273496d5ecf8a04454e`

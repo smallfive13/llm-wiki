@@ -136,8 +136,8 @@ score: 100, status: ok, pages: 32
 
 - commit sha：
   - 外部 schema/AGENTS 同步 commit：`df074d42808dd72dfd261273496d5ecf8a04454e`。
-  - 引擎 apply commit：本 Execution log 与实现同轮提交，最终 SHA 在提交完成后确定。
-  - RFC Applied 闭环 commit：提交后单独追加。
+  - 引擎 apply commit：`959d5a44b84be7ee8d032cd5733e92e27bb64621`。
+  - RFC Applied 闭环 commit：见最终执行报告。
 
 - 偏离或异常：
   - datawarehouse 仓库执行前已有多处知识页 / manifest 未提交改动；本 task 只新增并提交 `datawarehouse/.wiki-schema.md`、`datawarehouse/AGENTS.md` 和 `personal/.wiki-schema.md`，不回退、不 stage、不提交既有 datawarehouse 内容。
