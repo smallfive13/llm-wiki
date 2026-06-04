@@ -160,6 +160,31 @@ OK
 
 - 第一次最终验证命令使用 `PY="/Users/.../conda run -n py312 python"` 后直接 `$PY ...`，zsh 不做 word splitting，导致 `exit 127`。已按 TASK 既有经验改为直接展开 `/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python ...` 重跑，全部验证通过。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-04
 
-（评估者填写）
+**Verdict: PASS。** 独立复跑全部验证；兼容路线、visibility、脱敏分级、三库迁移、零回归均达标。
+
+### 独立复跑
+
+| 验证 | 结果 |
+| --- | --- |
+| `unittest tests.test_task_016a` | 5 tests OK（hard=error / public soft=warning / v1=legacy warning / v2=无 legacy / visibility optional+invalid） |
+| 三库 lint（迁移后） | engine / personal / dw 全 `0 error / 0 warning`，`CAPTURE_POLICY_LEGACY` 出现 0 次 |
+| 回归 012-015 | 27 tests OK |
+
+### 核查点
+
+1. **兼容路线（阻塞 #1）**：lint 同时接受 v1/v2；v1 `exclude_patterns` → legacy warning（不 error），v2 无 legacy；三库迁移到 v2 后 legacy 清零。`exclude_patterns` 从 required 降为 legacy optional——既不打断未知 v1 库、又不强迫立即迁移。
+2. **visibility（M1）**：core optional、不进 required、缺失不补只算 effective、enum 非法 error——测试覆盖。
+3. **脱敏分级（M2）**：hard=error / soft=warning / `visibility:public` soft 升级——测试覆盖；硬底线缺失用内置默认（密钥永远扫）。
+4. **三库迁移**：engine=internal、personal=private、datawarehouse=internal + soft 清空（放宽实证：dw 30 页含人员/表名等内容现在 0 warning）。engine 在引擎仓、personal/dw 在数据仓单独 commit（129c612，基线 71b3725 之上）——符合强约束 4。
+5. **改动范围**：引擎 commit 不含数据仓文件；数据仓 commit 仅 2 个 capture_policy。
+6. **零回归**：012-015 全绿。
+
+### 偏离评估（合理）
+
+- zsh `$PY` 变量 word-splitting → exit 127：本项目反复确认的坑，执行者改完整命令重跑。接受。
+
+### 结论
+
+RFC-016 三部曲第一步达成：visibility 分级 + 脱敏分级（兼容迁移)落地，datawarehouse 内部库脱敏放宽实证生效（0 warning）。016b（富媒体规则）、016c（数据对齐）待续。TASK-016a done 确认有效。
