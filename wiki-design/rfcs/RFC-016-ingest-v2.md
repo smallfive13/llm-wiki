@@ -121,9 +121,61 @@ datawarehouse 库首次 ingest 一批**内部 Wiki（需登录、含大量图片
 - **TASK-016a**：M1 visibility + M2 脱敏分级（schema/lint/capture_policy/wiki_init 模板/文档）+ datawarehouse capture_policy 放宽。较轻、纯配置与校验。
 - **TASK-016b**：M3 富媒体（assets scaffold + 图引用校验 + ingest 富媒体流程规范）+ datawarehouse 重新 ingest（带图）。较重。
 
-## Review by codex · YYYY-MM-DD
+## Review by codex · 2026-06-04
 
-（待 Codex 追加）
+### 结论
+
+- 需修改。
+- 方向同意：把 ingest v2 拆成 visibility / 脱敏分级 / 富媒体三块是合理的；工具链继续零 LLM、写入 AI 负责多模态描述也符合既有边界。
+- 当前版本还有 5 个阻塞点，主要集中在旧 `capture_policy` 兼容迁移、`visibility` 继承口径、assets 路径兼容、图片安全兜底和 TASK 拆分边界。
+
+### 阻塞点
+
+1. **`capture_policy` 从单层改两层是破坏性契约改动，迁移策略未钉死。**
+   - 当前 engine / personal / datawarehouse 三个实例都是 v1 结构：`exclude_patterns` + `exclude_paths` + `max_inbox_files`，lint 也硬校验 `exclude_patterns` 是字符串数组。
+   - RFC 直接改为 `hard_redact` / `soft_redact` + `default_visibility`，如果 TASK 只改 lint 模板而不迁移实例，现有库会立刻报 `MISSING_FIELD` / `TYPE_MISMATCH` 或脱敏行为漂移。
+   - 建议 v2 明确二选一：
+     - 兼容路线：`exclude_patterns` 在 v2 仍允许存在，lint 将其视为 `soft_redact.patterns` 的 legacy alias，并输出 `CAPTURE_POLICY_LEGACY` warning；新模板写 v2 字段，后续 TASK 迁移外部实例。
+     - 迁移路线：TASK-016a 必须同时迁移 engine/personal/datawarehouse 的 `capture_policy.json`，且 lint 不再要求 `exclude_patterns`。迁移前后要跑三库 lint。
+   - 我倾向兼容路线更稳：先让 lint 接受 v1/v2，TASK-016a 再迁移显式实例，避免外部未知实例被一次性打断。
+
+2. **`visibility` 继承语义还不够机械。**
+   - RFC 说页面不写回退 `capture_policy.default_visibility`，source 也适用，但没有定义 lint 输出 / 图谱 / eval 是否需要存 effective visibility。
+   - 需要钉死：
+     - `visibility` 是 core optional，不进 `core_required_fields`，只在出现时校验 enum。
+     - `default_visibility` 缺失时 legacy 默认是什么；建议 `private`，但 datawarehouse 迁移为 `internal`。
+     - source_manifest 每条 source 缺 `visibility` 时同样继承 default；如果有 `visibility` 则校验 enum。
+     - wiki 页面缺 `visibility` 时 lint 不改文件、不补字段，只在内部计算 effective visibility。
+     - `visibility: public` 的页面/source 是否触发更严格 soft policy；如果触发，要定义它是 error 还是 warning。
+   - 三档 `public/internal/private` 够用；但 `internal` 是否涵盖 team/公司内部应在正文中明确，避免未来再拆 `team`。
+
+3. **M3 assets 路径与当前 datawarehouse 实际资产布局冲突。**
+   - RFC 规定图片落地 `assets/<source_id>-<NN>.<ext>`，引用 `![[assets/<file>]]` / `![](assets/..)`.
+   - 但当前 datawarehouse 已有大量图片在 `raw/sources/assets/...`，wiki 页用 `../../raw/sources/assets/...` Markdown 图片引用。若 TASK-016b 只校验 `assets/`，现有数据会被排除在新规则外；若要迁移，又是较大的数据动作。
+   - 建议 v2 钉死一种边界：
+     - 新规范只认实例根 `assets/`，TASK-016b 负责迁移 datawarehouse 现有 `raw/sources/assets/` 到 `assets/` 并改引用；或
+     - MVP 同时允许 `assets/` 与 `raw/sources/assets/`，但推荐新 ingest 写 `assets/`，后续另开迁移。
+   - 若选择只认 `assets/`，还要定义文件命名是否允许子目录。`assets/<source_id>-<NN>.<ext>` 对 75+ 张图可行，但失去来源分组；`assets/<source_id>/<NN>.<ext>` 可能更易维护。
+
+4. **"含硬底线信息的图不落地"只靠 AI 判断，工具层没有最低可验证兜底。**
+   - 工具不读图内容是合理边界，但如果工具完全不看图，"不落地"无法被 CI 验证。
+   - 建议 v2 明确工具层只做可机械检查：
+     - 对图片文件名、路径、相邻描述文本、source notes / manifest caption 扫 `hard_redact` 正则，命中 error。
+     - 不声明工具能发现图片像素里的 token；把像素内容判断明确归写入 AI + 人工 review。
+     - 对 `visibility: public` 的图片要求存在文字描述且描述通过 hard/soft 扫描。
+   - 这样不会破坏"工具永不读图内容"，但有最小文本兜底。
+
+5. **TASK 拆分边界需要调整：016a 不应包含 datawarehouse 重新 ingest，016b 也不应同时扛规则和大规模数据重灌。**
+   - `TASK-016a` 做 M1/M2 + capture_policy 兼容/迁移合理。
+   - `TASK-016b` 做 assets scaffold + lint 断引校验 + 文档合理。
+   - 但 "datawarehouse 重新 ingest 那批内部文档（带图）" 是数据迁移/重灌任务，风险和验证面都大，建议拆成 `TASK-016c` 或后续 data task。否则 016b 会同时改工具规则和大量外部数据，失败时不好定位。
+
+### 非阻塞建议
+
+- `visibility` 字段如果要进入 graph 节点，建议在 RFC 明确；如果不进入，先只让 lint 校验也可以。
+- `hard_redact` / `soft_redact` 建议定义结构为 `{patterns: [...], enabled: true}` 或直接数组，不要留给 TASK 猜；否则 datawarehouse "soft 清空" 是 `[]` 还是 `{patterns: []}` 不确定。
+- assets 进 git 方向可以接受，但建议补文件大小/扩展名软限制（warning），例如单图 > 5MB 或非 png/jpg/jpeg/webp 报 warning，避免仓库体积失控。
+- 缺图描述 warning 的机械规则建议钉死为"图片引用后 1-3 个非空文本行内存在非图片文本"，避免 TASK 实现口径漂移。
 
 ## Decision
 
