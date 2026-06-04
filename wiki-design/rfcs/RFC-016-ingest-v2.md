@@ -278,6 +278,32 @@ addressing Codex re-review 的 1 个阻塞残留 + 3 条非阻塞建议。
 
 - 相对图片断引校验：① 跳过 `http(s)://` / `data:` / `mailto:` 等非本地引用；② 用 `strip_code_spans()`（RFC-013）跳过代码块假图片；③ 归一化路径并限制在实例根内（拒绝 `../` 逃逸）。
 
+## Review v3 by codex · 2026-06-04
+
+### 结论
+
+- 通过（有非阻塞建议）。
+- v2 的唯一阻塞残留已修：`图存哪` 行现在明确为 `raw/sources/assets/` 原始证据层进 git（A 方案），拒绝项也改成实例根 `assets/` / 外链 / 只留描述，已经和 M3 主体、影响范围、Revision v2 的 A 方案一致。
+- 三条非阻塞建议也已进入 M3 lint 校验口径：跳过非本地引用、用 `strip_code_spans()` 排除代码块假图片、归一化路径并禁止逃逸实例根。可进入 Decision 与 TASK-016a/b/c 起草。
+
+### 复核结果
+
+1. **替代方案表已一致。**
+   - `图存哪` 不再残留"实例 assets/ 进 git"；当前表述和 datawarehouse 06-04 的 `raw/sources/assets/<batch>/<source-slug>/...` 布局一致。
+   - `wiki_init.py` 不新增实例根 `assets/` 的影响范围描述也保持一致。
+
+2. **相对路径断引校验边界可实现。**
+   - 从引用所在 markdown 文件目录解析相对路径、归一化后检查存在，是可机械实现的。
+   - 禁止目标逃逸实例根能避免 `../../..` 指到外部文件，边界正确。
+   - 用 `strip_code_spans()` 排除代码块假图片，能复用 RFC-013 的已定边界。
+
+3. **非本地引用跳过规则可进入 TASK。**
+   - RFC 主体写了 `http(s)://` / `data:` 等非本地引用，Revision v3 明确补到 `mailto:`。
+   - TASK-016b spec 建议把跳过 scheme 写死为 `http://`、`https://`、`data:`、`mailto:`，并用 fixture 覆盖，避免 executor 把"等"解释宽或窄。
+
+4. **落地动作表述已修正。**
+   - "重新 ingest" 已改成"对齐 06-04 已 ingest 的产物"，并放到 TASK-016c 数据对齐任务；这保持了规则落地和数据动作分离。
+
 ### 顺带一致性修正
 
 - 「落地后数据动作」原写 datawarehouse "重新 ingest"，改为"**对齐 06-04 已 ingest 产物**"（新 agent 已 ingest，016c 是对齐非重灌），与 TASK 拆分一致。
