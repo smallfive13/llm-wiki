@@ -113,3 +113,26 @@ reviewers:
 ## Decision
 
 （待用户填写，或授权某 Agent 代写）
+
+## Review by codex · 2026-06-04
+
+结论：通过(有非阻塞建议)。
+
+阻塞点：无。
+
+我同意 RFC 的核心方向：把子链接处理定义为 ingest 写入约定，而不是新增 lint/graph 规则。当前工具能校验的是已经落到 wiki/source_manifest/review_queue 的正本结构和引用完整性；它不能可靠证明“原文中的所有子链接都被发现并登记”。尤其是登录态页面、iframe 空正文、脱敏前 token URL、以及写入 AI 是否完整读取了原始页面，这些都不在现有 lint/graph 的可见输入里。因此把“发现并处理子链接”放到写入 AI 行为规范，而把结果落成 open-question + canonical 关联供现有工具校验，是合理边界。
+
+轻量工具兜底我不建议本 RFC 现在加。只有在 ingest adapter 明确产出结构化 `discovered_links` / `pending_links` 清单后，工具才有可比对对象；否则 lint 只能扫描已写正文中的脱敏文本，容易制造伪完整性。这个可以留作后续抓取自动化 RFC，而不是阻塞当前纯流程文档。
+
+载体选择上，`*-source-gap` 用 open-question 是对的：它是长期可见的知识缺口，能进图谱、可导航、能被回答阶段看见，优于埋在 `.wiki/review_queue.json`。但建议 TASK 落文档时补一句分工：`review_queue.type: source_gap` 仍可作为 ingest/triage 阶段的临时结构化队列或工具/人工审查入口；一旦决定把缺口作为长期待办保留，应晋升为 `wiki/open-questions/*-source-gap.md`。这样不会让两个 `source_gap` 载体形成竞争语义，也不必删除既有 enum。
+
+不递归边界基本清楚。建议把补抓场景再钉一句：用户显式要求补抓某个子文档时，视为一次新的独立 ingest，不是从父文档自动递归。外部链接“不建 source、不跟进”也合理；正文只保留脱敏后的外链说明，不应保留内部分享 token 或可泄漏登录态的完整 URL。
+
+对齐现状方面，我核对了 datawarehouse：`oq_20260604_aliyun-data-analysis-source-gap` 已存在，`source_ids` 指父 source + 子 source，父 `src_20260604_dw-common-qa` 通过 `related_ids` 指向子 `src_20260604_aliyun-data-analysis`，子 source 为 `draft` / `low`，datawarehouse lint 为 `错误: 0 · 警告: 0`。TASK 只做确认、不重做，是正确边界。
+
+非阻塞建议：
+
+1. 工具边界段建议避免绝对表述“工具读不到源文档原文”。更精确的说法是：现有规范工具不把原始抓取内容和子链接清单作为契约输入，也无法覆盖登录态 / 脱敏前 URL / iframe / 抓取失败场景，因此不能机械证明子链接发现完整。
+2. §4 “标 `archived`/`status` 收尾”建议改成 `status: archived`，避免把状态字段和值写反。
+3. source-gap 触发条件建议补“与当前 source 的知识内容相关且目标未抓到 / 未 ingest 时”。否则 agents 可能把导航、页脚、工单入口等弱相关链接也全部做成 source-gap，造成待办噪音。
+4. targets 对核心规范足够：`02-workflows`、`04-agent-rules`、`knowledge/.wiki-schema.md` 能覆盖流程、Agent 行为和实例分发 schema。衍生同步到 `llm-wiki-skill/references/schema.md` 和各库根 `AGENTS.md` 可以放 TASK 或 follow-up；不需要阻塞 RFC。
