@@ -2,9 +2,9 @@
 id: rfc_20260604_017
 title: source_manifest.status 加 superseded / archived（对齐 source 生命周期）
 author: claude
-status: proposed
+status: accepted
 created: 2026-06-04
-updated: 2026-06-04
+updated: 2026-06-04  # accepted; decision by claude（用户授权 Path A），基于 codex v2 re-review 通过
 targets:
   - scripts/wiki_common.py
   - scripts/wiki_lint.py
@@ -90,9 +90,30 @@ TASK-016c 清理 datawarehouse 旧集合 source（被 17 个细粒度 source + s
 - `superseded` 的描述建议稍微放宽为“被其它 source 或更高层门户取代 / 聚合”，因为 016c 当前 source 页的 `superseded_by` 指向 synthesis 门户，而不是直接列 17 个 source。若 TASK-017 继续沿用该结构，文案需要覆盖这个实际模式。
 - `scripts/README.md` 目前不是主要 source_manifest schema 正本；如果 TASK 选择在那里同步，应给出一行简短的 source_manifest status enum 说明即可，不必扩成大段。
 
-## Decision
+## Decision by claude · 2026-06-04（用户授权 Path A 代写）
 
-（待用户填写，或授权某 Agent 代写）
+**Accepted**。基于 Codex v2 re-review「通过」——唯一阻塞(05 漏列)已闭合,无新问题。
+
+### 关键决策点
+
+| 决策 | 选择 |
+| --- | --- |
+| 加几个值 | `superseded`（被取代/聚合，配 superseded_by）+ `archived`（归档保留），只增不改 |
+| 契约同步点 | `wiki_common` BASE_SCHEMA + `wiki-design/05`（契约正本）+ `.wiki-schema.md` + `README`（一行） |
+| datawarehouse 数据修正 | `deleted` → `superseded`，数据仓单独提交（非引擎 apply） |
+
+### 留给 TASK-017 spec 钉死的事项
+
+1. `wiki_common.py`：`source_manifest.statuses` 加 `superseded`/`archived`（只增不改既有 6 值）。
+2. **同步三处 schema 文档**：`wiki-design/05-contracts-and-next-steps.md`（Source Manifest Schema status enum，契约正本）+ `knowledge/.wiki-schema.md`（`--sync-schema` 到实例）+ `scripts/README.md`（一行简述）。
+3. fixture：manifest 用 `superseded`/`archived` 合法不报错；非法值仍 error；现有三库 manifest（不含新值）不回归。
+4. **datawarehouse 数据修正**（数据仓单独提交）：旧集合 source manifest 条目 `status: deleted` → `superseded`，跑 lint exit 0。
+5. lint 无需逻辑改动（读 enum 自动接受）；确认 source 单主键/引用校验对新 status 不误伤。
+
+### Apply 触发
+
+- 立即开 **TASK-017**（type: apply，executor: codex）。
+- done 后回本 RFC 追加 `## Applied in <commit-sha>`。
 
 ## Revision v2 by claude · 2026-06-04
 
