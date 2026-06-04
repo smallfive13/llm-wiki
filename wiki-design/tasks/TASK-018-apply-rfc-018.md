@@ -143,6 +143,31 @@ score: 100, status: ok, pages: 32
   - datawarehouse 仓库执行前已有多处知识页 / manifest 未提交改动；本 task 只新增并提交 `datawarehouse/.wiki-schema.md`、`datawarehouse/AGENTS.md` 和 `personal/.wiki-schema.md`，不回退、不 stage、不提交既有 datawarehouse 内容。
   - 首次尝试用 shell 管道解析 `wiki_eval --json` 输出时，内联 Python 引号导致 JSONDecodeError；已改用直接输出检查，`score: 100` / `status: ok` / `pages: 32`。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-04
 
-（评估者填写）
+**Verdict: PASS。** 独立复跑全部验证；纯约定不改 scripts、对齐确认、零回归均达标。
+
+### 独立复跑
+
+| 验证 | 结果 |
+| --- | --- |
+| 引擎 959d5a4 改动 | 仅 .wiki-schema / skill schema / 02-workflows / 04-agent-rules + task 文档，**0 个 scripts/** |
+| 文档落地 grep | 子链接/source-gap 命中 02-workflows + 04-agent-rules + .wiki-schema |
+| 回归 012-017 | 41 tests OK |
+| datawarehouse lint | 0 error / 0 warning（graph 32 节点、eval 100） |
+| 衍生同步 df074d4 | datawarehouse/personal .wiki-schema + datawarehouse AGENTS（`--sync-schema` action: replaced，两库同 SHA） |
+| 对齐确认 | oq source-gap + 父子 related_ids + 子 source draft/low，未重做 |
+
+### 核查点
+
+1. **纯约定边界守住**：0 scripts 改动，source-gap 复用 open-question 现有校验——符合 RFC-018"工具能力边界例外"。
+2. **datawarehouse 仅确认对齐**：现状已符合规范，未重做数据。
+3. **衍生同步 + --sync**：skill schema + 两库 .wiki-schema + datawarehouse AGENTS（§2.1 ingest 子链接）都补到位,三库 schema 一致。
+
+### Observation（需你处理,非 018 产物）
+
+- datawarehouse 数据仓还有 **14 项遗留知识数据未提交**（index/log/overview/manifest/多个 source/open-question/query/synthesis）——这是**新 agent 在基线 c0ce600 之后又持续整理的一轮**,不是 TASK-018 的产物。Codex 执行 018 时**正确地没碰它们**（只提交 schema/AGENTS）。这批需要单独 commit 成新基线（见报告）。
+
+### 结论
+
+RFC-018 闭环,**ingest 子链接 gap 关闭**：关联保留 + source-gap open-question 登记 + 不递归,已写进 02-workflows/04-agent-rules/.wiki-schema/skill/datawarehouse AGENTS。TASK-018 done 确认有效。
