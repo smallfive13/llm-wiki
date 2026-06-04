@@ -172,6 +172,27 @@ OK
 - commit sha：本日志与实现按 task 要求同一引擎 commit 提交；实际 SHA 在最终报告中回报。
 - 偏离或异常：首次回归发现 `knowledge/.wiki-schema.md` 的图片示例含 `](../`，触发 TASK-015 断链分发测试；已改为不含脆弱相对链接的占位示例并重跑通过。datawarehouse lint 结果为 errors 0 / warnings 0，没有 `IMAGE_DANGLING`，未改任何 datawarehouse 数据。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-04
 
-（评估者填写）
+**Verdict: PASS。** 独立复跑全部验证；图引用校验、A 方案兼容、零回归均达标。
+
+### 独立复跑
+
+| 验证 | 结果 |
+| --- | --- |
+| `unittest tests.test_task_016b` | 6 tests OK（本地存在/缺失 / 4 scheme 跳过 / 代码块跳过 / 路径逃逸 / hard_redact 文本兜底 / 缺描述 warning） |
+| datawarehouse lint | `0 error / 0 warning`，**IMAGE_DANGLING 命中 0**（75 张图引用全解析） |
+| 回归 012-016a | 32 tests OK |
+| 改动范围 | 引擎 8 文件（不含 knowledge 数据）；working tree clean |
+
+### 核查点
+
+1. **图引用断引校验**：先 `strip_code_spans()`（复用 RFC-013）→ 跳 `http://`/`https://`/`data:`/`mailto:` → 相对路径按引用页解析 + 归一化限实例根（逃逸 `IMAGE_PATH_ESCAPE`）→ 缺失 `IMAGE_DANGLING`。6 fixture 全覆盖。
+2. **A 方案实证**：datawarehouse 06-04 的 75 张图相对引用（`../../raw/sources/assets/...`）在新校验下 **0 dangling**——证明采纳现实、零迁移是对的。
+3. **硬底线文本兜底**：扫文件名/路径/描述/manifest caption（`IMAGE_HARD_REDACT`），工具不读图像素——边界守住。
+4. **零回归**：012-016a 全绿。
+5. **规则自洽（好信号）**：执行中 `.wiki-schema.md` 的富媒体示例用了 `](../` 触发了 RFC-015 的断链测试（自己的规则抓自己），执行者改成无脆弱链接占位——说明 RFC-013/015/016 的规则互相咬合、不打架。
+
+### 结论
+
+RFC-016 三部曲第二步达成：富媒体图引用校验 + 硬底线文本兜底上线，datawarehouse 现有图引用零迁移通过。只剩 016c（datawarehouse 数据对齐：补 visibility + 清理旧集合 source）。TASK-016b done 确认有效。
