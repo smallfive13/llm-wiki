@@ -42,6 +42,7 @@ from wiki_common import (
     profile_name,
     staleness_age_days,
     staleness_threshold,
+    strip_code_spans,
     rel_to_knowledge as common_rel_to_knowledge,
     type_prefix,
     validate_profile,
@@ -106,7 +107,15 @@ ERROR_CODES = {
     "CAPTURE_POLICY_LEGACY",
     "SOFT_REDACT_HIT",
     "HARD_REDACT_HIT",
+    "IMAGE_DANGLING",
+    "IMAGE_PATH_ESCAPE",
+    "IMAGE_HARD_REDACT",
+    "IMAGE_NO_DESCRIPTION",
 } | PROFILE_ERROR_CODES
+
+MARKDOWN_IMAGE_RE = re.compile(r"!\[([^\]\n]*)\]\(([^)\n]+)\)")
+OBSIDIAN_IMAGE_RE = re.compile(r"!\[\[([^\]\n]+)\]\]")
+NONLOCAL_IMAGE_SCHEMES = ("http://", "https://", "data:", "mailto:")
 
 ERROR_LEVEL = dict(BASE_SCHEMA["error_level"])
 
@@ -816,6 +825,200 @@ def scan_pii(inbox_docs: List[MarkdownDoc], archived: List[MarkdownDoc], wiki_do
     return hits
 
 
+def body_line_for_offset(text: str, offset: int) -> int:
+    return text.count("\n", 0, offset) + 1
+
+
+def clean_markdown_target(raw: str, *, obsidian: bool = False) -> str:
+    target = raw.strip()
+    if obsidian:
+        target = target.split("|", 1)[0].strip()
+    if target.startswith("<") and target.endswith(">"):
+        target = target[1:-1].strip()
+    return target
+
+
+def is_nonlocal_image_target(target: str) -> bool:
+    return target.lower().startswith(NONLOCAL_IMAGE_SCHEMES)
+
+
+def path_is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def image_refs(doc: MarkdownDoc) -> List[Dict[str, Any]]:
+    stripped = strip_code_spans(doc.body)
+    refs: List[Dict[str, Any]] = []
+    for match in MARKDOWN_IMAGE_RE.finditer(stripped):
+        refs.append(
+            {
+                "target": clean_markdown_target(match.group(2)),
+                "alt": match.group(1).strip(),
+                "line": body_line_for_offset(stripped, match.start()),
+            }
+        )
+    for match in OBSIDIAN_IMAGE_RE.finditer(stripped):
+        refs.append(
+            {
+                "target": clean_markdown_target(match.group(1), obsidian=True),
+                "alt": "",
+                "line": body_line_for_offset(stripped, match.start()),
+            }
+        )
+    refs.sort(key=lambda item: item["line"])
+    return refs
+
+
+def image_description_near_line(doc: MarkdownDoc, line_number: int) -> str:
+    lines = doc.body.splitlines()
+    if line_number < 1 or line_number > len(lines):
+        return ""
+    idx = line_number - 1
+    chunks: List[str] = []
+    for candidate in [lines[idx], *lines[idx + 1 : idx + 4]]:
+        cleaned = MARKDOWN_IMAGE_RE.sub(" ", candidate)
+        cleaned = OBSIDIAN_IMAGE_RE.sub(" ", cleaned)
+        cleaned = cleaned.strip()
+        if cleaned:
+            chunks.append(cleaned)
+    return "\n".join(chunks)
+
+
+def manifest_image_text_by_source(source_manifest: Dict[str, Any]) -> Dict[str, str]:
+    def collect(value: Any, active: bool = False) -> List[str]:
+        if isinstance(value, str):
+            return [value] if active else []
+        if isinstance(value, list):
+            result: List[str] = []
+            for item in value:
+                result.extend(collect(item, active))
+            return result
+        if isinstance(value, dict):
+            result = []
+            for key, item in value.items():
+                key_active = active or any(token in str(key).lower() for token in ("note", "caption", "description"))
+                result.extend(collect(item, key_active))
+            return result
+        return []
+
+    result: Dict[str, str] = {}
+    sources = source_manifest.get("sources", [])
+    if not isinstance(sources, list):
+        return result
+    for src in sources:
+        if not isinstance(src, dict) or not isinstance(src.get("source_id"), str):
+            continue
+        text = "\n".join(collect(src))
+        if text:
+            result[src["source_id"]] = text
+    return result
+
+
+def source_ids_for_doc(doc: MarkdownDoc) -> List[str]:
+    ids: List[str] = []
+    if isinstance(doc.fm.get("source_ids"), list):
+        ids.extend(str(item) for item in doc.fm.get("source_ids", []) if isinstance(item, str))
+    if isinstance(doc.fm.get("source_id"), str):
+        ids.append(str(doc.fm["source_id"]))
+    return list(dict.fromkeys(ids))
+
+
+def first_pattern_hit(text: str, compiled: List[Tuple[str, re.Pattern[str]]]) -> Optional[str]:
+    if not text:
+        return None
+    for raw, regex in compiled:
+        if regex.search(text):
+            return raw
+    return None
+
+
+def validate_image_refs(
+    wiki_docs: List[MarkdownDoc],
+    source_manifest: Dict[str, Any],
+    capture_policy: Dict[str, Any],
+    issues: Dict[str, List[Issue]],
+) -> None:
+    hard_patterns, _soft_patterns = normalized_redact_patterns(capture_policy, issues)
+    hard_compiled = compile_patterns(hard_patterns, "hard_redact", issues)
+    manifest_texts = manifest_image_text_by_source(source_manifest)
+    instance_root = INSTANCE_ROOT.resolve()
+
+    for doc in wiki_docs:
+        doc_manifest_text = "\n".join(manifest_texts.get(src_id, "") for src_id in source_ids_for_doc(doc))
+        for ref in image_refs(doc):
+            target = ref["target"]
+            line = ref["line"]
+            if not target or is_nonlocal_image_target(target):
+                continue
+            target_path = (doc.path.parent / target).resolve()
+            description = image_description_near_line(doc, line)
+            scan_text = "\n".join(
+                item
+                for item in [
+                    target,
+                    target_path.name,
+                    rel_to_knowledge(target_path) if path_is_relative_to(target_path, instance_root) else str(target_path),
+                    description,
+                    doc_manifest_text,
+                ]
+                if item
+            )
+            matched_pattern = first_pattern_hit(scan_text, hard_compiled)
+            if matched_pattern:
+                add_issue(
+                    issues,
+                    issue(
+                        "IMAGE_HARD_REDACT",
+                        doc.rel,
+                        line,
+                        None,
+                        f"图片引用或相邻说明命中 hard_redact pattern {matched_pattern!r}",
+                        "移除敏感路径/文件名/说明，含硬底线信息的图不要落地",
+                    ),
+                )
+            if not path_is_relative_to(target_path, instance_root):
+                add_issue(
+                    issues,
+                    issue(
+                        "IMAGE_PATH_ESCAPE",
+                        doc.rel,
+                        line,
+                        None,
+                        f"图片引用逃出实例根: {target}",
+                        "使用实例根内 raw/sources/assets/ 的相对路径",
+                    ),
+                )
+                continue
+            if not target_path.exists():
+                add_issue(
+                    issues,
+                    issue(
+                        "IMAGE_DANGLING",
+                        doc.rel,
+                        line,
+                        None,
+                        f"图片引用目标不存在: {target}",
+                        "修正相对路径或补齐 raw/sources/assets/ 文件",
+                    ),
+                )
+            if not description:
+                add_issue(
+                    issues,
+                    issue(
+                        "IMAGE_NO_DESCRIPTION",
+                        doc.rel,
+                        line,
+                        None,
+                        f"图片引用缺少紧邻描述文本: {target}",
+                        "在图片同一行或随后 3 行补充多模态描述",
+                    ),
+                )
+
+
 def run_lint(args: argparse.Namespace) -> Tuple[int, Dict[str, Any], str]:
     issues: Dict[str, List[Issue]] = {"errors": [], "warnings": []}
     for item in PROFILE_ISSUES:
@@ -851,6 +1054,7 @@ def run_lint(args: argparse.Namespace) -> Tuple[int, Dict[str, Any], str]:
     source_manifest, review_queue, capture_policy = validate_json_contracts(id_index, issues)
     alias_entries = build_alias_index(wiki_docs, id_index, issues)
     inbox_index = build_inbox_index(inbox_docs, issues)
+    validate_image_refs(wiki_docs, source_manifest, capture_policy, issues)
     pii_hits = scan_pii(inbox_docs, archived_docs, wiki_docs, capture_policy, args.scan_wiki_pii, issues)
 
     id_entries = {

@@ -34,7 +34,7 @@ python3 scripts/wiki_lint.py --scan-wiki-pii  # 加扫 wiki/ PII（默认只扫 
 - `1` = 有 error
 - `2` = 配置 / 脚本自身错误
 
-### 覆盖的 lint 范围（8 项）
+### 覆盖的 lint 范围
 
 来自 RFC-006 v2 范围 #1~#8：
 
@@ -46,6 +46,10 @@ python3 scripts/wiki_lint.py --scan-wiki-pii  # 加扫 wiki/ PII（默认只扫 
 6. **inbox 派生** — `.wiki/inbox_index.json`
 7. **脱敏扫描** — 按 `capture_policy.hard_redact` / `soft_redact`，兼容 legacy `exclude_patterns`
 8. **跨流程一致性** — manifest <-> 摘要页 / review_queue path / inbox archive 状态
+
+后续 RFC 增强：
+
+9. **图引用校验** — wiki 正文图片引用只校验文本路径：跳过代码块和 `http://` / `https://` / `data:` / `mailto:`，本地相对路径必须解析到实例根内且目标存在；图片路径、文件名、相邻描述和 manifest caption/notes 会按 `hard_redact` 做硬底线兜底，工具不读图像素。
 
 ### 完整 error code 表
 
@@ -79,6 +83,10 @@ python3 scripts/wiki_lint.py --scan-wiki-pii  # 加扫 wiki/ PII（默认只扫 
 | `CAPTURE_POLICY_LEGACY` | warning | capture_policy 仍使用 v1 `exclude_patterns` |
 | `SOFT_REDACT_HIT` | warning | 内容命中 soft_redact，需按库策略确认或脱敏 |
 | `HARD_REDACT_HIT` | error | 内容命中 hard_redact，必须移除密钥/凭证/连接串等硬底线敏感内容 |
+| `IMAGE_DANGLING` | error | wiki 正文图片引用目标不存在 |
+| `IMAGE_PATH_ESCAPE` | error | 图片引用归一化后逃出实例根 |
+| `IMAGE_HARD_REDACT` | error | 图片路径、文件名、相邻描述或 manifest 图说明命中 hard_redact |
+| `IMAGE_NO_DESCRIPTION` | warning | 图片引用缺少同一行或随后 3 行内的多模态描述 |
 | `PROFILE_SCHEMA_VERSION` | error | `.wiki-profile.json` schema_version 与引擎不兼容 |
 | `PROFILE_PREFIX_FORMAT` | error | profile `id_prefix` 不是 2-5 位小写字母 |
 | `PROFILE_PREFIX_COLLISION` | error | profile `id_prefix` 撞 base/inbox/其它 profile prefix |

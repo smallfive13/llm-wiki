@@ -151,6 +151,10 @@ BASE_SCHEMA: Dict[str, Any] = {
         "CAPTURE_POLICY_LEGACY": "warning",
         "SOFT_REDACT_HIT": "warning",
         "HARD_REDACT_HIT": "error",
+        "IMAGE_DANGLING": "error",
+        "IMAGE_PATH_ESCAPE": "error",
+        "IMAGE_HARD_REDACT": "error",
+        "IMAGE_NO_DESCRIPTION": "warning",
     },
 }
 

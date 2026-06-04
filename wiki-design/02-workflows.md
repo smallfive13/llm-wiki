@@ -111,6 +111,8 @@ obsidian/knowledge/               # 一个 git repo 包多个 vault
    - 识别来源类型
    - 计算 hash
    - 生成来源摘要
+   - 富媒体处理：原始图片证据落在 `raw/sources/assets/`，写入 AI 生成语义描述和关键文字摘录；wiki 正文使用相对 `![alt](../../raw/sources/assets/...)` 引用，并在同一行或随后 3 行写紧邻描述
+   - 富媒体安全兜底：含 hard_redact 信息的图片不落地；工具只扫图片文件名、路径、相邻描述和 manifest caption/notes，不读图像像素
    - **entity alias matching**：对每个识别到的实体名，依次：
      1. 在所有 entity 页的 `id` / H1 标题 / `aliases` 中查找完全匹配，或在 `knowledge/.wiki/normalized_alias_index.json` 中查规范化匹配
      2. 命中 → 复用现有页面（更新 `last_verified`，必要时补充 alias 到正名页）
