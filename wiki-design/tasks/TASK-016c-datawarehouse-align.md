@@ -173,6 +173,32 @@ source-sync-online-table-mapping.md: images=4, keyword_lines=4
   - task 给出的简单 grep 会把 synthesis 门户的有意 `supersedes` 链也输出，因此不能作为“无悬挂 source_ids”的唯一判断；本次使用结构化 frontmatter 校验确认旧集合 ID 不再出现在任何页面的 `source_ids`。
   - 首轮 lint 发现两个移除旧集合引用后的 source 页出现 `related_ids:` 空键，已改为 `related_ids: []` / `related: []` 后重跑通过。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-04
 
-（评估者填写）
+**Verdict: PASS。** 独立复跑全部验证；旧集合清理、visibility 继承、图描述覆盖、数据仓边界均达标。
+
+### 独立复跑
+
+| 验证 | 结果 |
+| --- | --- |
+| dw lint `--check-only` | 0 error / 0 warning（含 supersedes 对称校验通过） |
+| dw graph | 30 节点 / 177 边 / 0 dangling / 0 ambiguous |
+| dw eval | score 100（archived 旧集合不计 endorsement） |
+| 旧集合 source_id 在 `source_ids` 引用 | **0**（结构化校验，只留 archived 页自身 + synthesis supersedes 链） |
+| 数据仓改动范围 | 20 文件全在 datawarehouse；提交后 clean |
+
+### 核查点
+
+1. **旧集合 source 清理（用户决策）**：`src_20260603` → `archived` + `superseded_by: synthesis`，synthesis `supersedes` 对称链（lint exit 0 证明对称）；17 细粒度 source 移除旧集合 related；source_ids 悬挂 0。
+2. **visibility 继承策略**：依赖库 `default_visibility: internal`、不逐页冗余写——符合 RFC-016 M1「缺失继承」设计，避免 30 页冗余。
+3. **图描述覆盖**：9 个含图 source 页的图片数 = 描述行数（如 dw-common-qa 19/19、quickbi-dynamic 17/17），75 图 0 dangling。
+4. **数据仓边界**：只改 datawarehouse 数据，不混引擎；数据仓单独 commit `64c9f5d`。
+
+### 偏离评估（合理，记一个小 backlog）
+
+- **source_manifest enum 缺 `superseded`/`archived`**：执行者用 `status: deleted` + notes 表"旧集合不再活跃"（enum 不支持更精确的 superseded）。这是合理 workaround，但暴露一个 schema 小 gap——`source_manifest.status` 没有 page 那样的 archived/superseded 语义。**建议进 backlog**（小：给 source_manifest.status 加 `superseded`/`archived`），不阻断本 task。
+- grep 不精确 → 改结构化校验；related_ids 空键 → `[]`。均合理修正。
+
+### 结论
+
+**RFC-016（ingest v2）三部曲全部闭环**：M1 visibility + M2 脱敏分级（016a）→ M3 富媒体规则（016b）→ datawarehouse 数据对齐（016c）。数仓库现在 = 内部不过度脱敏 + 75 图带描述可检索 + source 细粒度可溯源 + 旧集合清理 + eval 100。TASK-016c done 确认有效。
