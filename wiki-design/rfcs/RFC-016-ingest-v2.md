@@ -2,9 +2,9 @@
 id: rfc_20260603_016
 title: ingest v2 — visibility 分级 + 脱敏分级 + 富媒体（图片多模态）
 author: claude
-status: proposed
+status: accepted
 created: 2026-06-03
-updated: 2026-06-03
+updated: 2026-06-04  # accepted; decision by claude（用户授权 Path A），基于 codex v3 re-review 通过
 targets:
   - scripts/wiki_common.py
   - scripts/wiki_lint.py
@@ -194,9 +194,34 @@ datawarehouse 库首次 ingest 一批**内部 Wiki（需登录、含大量图片
 - assets 进 git 方向可以接受，但建议补文件大小/扩展名软限制（warning），例如单图 > 5MB 或非 png/jpg/jpeg/webp 报 warning，避免仓库体积失控。
 - 缺图描述 warning 的机械规则建议钉死为"图片引用后 1-3 个非空文本行内存在非图片文本"，避免 TASK 实现口径漂移。
 
-## Decision
+## Decision by claude · 2026-06-04（用户授权 Path A 代写）
 
-（待用户填写，或授权某 Agent 代写）
+**Accepted**。基于 Codex v3 re-review「通过(有非阻塞建议)」——5 阻塞点 + 1 残留全闭合。
+
+### 关键决策点
+
+| 决策 | 选择 |
+| --- | --- |
+| visibility | 统一 `public/internal/private`（页 + source，core optional，effective 缺失默认 `private`，internal 涵盖 team） |
+| 脱敏 | 硬底线 error + 软项按库 warning；`exclude_patterns` 作 legacy alias（兼容路线） |
+| assets | **A 方案** `raw/sources/assets/`（对齐现实、零迁移，相对引用 + lint 断引） |
+| 图解析 | 写入 AI 多模态（语义 + 关键文字），工具零 LLM；不引单独 OCR |
+| 拆分 | 016a 规则 + capture 迁移 / 016b 富媒体规则 / 016c 数据对齐 |
+
+### 三 TASK 顺序（c 依赖 a+b）
+
+`TASK-016a`（规则 + 三库 capture_policy 迁移）→ `TASK-016b`（富媒体规则）→ `TASK-016c`（datawarehouse 数据对齐）。
+
+### 留给 TASK 的事项
+
+- **016a**：visibility enum（core optional、缺失不补）+ effective 计算 + `capture_policy` v2 契约（`hard_redact`/`soft_redact`/`default_visibility` + `exclude_patterns` legacy alias + `CAPTURE_POLICY_LEGACY` warning）+ wiki_init v2 模板 + 迁移 engine/personal/datawarehouse 三库（datawarehouse soft 清空、`default_visibility:internal`）+ fixture + 迁移前后三库 lint。
+- **016b**：图引用断引校验（相对路径解析；**跳过的 scheme 写死 `http://`/`https://`/`data:`/`mailto:`** + fixture 覆盖 — Codex re-review 非阻塞；用 `strip_code_spans()` 跳代码块；归一化路径限实例根内拒 `../` 逃逸）+ 硬底线文本兜底（文件名/路径/描述/caption）+ 引用约定文档 + fixture。
+- **016c**（数据对齐，datawarehouse，数据仓单独提交）：补 source/页 `visibility:internal`；清理旧集合 source（`src_20260603` 标 superseded、18 页引用改指 17 细粒度 source）；现有图引用过 016b lint；按需核对/补图的多模态描述。
+
+### Apply 触发
+
+- 立即开 **TASK-016a**；done 后 016b，再 016c。
+- 各 done 后回本 RFC 追加 `## Applied in <commit-sha>`。
 
 ## Revision v2 by claude · 2026-06-04
 
