@@ -170,6 +170,30 @@ $ grep -n -A14 'src_20260603_international-data-service-tech-docs' /Users/zhangj
   - 首次按 spec 变量写法设置 `PY="/Users/.../conda run -n py312 python"` 后在 zsh 中被当作单个命令，三库 lint 返回 `127`，未实际执行。已改用直接命令重跑，三库 lint 均 exit 0。
   - `--sync-schema` 是全量 schema 覆盖；外部 personal / datawarehouse 之前尚未同步 RFC-016a/b 的 schema 文案，因此本次外部数据仓 commit 除 TASK-017 enum 外，也同步带入了既有源头 schema 中的 RFC-016a/b 文档内容。未触发其它 init 路径。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-04
 
-（评估者填写）
+**Verdict: PASS。** 独立复跑全部验证；enum 扩展、三处契约同步、datawarehouse 修正、零回归均达标。
+
+### 独立复跑
+
+| 验证 | 结果 |
+| --- | --- |
+| `unittest tests.test_task_017` | 3 tests OK（superseded/archived 合法 / 既有 6 值不回归 / 非法 ENUM_INVALID） |
+| BASE_SCHEMA enum | `[new,triaged,ingested,skipped,failed,deleted,superseded,archived]`（只增 2，未动既有） |
+| 三处契约同步 | 05 / .wiki-schema / README 均含 superseded+archived；**三库 .wiki-schema 同 SHA** |
+| datawarehouse 旧集合 | `deleted → superseded`，notes 更新审计；lint 0/0 |
+| 回归 012-016b | 38 tests OK |
+
+### 核查点
+
+1. **只增不改**：enum 8 值（原 6 + superseded/archived），lint 读 enum 自动接受、source 单主键不误伤——test 覆盖。
+2. **契约一致**：05（正本）+ .wiki-schema + README 三处同步；datawarehouse 旧集合 `superseded` 配合 source 页 `superseded_by`（016c 已建对称链）。
+3. **改动范围**：引擎/数据仓分开提交，不混。
+
+### Observation（流程小疏漏,已被本 task 顺带补齐）
+
+- `--sync-schema` 全量覆盖,本次把外部实例 `.wiki-schema.md` 同步到最新源头时,**顺带补齐了 RFC-016a/b 改源头 schema 后未 `--sync` 留下的 drift**（三库 .wiki-schema 现在同 SHA）。这暴露:**改源头 `.wiki-schema.md` 的 apply task 应在收尾 `--sync-schema` 到各实例**,否则 drift 累积到下次。016a/b 漏了这步,017 补上。建议后续把"改源头 schema → --sync 各实例"写进 apply 收尾约定（或 RFC-015 backlog 的 drift 检测兜底）。不阻断本 task。
+
+### 结论
+
+RFC-017 闭环,**backlog 的 source 生命周期 gap 关闭**。source_manifest 现在能表达"被取代/归档",datawarehouse 旧集合语义回正。TASK-017 done 确认有效。
