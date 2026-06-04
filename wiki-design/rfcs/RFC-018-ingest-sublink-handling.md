@@ -2,9 +2,9 @@
 id: rfc_20260604_018
 title: ingest 子链接处理（关联保留 + source-gap 登记 + 不递归）
 author: claude
-status: proposed
+status: accepted
 created: 2026-06-04
-updated: 2026-06-04
+updated: 2026-06-04  # accepted; decision by claude（用户授权 Path A），基于 codex 通过(有非阻塞建议)
 targets:
   - knowledge/.wiki-schema.md
   - wiki-design/02-workflows.md
@@ -50,6 +50,8 @@ reviewers:
 
 ### 3. source-gap 登记（子链接目标未 ingest / 正文未抓到）
 
+**触发条件**（Codex 非阻塞 #3，避免待办噪音）：仅对**与当前 source 知识内容相关、且目标未抓到 / 未 ingest** 的子链接建 source-gap；导航 / 页脚 / 工单入口等弱相关链接**不做**。
+
 建一个 **open-question**（`oq_YYYYMMDD_<slug>-source-gap`，沿用现状模式）：
 
 - `source_ids`：指向父 source（发现处）+ 子 source 占位（若建了）。
@@ -57,16 +59,18 @@ reviewers:
   - `## 已知信息`：父文档在哪提到、当前对子文档抓到了什么（标题 / 修改时间等元信息）。
   - `## 待确认`：缺什么、为何没抓到（权限 / iframe 空 / 需重新分享等）、是否含值得收的内容。
 - 这样"待补抓的文档"成为知识库里**可见、可导航、进图谱**的一等待办，而不是埋在 `review_queue.json`。
+- **与 `review_queue.type: source_gap` 的分工**（Codex 非阻塞 #4，二者不竞争）：`review_queue` 的 `source_gap` 仍可作 ingest/triage 阶段的**临时结构化队列**；一旦决定把缺口作为**长期待办**保留，晋升为 `wiki/open-questions/*-source-gap.md`。临时队列 → 长期待办，不删既有 enum。
 
 ### 4. 不自动递归（用户强调）
 
 - **绝不自动跟着链接 ingest**：内部链接会形成文档环（A→B→A），外部链接更会无限延伸 / 循环。
 - 只**登记** source-gap open-question 待办，由人决定哪些跟进、何时补抓。
-- 补抓时把对应 source-gap open-question 标 `archived`/`status` 收尾（配合 RFC-017 的 source `superseded`/`archived`）。
+- **用户显式补抓某子文档时，视为一次新的独立 ingest，不是从父文档自动递归**（Codex 非阻塞）。
+- 补抓后把对应 source-gap open-question 标 `status: archived` 收尾（配合 RFC-017 的 source `superseded`/`archived`）；外链正文说明只保留脱敏后形式，不留内部分享 token / 可泄漏登录态的完整 URL。
 
 ### 工具边界（为什么是约定而非工具强制）
 
-- 工具**读不到源文档原文**、也不知道一篇文档里有哪些子链接——所以"是否发现了所有子链接"**无法机械校验**，这条只能是**写入 AI 的约定**。
+- 现有规范工具**不把原始抓取内容 / 子链接清单作为契约输入**，也无法覆盖登录态 / 脱敏前 URL / iframe 空 / 抓取失败场景——所以"是否发现了所有子链接"**无法机械证明**（Codex 非阻塞 #1：避免"工具读不到原文"的绝对表述）。这条只能是**写入 AI 的约定**。
 - 工具侧无需新增：source-gap 就是 open-question，现有 lint 已校验其结构（id/引用完整）；本 RFC 不改 scripts。
 - 这是"机械校验 > 人肉遵守"原则的**能力边界例外**：工具够不到的地方，靠明确约定 + 可见的 open-question 待办兜住。
 
@@ -110,9 +114,32 @@ reviewers:
 
 （待 Codex 追加）
 
-## Decision
+## Decision by claude · 2026-06-04（用户授权 Path A 代写）
 
-（待用户填写，或授权某 Agent 代写）
+**Accepted**。Codex「通过(有非阻塞建议)」、无阻塞点。4 条非阻塞已**直接采纳进正文**（工具边界措辞精确化 / `status: archived` 笔误 / source-gap 触发条件防噪音 / review_queue 与 open-question 载体分工 / 补抓=独立 ingest）。
+
+### 关键决策点
+
+| 决策 | 选择 |
+| --- | --- |
+| 性质 | 纯**写入 AI 约定 + 流程文档**，不改 scripts（工具能力边界例外） |
+| 待办载体 | open-question `*-source-gap`（进图谱可导航）；review_queue source_gap 作 triage 临时队列 |
+| 递归 | 不递归；补抓=独立 ingest |
+| 关联 | 脱 token 留"链向 X" + related_ids 关联子 source |
+
+### 留给 TASK-018 spec 钉死的事项
+
+1. `wiki-design/02-workflows.md`：ingest 流程加"子链接处理"步骤（分类 / 关联保留 / source-gap 登记含触发条件 / 不递归）。
+2. `wiki-design/04-agent-rules.md`：Agent ingest 子链接行为约定。
+3. `knowledge/.wiki-schema.md`：ingest 子链接约定 + source-gap open-question 模式（之后 `--sync-schema` 到各实例）。
+4. 衍生同步：skill `references/schema.md` + 各库根 `AGENTS.md`（TASK 内或 follow-up）。
+5. **datawarehouse 仅确认对齐、不重做**（现状已符合：`oq_20260604_aliyun-data-analysis-source-gap` + 父子 related_ids + 子 source draft/low，lint 0/0）；必要时补正文骨架/命名。
+6. 不改 scripts、不加 lint 工具（保持纯约定）。
+
+### Apply 触发
+
+- 立即开 **TASK-018**（type: apply，executor: codex）。
+- done 后回本 RFC 追加 `## Applied in <commit-sha>`。
 
 ## Review by codex · 2026-06-04
 

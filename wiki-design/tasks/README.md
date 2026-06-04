@@ -27,6 +27,7 @@ Task 回答"怎么做、谁来做"，与 RFC 回答"要不要这么改"互补。
 | [task_20260604_016b](TASK-016b-apply-rfc-016-m3.md) | Apply RFC-016 M3 — 富媒体规则（图引用断引校验 + 硬底线文本兜底） | done | claude | codex | RFC-016 |
 | [task_20260604_016c](TASK-016c-datawarehouse-align.md) | Apply RFC-016 数据对齐 — datawarehouse 已 ingest 产物对齐最终规范 | done | claude | codex | RFC-016 |
 | [task_20260604_017](TASK-017-apply-rfc-017.md) | Apply RFC-017 — source_manifest.status 加 superseded/archived + datawarehouse 修正 | done | claude | codex | RFC-017 |
+| [task_20260604_018](TASK-018-apply-rfc-018.md) | Apply RFC-018 — ingest 子链接处理约定（流程文档，不改 scripts） | pending | claude | codex | RFC-018 |
 
 ## 状态机
 
