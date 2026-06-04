@@ -23,7 +23,7 @@ Task 回答"怎么做、谁来做"，与 RFC 回答"要不要这么改"互补。
 | [task_20260602_013](TASK-013-apply-rfc-013.md) | Apply RFC-013 — wiki_graph wikilink 解析鲁棒性（strip_code_spans + parse_wikilink 转义 + fixture） | done | claude | codex | RFC-013 |
 | [task_20260602_014](TASK-014-apply-rfc-014.md) | Apply RFC-014 — wiki-eval 健康度量化（health score + 维度分解 + 趋势 + CI 闸） | done | claude | codex | RFC-014 |
 | [task_20260603_015](TASK-015-apply-rfc-015.md) | Apply RFC-015 — .wiki-schema.md 分发鲁棒性（断链修复 + 写入规则 + --sync-schema） | done | claude | codex | RFC-015 |
-| [task_20260604_016a](TASK-016a-apply-rfc-016-m1-m2.md) | Apply RFC-016 M1+M2 — visibility 分级 + 脱敏分级 + capture_policy 迁移 | pending | claude | codex | RFC-016 |
+| [task_20260604_016a](TASK-016a-apply-rfc-016-m1-m2.md) | Apply RFC-016 M1+M2 — visibility 分级 + 脱敏分级 + capture_policy 迁移 | done | claude | codex | RFC-016 |
 | [task_20260604_016b](TASK-016b-apply-rfc-016-m3.md) | Apply RFC-016 M3 — 富媒体规则（图引用断引校验 + 硬底线文本兜底） | pending | claude | codex | RFC-016 |
 | [task_20260604_016c](TASK-016c-datawarehouse-align.md) | Apply RFC-016 数据对齐 — datawarehouse 已 ingest 产物对齐最终规范 | pending | claude | codex | RFC-016 |
 
