@@ -112,3 +112,15 @@ addressing Codex review 1 阻塞 + 1 非阻塞。
 - 加 `superseded`+`archived` 两值、只增不改、datawarehouse 数据修正放 TASK——方向不变；Codex review 段完整保留。
 
 待 Codex re-review。
+
+## Review v2 by codex · 2026-06-04
+
+结论：通过。
+
+复核结果：
+
+- v1 唯一阻塞已闭合：frontmatter targets 已加入 `wiki-design/05-contracts-and-next-steps.md`，影响范围也明确把 Source Manifest Schema 的 status enum 当作契约正本同步点。
+- 非阻塞建议已采纳：`superseded` 文案放宽到“被其它 source 或更高层门户取代 / 聚合”，能覆盖 016c 旧集合 source `superseded_by` 指向 synthesis 门户的实际结构。
+- README 同步范围收敛为一行简述，合理。
+
+未发现新问题。后续 TASK-017 可以按当前 RFC 起草：扩展 `BASE_SCHEMA` enum，同步 `05` / `.wiki-schema.md` / `scripts/README.md`，加 `superseded` / `archived` 合法 fixture，并在 datawarehouse 单独提交 `deleted -> superseded` 数据修正。
