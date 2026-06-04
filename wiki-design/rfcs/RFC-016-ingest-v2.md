@@ -77,7 +77,7 @@ datawarehouse 库首次 ingest 一批**内部 Wiki（需登录、含大量图片
 **多模态描述（写入 AI 做，含 OCR 能力，Codex/用户决策）**：对每张落地图，写入 AI（Claude/Codex 多模态）生成「**语义描述 + 图内关键文字**」进正本（供检索/答疑）；**不引单独 OCR 引擎**——LLM 一步出语义+关键文字，原图保底（密集表格/小字标"详见原图"）。工具**永不读图像素**。
 
 **lint 校验（纯机械）**：
-- **图引用断引**：`![](相对路径)` / `![[..]]` 指向的文件真实存在（断 → error；相对路径按引用页所在目录解析，类似 wikilink dangling 思路）。
+- **图引用断引**：`![](相对路径)` / `![[..]]` 指向的本地文件真实存在（断 → error；相对路径按引用页所在目录解析，类似 wikilink dangling）。**非阻塞采纳（Codex re-review）**：① 跳过 `http(s)://` / `data:` 等非本地引用；② 用 `strip_code_spans()`（RFC-013）跳过代码块里的假图片；③ 归一化目标路径并**限制在实例根内**（拒绝 `../` 逃逸实例）。
 - 可选 warning：嵌入图缺紧邻描述文本。
 - **硬底线文本兜底（Codex review 阻塞 #4）**：工具对**图片文件名、路径、相邻描述、source notes / manifest caption** 扫 `hard_redact` 正则，命中 error。工具**不声称**能发现图像素里的密钥——像素级判断归写入 AI + 人工 review。
 
@@ -105,7 +105,7 @@ datawarehouse 库首次 ingest 一批**内部 Wiki（需登录、含大量图片
 | 来源分级 vs 通用 visibility | **统一 `visibility`（页面+source 通用）** | 只给 source 加 tier（割裂，backlog visibility 还得再来一次） |
 | 图解析谁做 | **写入 AI 多模态（工具零 LLM）** | 工具内置 OCR/多模态（破坏确定性、引重依赖） |
 | 脱敏 | **硬底线 error + 软项按库 warning** | 一刀切全脱（过严、source 没内容）/ 全不脱（密钥泄漏） |
-| 图存哪 | **实例 `assets/` 进 git** | 外链（断）/ 不存只留描述（丢原图、答疑不能带图） |
+| 图存哪 | **`raw/sources/assets/` 原始证据层进 git**（A 方案，对齐现实，零迁移） | 实例根 `assets/`（需迁移、偏离 raw 证据分层）/ 外链（断）/ 只留描述（丢原图、答疑不能带图） |
 | 图描述存哪 | **进正本（紧邻嵌入）** | 只存 alt（信息太少，检索不到） |
 
 ## 影响范围
@@ -123,7 +123,7 @@ datawarehouse 库首次 ingest 一批**内部 Wiki（需登录、含大量图片
 - 既有 8 类页面、稳定 ID、canonical/display 双层。
 
 ### 落地后数据动作（TASK 内，外部实例迁移、单独提交）
-- datawarehouse：`capture_policy` 放宽（soft 清空）、`default_visibility: internal`；**重新 ingest 那批内部文档**（带图 + 不过度脱敏 + 补回 source 内容）。
+- datawarehouse：`capture_policy` 迁移 v2（soft 清空、`default_visibility: internal`）；**对齐 06-04 已 ingest 的产物**（补 visibility + 清理旧集合 source + 图引用过 lint + 核对图描述）——见 TASK-016c（新 agent 已 ingest，非重新 ingest）。
 - 各库 `--sync-schema` 同步 `.wiki-schema.md`。
 
 ### 零回归验证
@@ -265,3 +265,21 @@ addressing Codex review 5 个阻塞点 + 用户 3 项决策（A 方案 / 清理�
 - TASK-016b 做相对图片路径校验时，应跳过 `http(s)://`、`data:`、`mailto:` 等非本地引用；本 RFC 聚焦本地 raw 证据图。
 - 图片路径解析应使用 RFC-013 的 `strip_code_spans()`，避免把代码块里的 `![](../assets/example.png)` 当真引用。
 - 归一化后的本地目标路径应限制在实例根内，防止 `../../..` 指到实例外部文件。
+
+## Revision v3 by claude · 2026-06-04
+
+addressing Codex re-review 的 1 个阻塞残留 + 3 条非阻塞建议。
+
+### 阻塞残留修复
+
+- **替代方案表"图存哪"行**与 v2 A 方案冲突：原写"实例 `assets/` 进 git"，已改为 **"`raw/sources/assets/` 原始证据层进 git（A 方案，对齐现实，零迁移）"**，拒绝项列为 实例根 `assets/` / 外链 / 只留描述。避免误导 Decision/TASK。
+
+### 非阻塞采纳（写进 M3 lint 校验）
+
+- 相对图片断引校验：① 跳过 `http(s)://` / `data:` / `mailto:` 等非本地引用；② 用 `strip_code_spans()`（RFC-013）跳过代码块假图片；③ 归一化路径并限制在实例根内（拒绝 `../` 逃逸）。
+
+### 顺带一致性修正
+
+- 「落地后数据动作」原写 datawarehouse "重新 ingest"，改为"**对齐 06-04 已 ingest 产物**"（新 agent 已 ingest，016c 是对齐非重灌），与 TASK 拆分一致。
+
+待 Codex re-review。
