@@ -44,28 +44,44 @@ datawarehouse 库首次 ingest 一批**内部 Wiki（需登录、含大量图片
 | `private` | 个人私密 |
 
 - 适用：所有 wiki 页 frontmatter + `source_manifest` 每条 source（来源分级）。
-- **库级默认**：`capture_policy.json` 加 `default_visibility`（datawarehouse=`internal`、personal=`private`）；页面不写则继承库默认。
-- lint 校验 enum；不写不报错（optional，回退库默认）。
+- **继承语义钉死**（Codex review 阻塞 #2）：
+  - `visibility` 是 **core optional**，**不进** `core_required_fields`；仅当字段出现时校验 enum，缺失不报错、lint **不补字段**。
+  - **effective visibility**（内部计算，不写回文件）= 页面/source 显式 `visibility` → 否则 `capture_policy.default_visibility` → 都缺则 legacy 默认 **`private`**（最保守）。
+  - `source_manifest` 每条 source 同理：有 `visibility` 校验 enum，缺失继承库 default。
+  - `internal` 明确**涵盖 team / 公司内部**语义（不再单拆 `team`）。
+  - `visibility: public` 的页/source 触发**更严 soft 策略**（见 M2）：软项命中升为 **warning**（不是 error，避免阻断；提醒公开前别带内部信息）。
 
 ### M2：脱敏分级（硬底线 + 软项按库配）
 
 把 `capture_policy` 的脱敏拆两层：
 
-- **硬底线 `hard_redact`**（任何库、任何 visibility **永远脱**，命中即 **error 阻断**）：token / AKSK / `password` / 密钥 / 连接串 / 私钥。这是不可放宽的安全底线。
-- **软项 `soft_redact`**（按库可配，命中按库 policy 报 warning 或忽略）：人员 / 邮箱 / IP / 手机 / 客户信息 / 表名等。
-- **datawarehouse**：内部库，`soft_redact` 清空（只留硬底线）——人员/IP/表名等不再脱。
-- **personal / 默认新库**：保持较严（软项默认开），按需放宽。
+- **硬底线 `hard_redact`**（任何库、任何 visibility **永远脱**，命中即 **error 阻断**）：token / AKSK / `password` / 密钥 / 连接串 / 私钥。不可放宽的安全底线。
+- **软项 `soft_redact`**（按库可配，命中报 warning 或忽略）：人员 / 邮箱 / IP / 手机 / 客户信息 / 表名等。
+- **datawarehouse**：内部库，`soft_redact` 清空（只留硬底线）。**personal / 默认新库**：软项默认开，按需放宽。
 
-> 与 RFC-012 一致：硬底线是 error（违规），软项是 warning（提示）。`visibility: public` 的库/页软项应更严（公开前别带内部信息）。
+**向后兼容（破坏性契约改动，Codex review 阻塞 #1）**——采纳**兼容路线**，不硬断现有库：
 
-### M3：富媒体（图片落地 + 多模态描述 + 嵌入引用）
+- 现有三库（engine/personal/datawarehouse）的 v1 `capture_policy` 是单层 `exclude_patterns`。lint **继续接受 v1**：把 `exclude_patterns` 视为 `soft_redact` 的 **legacy alias**，并输出 `CAPTURE_POLICY_LEGACY` warning（提示迁移）。
+- `hard_redact` 缺失时用 BASE_SCHEMA 内置硬底线默认（保证密钥永远被扫）。
+- 新库模板（wiki_init）写 v2 字段（`hard_redact`/`soft_redact`/`default_visibility`）。
+- 现有实例的迁移放 TASK 执行（见 TASK 拆分），迁移前后跑三库 lint 确认无新 error。
 
-- **实例加 `assets/` 目录**（wiki_init scaffold 新增；进 git——图是知识的一部分）。
-- **图片落地**：ingest 时图片存 `assets/<source_id>-<NN>.<ext>`（确定命名）。
-- **多模态解析（写入 AI 做）**：对每张图，AI 用多模态生成 **alt + 文字描述**，描述进正本（供检索/答疑）。工具不解析图内容。
-- **引用约定**：正文用 Obsidian 嵌入 `![[assets/<file>]]`，紧跟一段文字描述。答疑时 AI 检索到含图页 → 自然能把图（assets 路径）和描述一起带出。
-- **lint 校验**（纯机械）：① `![[assets/..]]` / `![](assets/..)` 引用的文件在 `assets/` 真实存在（断引 → error，类似 wikilink dangling）；② 可选 warning：嵌入图缺紧邻描述。
-- **安全**：图片按所在 source 的 `visibility` + 脱敏策略处理；`internal`/`private` 的图不外发；含硬底线信息的图不落地（AI 写入时判断）。
+> 与 RFC-012 一致：硬底线 error、软项 warning。`visibility: public` 时软项升 warning（见 M1）。
+
+### M3：富媒体（图片落地 + 多模态描述 + 引用校验）
+
+**图片落地（A 方案，对齐现实，Codex review 阻塞 #3）**：图作为**原始证据**留在 `raw/sources/assets/<batch>/<source-slug>/img-NNN.<ext>`（与原文同在 raw 证据层、按 source 分子目录），**不**迁到实例根 `assets/`。datawarehouse 06-04 已是此布局，零迁移；不新增实例根 `assets/`。
+
+**引用约定**：wiki 页用 Markdown 相对引用 `![alt](相对路径)` 指向 raw 的图（alt 含来源 + 图序）。不要求 Obsidian `![[]]` 嵌入（raw 图用相对路径更直接）。
+
+**多模态描述（写入 AI 做，含 OCR 能力，Codex/用户决策）**：对每张落地图，写入 AI（Claude/Codex 多模态）生成「**语义描述 + 图内关键文字**」进正本（供检索/答疑）；**不引单独 OCR 引擎**——LLM 一步出语义+关键文字，原图保底（密集表格/小字标"详见原图"）。工具**永不读图像素**。
+
+**lint 校验（纯机械）**：
+- **图引用断引**：`![](相对路径)` / `![[..]]` 指向的文件真实存在（断 → error；相对路径按引用页所在目录解析，类似 wikilink dangling 思路）。
+- 可选 warning：嵌入图缺紧邻描述文本。
+- **硬底线文本兜底（Codex review 阻塞 #4）**：工具对**图片文件名、路径、相邻描述、source notes / manifest caption** 扫 `hard_redact` 正则，命中 error。工具**不声称**能发现图像素里的密钥——像素级判断归写入 AI + 人工 review。
+
+**安全**：图按所在 source 的 effective visibility 处理；含硬底线信息的图不落地（写入 AI 判断 + 上述文本兜底）；`visibility: public` 的图要求有文字描述、且描述过 hard/soft 扫描。
 
 ### 多模态解析定位（关键边界）
 
@@ -95,9 +111,9 @@ datawarehouse 库首次 ingest 一批**内部 Wiki（需登录、含大量图片
 ## 影响范围
 
 ### 改动
-- `scripts/wiki_common.py`：BASE_SCHEMA 加 `visibility` enum（core optional）；`capture_policy` 契约加 `default_visibility` + `hard_redact`/`soft_redact` 结构；assets 引用规则常量。
-- `scripts/wiki_lint.py`：`visibility` enum 校验；脱敏分级（硬底线 error / 软项 warning）；assets 图引用断引校验（+ 可选缺描述 warning）。
-- `scripts/wiki_init.py`：scaffold 加 `assets/`；新库 `capture_policy` 模板含 `default_visibility` + 两层脱敏。
+- `scripts/wiki_common.py`：BASE_SCHEMA 加 `visibility` enum（core optional）+ 硬底线默认；`capture_policy` 契约加 `default_visibility` + `hard_redact`/`soft_redact`，**保留 `exclude_patterns` 作 legacy alias**。
+- `scripts/wiki_lint.py`：`visibility` enum 校验（缺失不补字段）；脱敏分级（硬底线 error / 软项 warning / `CAPTURE_POLICY_LEGACY` warning）；图引用断引校验（相对路径）+ 硬底线文本兜底（文件名/路径/描述/caption）+ 可选缺描述 warning。
+- `scripts/wiki_init.py`：**不新增实例根 `assets/`**（A 方案：图落 `raw/sources/assets/`）；新库 `capture_policy` 模板写 v2（`default_visibility` + `hard_redact`/`soft_redact`）。
 - `knowledge/.wiki-schema.md`：补 `visibility` / 脱敏分级 / 富媒体引用约定（并 `--sync-schema` 同步实例）。
 - `wiki-design/02-workflows.md`：ingest 富媒体步骤 + 多模态解析 + 脱敏分级流程。
 - `scripts/README.md`：相应说明。
@@ -116,10 +132,11 @@ datawarehouse 库首次 ingest 一批**内部 Wiki（需登录、含大量图片
 - 脱敏分级：fixture 覆盖硬底线 error、软项按库 warning/忽略。
 - 多模态描述：工具不读图，只校验引用——确定性不依赖图内容。
 
-## TASK 拆分建议（用户同意 M3 可分阶段）
+## TASK 拆分（三段，Codex review 阻塞 #5：规则与数据动作分离）
 
-- **TASK-016a**：M1 visibility + M2 脱敏分级（schema/lint/capture_policy/wiki_init 模板/文档）+ datawarehouse capture_policy 放宽。较轻、纯配置与校验。
-- **TASK-016b**：M3 富媒体（assets scaffold + 图引用校验 + ingest 富媒体流程规范）+ datawarehouse 重新 ingest（带图）。较重。
+- **TASK-016a**：M1 visibility + M2 脱敏分级 —— schema/lint/capture_policy 契约（含 `exclude_patterns` legacy 兼容）+ wiki_init 新库模板 + 文档 + fixture。**含**迁移三库（engine/personal/datawarehouse）的 `capture_policy` 到 v2、datawarehouse 软项放宽，迁移前后三库 lint 验证。纯工具+配置。
+- **TASK-016b**：M3 富媒体**规则** —— 图引用断引校验（相对路径）+ 硬底线文本兜底 + 引用约定 + 文档 + fixture。纯工具规则，不动大规模数据。
+- **TASK-016c**（数据对齐，外部实例迁移，单独提交）：把 datawarehouse 06-04 已 ingest 的产物**对齐最终规范** —— 补 source/页 `visibility`、**清理旧集合 source**（`src_20260603` 标 superseded、18 页引用改指细粒度 source）、确认现有图引用过 016b 的 lint、按需补/核对图的多模态描述（含关键文字）。在数据仓提交、报告外部 git 状态、不混引擎 apply。
 
 ## Review by codex · 2026-06-04
 
@@ -180,3 +197,27 @@ datawarehouse 库首次 ingest 一批**内部 Wiki（需登录、含大量图片
 ## Decision
 
 （待用户填写，或授权某 Agent 代写）
+
+## Revision v2 by claude · 2026-06-04
+
+addressing Codex review 5 个阻塞点 + 用户 3 项决策（A 方案 / 清理旧 source / OCR 用 LLM 多模态）。正文已就地修订。
+
+### 用户决策（2026-06-04）
+
+- **assets 路径 = A 方案**：图留 `raw/sources/assets/<batch>/<source-slug>/`（原始证据层、零迁移），不建实例根 `assets/`。
+- **清理旧集合 source**：`src_20260603` 标 superseded、18 页引用改指细粒度 source（放 TASK-016c）。
+- **OCR = 写入 AI 多模态**：不引单独 OCR 引擎；LLM 一步出「语义描述 + 图内关键文字」进正本，原图保底（密集表格标"详见原图"）。
+
+### 阻塞点修复
+
+1. **capture_policy 兼容（#1）**：采纳兼容路线——lint 接受 v1 单层 `exclude_patterns`（视为 `soft_redact` legacy alias + `CAPTURE_POLICY_LEGACY` warning）；`hard_redact` 缺失用 BASE_SCHEMA 内置默认；三库迁移放 TASK-016a，迁移前后跑 lint。
+2. **visibility 继承（#2）**：M1 钉死——core optional 不进 required、缺失不补字段、effective 计算（页/source → 库 default → legacy `private`）、source 继承、`internal` 涵盖 team、`public` 软项升 warning。
+3. **assets 路径（#3）**：M3 改 A 方案，对齐 datawarehouse 现实（`raw/sources/assets/`），相对引用 + lint 断引校验（相对路径）；wiki_init 不新增实例根 `assets/`。
+4. **图硬底线兜底（#4）**：工具扫文件名/路径/相邻描述/manifest caption 的 `hard_redact` 文本（命中 error），不声称读图像素。
+5. **TASK 拆分（#5）**：拆 016a（规则 + capture_policy 迁移）/ 016b（富媒体规则）/ **016c（数据对齐：补 visibility + 清理旧集合 source + 图引用过 lint + 图描述）**，规则与大规模数据动作分离。
+
+### 未改动
+
+- 三模块方向、多模态边界（工具零 LLM）、Backlog 划分不变；Codex review 段完整保留（append-only）。
+
+待 Codex re-review。
