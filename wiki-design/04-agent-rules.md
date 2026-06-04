@@ -56,6 +56,18 @@ knowledge/.wiki/inbox_index.json
 - 单个来源摘要进入 `wiki/sources/`。
 - 一次重要更新后写入 `log.md`。
 
+## Ingest 子链接规则
+
+摄入 source 时，Agent 必须处理正文里的子链接，但不自动递归。
+
+- 内部文档链接：脱掉 token / 内部 URL，但保留"链向 X 文档"的语义；目标值得收时建子 source，占位 source 用 `status: draft` + `confidence: low`，父 source 用 `related_ids` / `related` 关联子 source。
+- source-gap：只有子链接与当前 source 的知识内容相关，且目标未抓到或未 ingest 时，才建 `wiki/open-questions/*-source-gap.md`。正文至少包含 `## 已知信息` 和 `## 待确认`，说明父文档发现处、当前抓到的信息、缺口和补抓条件。
+- 弱相关链接：导航、页脚、泛工单入口、广告、站点通用帮助入口等不建 source-gap。
+- 外部链接：只保留脱敏后的外链说明，不建 source、不跟进。
+- 不递归：不自动跟内链 / 外链继续 ingest；用户明确要求补抓某个子文档时，作为新的独立 ingest 处理。
+
+`review_queue.type: source_gap` 只作为 triage 阶段临时队列或人工审查入口；决定长期保留的缺口应晋升为 `wiki/open-questions/*-source-gap.md`，使其可被图谱、查询和回答阶段看见。
+
 ## 审核规则
 
 大规模更新前先输出 triage：

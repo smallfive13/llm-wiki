@@ -113,6 +113,12 @@ obsidian/knowledge/               # 一个 git repo 包多个 vault
    - 生成来源摘要
    - 富媒体处理：原始图片证据落在 `raw/sources/assets/`，写入 AI 生成语义描述和关键文字摘录；wiki 正文使用相对 `![alt](../../raw/sources/assets/...)` 引用，并在同一行或随后 3 行写紧邻描述
    - 富媒体安全兜底：含 hard_redact 信息的图片不落地；工具只扫图片文件名、路径、相邻描述和 manifest caption/notes，不读图像像素
+   - **子链接处理**（写入 AI 约定，不新增工具强制）：
+     - 内部文档链接：脱掉 token / 内部 URL，但保留"父文档链向 X 文档"的语义事实；目标值得收时建子 source，正文未抓到时用 `status: draft` + `confidence: low` 占位，父 source 通过 `related_ids` + `related` 关联子 source
+     - source-gap 登记：只有与当前 source 知识内容相关、且目标未抓到或未 ingest 时，才建 `wiki/open-questions/oq_YYYYMMDD_<slug>-source-gap.md`；导航、页脚、泛工单入口等弱相关链接不做
+     - source-gap 正文必须包含 `## 已知信息` 和 `## 待确认`；`source_ids` 指父 source + 子 source 占位（如有），说明发现处、当前抓到的元信息、缺什么以及为什么没抓到
+     - 外部链接：只在正文保留脱敏后的外链说明，不建 source、不跟进
+     - 不递归：绝不自动跟着内链 / 外链继续 ingest；用户显式要求补抓某个子文档时，视为一次新的独立 ingest
    - **entity alias matching**：对每个识别到的实体名，依次：
      1. 在所有 entity 页的 `id` / H1 标题 / `aliases` 中查找完全匹配，或在 `knowledge/.wiki/normalized_alias_index.json` 中查规范化匹配
      2. 命中 → 复用现有页面（更新 `last_verified`，必要时补充 alias 到正名页）
@@ -128,6 +134,8 @@ obsidian/knowledge/               # 一个 git repo 包多个 vault
    - 刷新图谱和搜索索引
    - 运行 `python3 scripts/wiki_lint.py`
 ```
+
+补抓 source-gap 时，不从父 source 自动递归；应把待补子文档作为新的 ingest 输入，补齐后把对应 `*-source-gap` open-question 标为 `status: archived`，并在正文记录收尾结果。
 
 Triage 如果需要异步人工处理，应写入 `knowledge/.wiki/review_queue.json`，字段见
 [05-contracts-and-next-steps.md](05-contracts-and-next-steps.md)。不要让 Agent 自由发挥 review 字段名。

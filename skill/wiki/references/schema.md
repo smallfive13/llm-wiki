@@ -101,8 +101,13 @@ suggested_target_title: <晋升后页面标题>
 1. 算 `sha256`
 2. 在 `raw/source_manifest.json` 的 `sources[]` 追加一条：`source_id`（`src_YYYYMMDD_slug`）/ title / source_type / hash_sha256 / original_path / status: triaged / summary_page_id: null
 3. 抽实体 → alias matching（查 `.wiki/normalized_alias_index.json` 复用现有 entity，编辑距离近的入 review_queue duplicate）
-4. 冲突/重复/缺口 → 写 `.wiki/review_queue.json` 的 `items[]`
-5. 给用户审阅计划，**先不写 wiki/**
+4. 子链接处理：
+   - 内部文档链接：脱 token / 内部 URL，但保留"链向 X 文档"；目标值得收时建子 source，正文未抓到时用 `status: draft` + `confidence: low` 占位，父 source 用 `related_ids` / `related` 关联子 source
+   - 相关且未抓到 / 未 ingest 的子文档：建 `wiki/open-questions/*-source-gap.md`，正文写 `## 已知信息` + `## 待确认`
+   - 导航、页脚、泛工单入口等弱相关链接不建 source-gap；外部链接只保留脱敏说明，不建 source
+   - 不自动递归；用户要求补抓某子文档时，作为新的独立 ingest
+5. 冲突/重复/缺口 → 写 `.wiki/review_queue.json` 的 `items[]`；其中 `source_gap` 只作临时队列，长期待办晋升为 open-question
+6. 给用户审阅计划，**先不写 wiki/**
 
 ### Apply（用户确认后）
 

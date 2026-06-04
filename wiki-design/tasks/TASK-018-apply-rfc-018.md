@@ -3,7 +3,7 @@ id: task_20260604_018
 title: Apply RFC-018 — ingest 子链接处理约定（流程文档，不改 scripts）
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-06-04
 updated: 2026-06-04
@@ -71,9 +71,77 @@ $PY scripts/wiki_lint.py --root $DW --check-only; echo "dw exit=$?"
 - commit sha（引擎/衍生/数据仓分开）
 - 偏离或异常
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-06-04
 
-（执行者填写）
+- Step 0 spec-review 结论：
+  - `wiki-design/02-workflows.md` 的落点是"摄入资料"两步流程中的 Triage 子步骤，子链接处理应与来源摘要、富媒体处理、alias matching 并列。
+  - `wiki-design/04-agent-rules.md` 的落点是"内容规则"之后、"审核规则"之前，作为 Agent ingest 行为约定。
+  - `knowledge/.wiki-schema.md` 的落点是 JSON 契约之后、富媒体引用之前，补充 ingest 写入职责、source-gap open-question 模式，以及 `review_queue.type: source_gap` 与长期 open-question 的分工。
+  - 未发现需先向用户确认的歧义；本 task 保持纯约定 / 流程文档，不改 scripts。
+
+- 改动文件：
+  - 引擎正本：`wiki-design/02-workflows.md`、`wiki-design/04-agent-rules.md`、`knowledge/.wiki-schema.md`。
+  - 衍生同步：`skill/wiki/references/schema.md`、`/Users/zhangjunwu/workspace/obsidian/knowledge/personal/.wiki-schema.md`、`/Users/zhangjunwu/workspace/obsidian/knowledge/datawarehouse/.wiki-schema.md`、`/Users/zhangjunwu/workspace/obsidian/knowledge/datawarehouse/AGENTS.md`。
+  - 状态记录：`wiki-design/tasks/TASK-018-apply-rfc-018.md`、`wiki-design/tasks/README.md`，以及提交后回填 `wiki-design/rfcs/RFC-018-ingest-sublink-handling.md`。
+  - 确认未修改 `scripts/`。
+
+- `--sync-schema` 结果：
+
+```text
+personal:
+old_sha256: 5b5438835cc5109026492fc87521a52d76f340c7c55e62d837e5b8f0d20fe79c
+new_sha256: 72fa784381b745ae4aba192bab0c3d109d5f3a4e1a96d708389bff4010e4e46d
+action: replaced
+personal-sync exit=0
+
+datawarehouse:
+old_sha256: 5b5438835cc5109026492fc87521a52d76f340c7c55e62d837e5b8f0d20fe79c
+new_sha256: 72fa784381b745ae4aba192bab0c3d109d5f3a4e1a96d708389bff4010e4e46d
+action: replaced
+dw-sync exit=0
+```
+
+- 验证输出：
+
+```text
+$ grep -lE '子链接|source-gap|source gap' wiki-design/02-workflows.md wiki-design/04-agent-rules.md knowledge/.wiki-schema.md skill/wiki/references/schema.md
+wiki-design/02-workflows.md
+wiki-design/04-agent-rules.md
+knowledge/.wiki-schema.md
+skill/wiki/references/schema.md
+
+$ git diff --name-only | rg '^scripts/' || true
+<no output>
+
+$ conda run -n py312 python -m unittest tests.test_task_012 tests.test_task_013 tests.test_task_014 tests.test_task_015 tests.test_task_016a tests.test_task_016b tests.test_task_017
+Ran 41 tests in 6.439s
+OK
+
+$ conda run -n py312 python scripts/wiki_lint.py --root /Users/zhangjunwu/workspace/obsidian/knowledge/datawarehouse --check-only
+错误: 0 · 警告: 0
+dw exit=0
+
+$ conda run -n py312 python scripts/wiki_graph.py --root /Users/zhangjunwu/workspace/obsidian/knowledge/datawarehouse
+wiki-graph: 32 nodes, 205 edges, 2 communities
+
+$ conda run -n py312 python scripts/wiki_eval.py --root /Users/zhangjunwu/workspace/obsidian/knowledge/datawarehouse --json
+score: 100, status: ok, pages: 32
+```
+
+- datawarehouse 对齐确认：
+  - `oq_20260604_aliyun-data-analysis-source-gap` 已存在，含 `## 已知信息` / `## 待确认`。
+  - 父 source `src_20260604_dw-common-qa` 通过 `related_ids` 指向子 source `src_20260604_aliyun-data-analysis`。
+  - 子 source `src_20260604_aliyun-data-analysis` 为 `status: draft` + `confidence: low`，并关联 source-gap。
+  - 本 task 未重做 datawarehouse 既有内容。
+
+- commit sha：
+  - 外部 schema/AGENTS 同步 commit：`df074d42808dd72dfd261273496d5ecf8a04454e`。
+  - 引擎 apply commit：本 Execution log 与实现同轮提交，最终 SHA 在提交完成后确定。
+  - RFC Applied 闭环 commit：提交后单独追加。
+
+- 偏离或异常：
+  - datawarehouse 仓库执行前已有多处知识页 / manifest 未提交改动；本 task 只新增并提交 `datawarehouse/.wiki-schema.md`、`datawarehouse/AGENTS.md` 和 `personal/.wiki-schema.md`，不回退、不 stage、不提交既有 datawarehouse 内容。
+  - 首次尝试用 shell 管道解析 `wiki_eval --json` 输出时，内联 Python 引号导致 JSONDecodeError；已改用直接输出检查，`score: 100` / `status: ok` / `pages: 32`。
 
 ## Evaluation by claude · <date>
 
