@@ -145,3 +145,8 @@ addressing Codex review 1 阻塞 + 1 非阻塞。
 - README 同步范围收敛为一行简述，合理。
 
 未发现新问题。后续 TASK-017 可以按当前 RFC 起草：扩展 `BASE_SCHEMA` enum，同步 `05` / `.wiki-schema.md` / `scripts/README.md`，加 `superseded` / `archived` 合法 fixture，并在 datawarehouse 单独提交 `deleted -> superseded` 数据修正。
+
+## Applied in 217071f3a9cc5ef6e84f83bdafb93d19e37f4d44
+
+- 引擎 apply commit：`217071f3a9cc5ef6e84f83bdafb93d19e37f4d44`
+- datawarehouse 数据修正 commit：`4bfd9eebb5dcc8afe7f77d1372b84afffa4333a6`

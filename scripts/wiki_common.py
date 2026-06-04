@@ -78,7 +78,7 @@ BASE_SCHEMA: Dict[str, Any] = {
                 "adapter",
             ],
             "source_types": ["pdf", "markdown", "web", "chat", "image", "manual", "code"],
-            "statuses": ["new", "triaged", "ingested", "skipped", "failed", "deleted"],
+            "statuses": ["new", "triaged", "ingested", "skipped", "failed", "deleted", "superseded", "archived"],
             "adapters": ["local_file", "web_clipper", "manual", "llm_wiki_app", "custom"],
         },
         "review_queue": {

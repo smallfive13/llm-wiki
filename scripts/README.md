@@ -47,6 +47,8 @@ python3 scripts/wiki_lint.py --scan-wiki-pii  # 加扫 wiki/ PII（默认只扫 
 7. **脱敏扫描** — 按 `capture_policy.hard_redact` / `soft_redact`，兼容 legacy `exclude_patterns`
 8. **跨流程一致性** — manifest <-> 摘要页 / review_queue path / inbox archive 状态
 
+`source_manifest.sources[].status` 合法值：`new` / `triaged` / `ingested` / `skipped` / `failed` / `deleted` / `superseded` / `archived`。
+
 后续 RFC 增强：
 
 9. **图引用校验** — wiki 正文图片引用只校验文本路径：跳过代码块和 `http://` / `https://` / `data:` / `mailto:`，本地相对路径必须解析到实例根内且目标存在；图片路径、文件名、相邻描述和 manifest caption/notes 会按 `hard_redact` 做硬底线兜底，工具不读图像素。

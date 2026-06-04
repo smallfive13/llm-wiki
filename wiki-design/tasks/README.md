@@ -26,7 +26,7 @@ Task 回答"怎么做、谁来做"，与 RFC 回答"要不要这么改"互补。
 | [task_20260604_016a](TASK-016a-apply-rfc-016-m1-m2.md) | Apply RFC-016 M1+M2 — visibility 分级 + 脱敏分级 + capture_policy 迁移 | done | claude | codex | RFC-016 |
 | [task_20260604_016b](TASK-016b-apply-rfc-016-m3.md) | Apply RFC-016 M3 — 富媒体规则（图引用断引校验 + 硬底线文本兜底） | done | claude | codex | RFC-016 |
 | [task_20260604_016c](TASK-016c-datawarehouse-align.md) | Apply RFC-016 数据对齐 — datawarehouse 已 ingest 产物对齐最终规范 | done | claude | codex | RFC-016 |
-| [task_20260604_017](TASK-017-apply-rfc-017.md) | Apply RFC-017 — source_manifest.status 加 superseded/archived + datawarehouse 修正 | pending | claude | codex | RFC-017 |
+| [task_20260604_017](TASK-017-apply-rfc-017.md) | Apply RFC-017 — source_manifest.status 加 superseded/archived + datawarehouse 修正 | done | claude | codex | RFC-017 |
 
 ## 状态机
 

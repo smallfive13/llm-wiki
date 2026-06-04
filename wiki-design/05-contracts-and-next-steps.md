@@ -202,7 +202,7 @@ knowledge/
 | `source_url` | 网页或下载来源；本地私有文件可为 `null` |
 | `imported_at` | 首次登记时间 |
 | `last_ingested_at` | 最近一次进入 ingest 的时间 |
-| `status` | `new`、`triaged`、`ingested`、`skipped`、`failed`、`deleted` |
+| `status` | `new`、`triaged`、`ingested`、`skipped`、`failed`、`deleted`、`superseded`、`archived` |
 | `summary_page_id` | source 摘要页 frontmatter 的 `id` 字段。**未生成摘要页时为 `null`；已生成时必须等于 `source_id`**。 |
 | `summary_page_path` | 可选显示层；对应 source 页面当前路径，未生成时为 `null` |
 | `adapter` | `local_file`、`web_clipper`、`manual`、`llm_wiki_app`、`custom` |
