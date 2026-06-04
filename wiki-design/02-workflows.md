@@ -142,8 +142,9 @@ Triage 如果需要异步人工处理，应写入 `knowledge/.wiki/review_queue.
   │     └── 在回答末尾输出：💡 建议 capture：<摘要> · 类型 suggested: <type>
   │           用户回复"存"/"capture" → 写 knowledge/inbox/YYYYMMDD-HHmmss-<slug>.md
   │
-  └── auto_capture: true → 检查 exclude_patterns / exclude_paths
-        ├── 命中任一 PII 正则 / 排除路径 → 强制降级为"建议 capture"
+  └── auto_capture: true → 检查 hard_redact / soft_redact / exclude_paths
+        ├── 命中 hard_redact / 排除路径 → 强制降级为"建议 capture"
+        ├── 命中 soft_redact → 输出 warning 后降级为"建议 capture"
         └── 未命中 → 直接写 inbox/
               └── 在回答末尾输出：✏️ 已 capture：inbox/<filename> · <摘要>
 ```

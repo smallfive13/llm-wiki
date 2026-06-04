@@ -44,7 +44,7 @@ python3 scripts/wiki_lint.py --scan-wiki-pii  # 加扫 wiki/ PII（默认只扫 
 4. **source 单主键** — `source_id == id == summary_page_id`
 5. **entity 别名** — alias 唯一 + canonical_id 不链式 + 派生 `.wiki/normalized_alias_index.json`
 6. **inbox 派生** — `.wiki/inbox_index.json`
-7. **PII 扫描** — 按 `capture_policy.exclude_patterns`
+7. **脱敏扫描** — 按 `capture_policy.hard_redact` / `soft_redact`，兼容 legacy `exclude_patterns`
 8. **跨流程一致性** — manifest <-> 摘要页 / review_queue path / inbox archive 状态
 
 ### 完整 error code 表
@@ -76,6 +76,9 @@ python3 scripts/wiki_lint.py --scan-wiki-pii  # 加扫 wiki/ PII（默认只扫 
 | `PII_HIT_WIKI` | warning | wiki/ 命中 PII（仅 `--scan-wiki-pii`） |
 | `STALE_PAGE` | warning | active 页超过对应 type 的 staleness 阈值未复核 |
 | `UNVERIFIED_HIGH` | warning | active 非 source/query 页 `confidence: high` 但 `review: false` |
+| `CAPTURE_POLICY_LEGACY` | warning | capture_policy 仍使用 v1 `exclude_patterns` |
+| `SOFT_REDACT_HIT` | warning | 内容命中 soft_redact，需按库策略确认或脱敏 |
+| `HARD_REDACT_HIT` | error | 内容命中 hard_redact，必须移除密钥/凭证/连接串等硬底线敏感内容 |
 | `PROFILE_SCHEMA_VERSION` | error | `.wiki-profile.json` schema_version 与引擎不兼容 |
 | `PROFILE_PREFIX_FORMAT` | error | profile `id_prefix` 不是 2-5 位小写字母 |
 | `PROFILE_PREFIX_COLLISION` | error | profile `id_prefix` 撞 base/inbox/其它 profile prefix |
@@ -296,7 +299,7 @@ obsidian: created|merged|unchanged
 - `.wiki-schema.md` 从引擎 `knowledge/.wiki-schema.md` 拷贝，仅在目标缺失时写入
 - `raw/source_manifest.json`
 - `.wiki/review_queue.json`
-- `.wiki/capture_policy.json`，默认 `auto_capture: false`、`exclude_paths: []`、`max_inbox_files: 100`
+- `.wiki/capture_policy.json`，默认 v2：`auto_capture: false`、`default_visibility: private`、`hard_redact` 内置硬底线、`soft_redact` 默认软项、`exclude_paths: []`、`max_inbox_files: 100`
 - `.obsidian/app.json`，默认创建或合并 `userIgnoreFilters: ["maps/", ".wiki/"]`
 
 ### git 与自检

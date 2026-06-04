@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, List, Optional
 
+from wiki_common import BASE_SCHEMA
 
 LOCAL_TZ = timezone(timedelta(hours=8))
 EXIT_CONFIG = 2
@@ -70,6 +71,20 @@ class Counters:
 
 def now_iso() -> str:
     return datetime.now(LOCAL_TZ).replace(microsecond=0).isoformat()
+
+
+def default_capture_policy() -> dict[str, Any]:
+    contract = BASE_SCHEMA["json_contracts"]["capture_policy"]
+    return {
+        "version": 1,
+        "auto_capture": False,
+        "default_visibility": contract["default_visibility"],
+        "hard_redact": contract["hard_redact"],
+        "soft_redact": contract["soft_redact"],
+        "exclude_paths": [],
+        "max_inbox_files": 100,
+        "updated_at": now_iso(),
+    }
 
 
 def today() -> str:
@@ -285,25 +300,7 @@ def create_skeleton(root: Path, engine: Path, profile: Optional[str], counters: 
 
     ensure_json_file(root / "raw/source_manifest.json", {"version": 1, "sources": []}, counters)
     ensure_json_file(root / ".wiki/review_queue.json", {"version": 1, "items": []}, counters)
-    ensure_json_file(
-        root / ".wiki/capture_policy.json",
-        {
-            "version": 1,
-            "auto_capture": False,
-            "exclude_patterns": [
-                "密钥",
-                "token",
-                "API[_ ]?key",
-                "客户(姓名|名单|信息)",
-                "@[a-z]+\\.com",
-                "1[3-9]\\d{9}",
-            ],
-            "exclude_paths": [],
-            "max_inbox_files": 100,
-            "updated_at": now_iso(),
-        },
-        counters,
-    )
+    ensure_json_file(root / ".wiki/capture_policy.json", default_capture_policy(), counters)
     if profile:
         ensure_json_file(
             root / ".wiki-profile.json",

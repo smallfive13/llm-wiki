@@ -59,6 +59,7 @@ PROFILE_ISSUES: List[ProfileIssue] = []
 PAGE_TYPES: set = set()
 PAGE_STATUSES: set = set()
 CONFIDENCES: set = set()
+VISIBILITIES: set = set()
 INBOX_STATUSES: set = set()
 SUGGESTED_TYPES: set = set()
 SOURCE_TYPES: set = set()
@@ -102,6 +103,9 @@ ERROR_CODES = {
     "PII_HIT_WIKI",
     "STALE_PAGE",
     "UNVERIFIED_HIGH",
+    "CAPTURE_POLICY_LEGACY",
+    "SOFT_REDACT_HIT",
+    "HARD_REDACT_HIT",
 } | PROFILE_ERROR_CODES
 
 ERROR_LEVEL = dict(BASE_SCHEMA["error_level"])
@@ -156,7 +160,7 @@ def _instance_root(repo_root: Path, raw_root: Optional[str]) -> Path:
 
 def configure(args: argparse.Namespace) -> None:
     global ROOT, INSTANCE_ROOT, SCHEMA, PROFILE_NAME, PROFILE_ISSUES
-    global PAGE_TYPES, PAGE_STATUSES, CONFIDENCES, INBOX_STATUSES, SUGGESTED_TYPES
+    global PAGE_TYPES, PAGE_STATUSES, CONFIDENCES, VISIBILITIES, INBOX_STATUSES, SUGGESTED_TYPES
     global SOURCE_TYPES, SOURCE_STATUSES, SOURCE_ADAPTERS, REVIEW_TYPES, REVIEW_STATUSES, PRIORITIES
     global TYPE_PREFIX, WIKI_ID_RE, INBOX_ID_RE, INBOX_FILE_RE, DATE_RE, ISO_RE, HASH_RE, ERROR_LEVEL
 
@@ -170,6 +174,7 @@ def configure(args: argparse.Namespace) -> None:
     PAGE_TYPES = set(SCHEMA["page_types"].keys())
     PAGE_STATUSES = set(SCHEMA["core_enums"]["status"])
     CONFIDENCES = set(SCHEMA["core_enums"]["confidence"])
+    VISIBILITIES = set(SCHEMA["core_enums"].get("visibility", []))
     INBOX_STATUSES = set(SCHEMA["inbox"]["statuses"])
     SUGGESTED_TYPES = set(SCHEMA["inbox"]["suggested_types"])
     source_contract = SCHEMA["json_contracts"]["source_manifest"]
@@ -411,6 +416,58 @@ def check_date_json(value: Any, rel: str, field: str, issues: Dict[str, List[Iss
         add_issue(issues, issue("DATE_FORMAT", rel, None, field, f"{field} 必须是带时区 ISO 8601", "使用 YYYY-MM-DDTHH:MM:SS+08:00"))
 
 
+def _patterns_from_redact_config(value: Any, rel: str, field: str, issues: Dict[str, List[Issue]]) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        patterns = value
+    elif isinstance(value, dict):
+        if "patterns" not in value:
+            add_issue(issues, issue("TYPE_MISMATCH", rel, None, field, f"{field} 必须包含 patterns 数组", "使用 {\"patterns\": [...]} 或字符串数组"))
+            return []
+        patterns = value.get("patterns")
+    else:
+        add_issue(issues, issue("TYPE_MISMATCH", rel, None, field, f"{field} 必须是对象或字符串数组", "使用 {\"patterns\": [...]} 或字符串数组"))
+        return []
+    if not isinstance(patterns, list) or not all(isinstance(item, str) for item in patterns):
+        add_issue(issues, issue("TYPE_MISMATCH", rel, None, field, f"{field}.patterns 必须是字符串数组", "使用字符串数组"))
+        return []
+    return list(patterns)
+
+
+def _validate_regex_patterns(patterns: List[str], rel: str, field: str, issues: Dict[str, List[Issue]]) -> None:
+    for pat in patterns:
+        try:
+            re.compile(str(pat), re.IGNORECASE)
+        except re.error:
+            add_issue(issues, issue("TYPE_MISMATCH", rel, None, field, f"正则无效: {pat}", "修正正则"))
+
+
+def default_visibility(capture_policy: Dict[str, Any]) -> str:
+    value = capture_policy.get("default_visibility")
+    return value if isinstance(value, str) and value in VISIBILITIES else "private"
+
+
+def effective_visibility(raw: Any, capture_policy: Dict[str, Any]) -> str:
+    return raw if isinstance(raw, str) and raw in VISIBILITIES else default_visibility(capture_policy)
+
+
+def normalized_redact_patterns(capture_policy: Dict[str, Any], issues: Dict[str, List[Issue]]) -> Tuple[List[str], List[str]]:
+    rel = ".wiki/capture_policy.json"
+    contract = SCHEMA["json_contracts"]["capture_policy"]
+    hard = _patterns_from_redact_config(capture_policy.get("hard_redact"), rel, "hard_redact", issues)
+    if "hard_redact" not in capture_policy:
+        hard = _patterns_from_redact_config(contract.get("hard_redact"), rel, "hard_redact", issues)
+    soft = _patterns_from_redact_config(capture_policy.get("soft_redact"), rel, "soft_redact", issues)
+    if "soft_redact" not in capture_policy and "exclude_patterns" in capture_policy:
+        legacy = capture_policy.get("exclude_patterns")
+        if isinstance(legacy, list) and all(isinstance(item, str) for item in legacy):
+            soft = list(legacy)
+    _validate_regex_patterns(hard, rel, "hard_redact", issues)
+    _validate_regex_patterns(soft, rel, "soft_redact" if "soft_redact" in capture_policy else "exclude_patterns", issues)
+    return hard, soft
+
+
 def scan_markdown_files() -> Tuple[List[MarkdownDoc], List[MarkdownDoc], List[MarkdownDoc]]:
     wiki_docs = [load_markdown(p) for p in sorted((INSTANCE_ROOT / "wiki").glob("**/*.md"))]
     inbox_docs = [load_markdown(p) for p in sorted((INSTANCE_ROOT / "inbox").glob("*.md"))]
@@ -443,6 +500,7 @@ def validate_wiki_docs(wiki_docs: List[MarkdownDoc], issues: Dict[str, List[Issu
         check_enum(doc, "type", PAGE_TYPES, issues)
         check_enum(doc, "status", PAGE_STATUSES, issues)
         check_enum(doc, "confidence", CONFIDENCES, issues)
+        check_enum(doc, "visibility", VISIBILITIES, issues)
         check_bool(doc, "review", issues)
         for field in ("created", "updated", "last_verified"):
             check_date_field(doc, field, issues)
@@ -527,10 +585,26 @@ def validate_json_contracts(id_index: Dict[str, MarkdownDoc], issues: Dict[str, 
         add_issue(issues, issue("TYPE_MISMATCH", ".wiki/capture_policy.json", None, "auto_capture", "auto_capture 必须是 bool", "使用 true/false"))
     if not (isinstance(capture_policy.get("exclude_paths"), list) and all(isinstance(x, str) for x in capture_policy.get("exclude_paths", []))):
         add_issue(issues, issue("TYPE_MISMATCH", ".wiki/capture_policy.json", None, "exclude_paths", "exclude_paths 必须是字符串数组", "使用 [] 或字符串数组"))
-    if not (isinstance(capture_policy.get("exclude_patterns"), list) and all(isinstance(x, str) for x in capture_policy.get("exclude_patterns", []))):
-        add_issue(issues, issue("TYPE_MISMATCH", ".wiki/capture_policy.json", None, "exclude_patterns", "exclude_patterns 必须是字符串数组", "使用字符串数组"))
+    if "exclude_patterns" in capture_policy:
+        if not (isinstance(capture_policy.get("exclude_patterns"), list) and all(isinstance(x, str) for x in capture_policy.get("exclude_patterns", []))):
+            add_issue(issues, issue("TYPE_MISMATCH", ".wiki/capture_policy.json", None, "exclude_patterns", "exclude_patterns 必须是字符串数组", "使用字符串数组"))
+        else:
+            add_issue(
+                issues,
+                issue(
+                    "CAPTURE_POLICY_LEGACY",
+                    ".wiki/capture_policy.json",
+                    None,
+                    "exclude_patterns",
+                    "capture_policy 仍使用 v1 exclude_patterns；lint 已按 soft_redact legacy alias 兼容",
+                    "迁移到 hard_redact / soft_redact / default_visibility",
+                ),
+            )
     if not (isinstance(capture_policy.get("max_inbox_files"), int) and capture_policy.get("max_inbox_files") > 0):
         add_issue(issues, issue("TYPE_MISMATCH", ".wiki/capture_policy.json", None, "max_inbox_files", "max_inbox_files 必须是正整数", "设置为正整数"))
+    if "default_visibility" in capture_policy and capture_policy.get("default_visibility") not in VISIBILITIES:
+        add_issue(issues, issue("ENUM_INVALID", ".wiki/capture_policy.json", None, "default_visibility", "default_visibility 非法", "使用 public/internal/private"))
+    normalized_redact_patterns(capture_policy, issues)
 
     for idx, src in enumerate(source_manifest.get("sources", []) if isinstance(source_manifest.get("sources", []), list) else []):
         rel = "raw/source_manifest.json"
@@ -543,6 +617,8 @@ def validate_json_contracts(id_index: Dict[str, MarkdownDoc], issues: Dict[str, 
             add_issue(issues, issue("ENUM_INVALID", rel, None, "status", "source status 非法", "使用合法 status"))
         if src.get("adapter") not in SOURCE_ADAPTERS:
             add_issue(issues, issue("ENUM_INVALID", rel, None, "adapter", "adapter 非法", "使用合法 adapter"))
+        if "visibility" in src and src.get("visibility") not in VISIBILITIES:
+            add_issue(issues, issue("ENUM_INVALID", rel, None, "visibility", f"sources[{idx}].visibility 非法", "使用 public/internal/private"))
         if not (isinstance(src.get("hash_sha256"), str) and HASH_RE.match(src.get("hash_sha256", ""))):
             add_issue(issues, issue("HASH_FORMAT", rel, None, "hash_sha256", "hash_sha256 必须是 64 位小写十六进制", "重新计算 hash"))
         check_date_json(src.get("imported_at"), rel, "imported_at", issues)
@@ -697,33 +773,46 @@ def build_inbox_index(inbox_docs: List[MarkdownDoc], issues: Dict[str, List[Issu
     }
 
 
-def scan_pii(inbox_docs: List[MarkdownDoc], archived: List[MarkdownDoc], wiki_docs: List[MarkdownDoc], capture_policy: Dict[str, Any], scan_wiki: bool, issues: Dict[str, List[Issue]]) -> int:
-    patterns = capture_policy.get("exclude_patterns", [])
-    compiled = []
-    for pat in patterns if isinstance(patterns, list) else []:
+def compile_patterns(patterns: List[str], field: str, issues: Dict[str, List[Issue]]) -> List[Tuple[str, re.Pattern[str]]]:
+    compiled: List[Tuple[str, re.Pattern[str]]] = []
+    for pat in patterns:
         try:
             compiled.append((pat, re.compile(str(pat), re.IGNORECASE)))
         except re.error:
-            add_issue(issues, issue("TYPE_MISMATCH", ".wiki/capture_policy.json", None, "exclude_patterns", f"正则无效: {pat}", "修正正则"))
+            add_issue(issues, issue("TYPE_MISMATCH", ".wiki/capture_policy.json", None, field, f"正则无效: {pat}", "修正正则"))
+    return compiled
+
+
+def scan_pii(inbox_docs: List[MarkdownDoc], archived: List[MarkdownDoc], wiki_docs: List[MarkdownDoc], capture_policy: Dict[str, Any], scan_wiki: bool, issues: Dict[str, List[Issue]]) -> int:
+    hard_patterns, soft_patterns = normalized_redact_patterns(capture_policy, issues)
+    hard_compiled = compile_patterns(hard_patterns, "hard_redact", issues)
+    soft_compiled = compile_patterns(soft_patterns, "soft_redact", issues)
     hits = 0
 
-    def scan_doc(doc: MarkdownDoc, code: str) -> None:
+    def scan_doc(doc: MarkdownDoc) -> None:
         nonlocal hits
         text = doc.path.read_text(encoding="utf-8")
+        visibility = effective_visibility(doc.fm.get("visibility"), capture_policy)
         for lineno, line in enumerate(text.splitlines(), start=1):
-            for raw, regex in compiled:
+            for raw, regex in hard_compiled:
                 if regex.search(line):
                     hits += 1
-                    add_issue(issues, issue(code, doc.rel, lineno, None, f"命中 PII pattern {raw!r}", "人工检查或移除敏感内容"))
+                    add_issue(issues, issue("HARD_REDACT_HIT", doc.rel, lineno, None, f"命中 hard_redact pattern {raw!r}", "移除密钥/凭证/连接串等硬底线敏感内容"))
+                    return
+            for raw, regex in soft_compiled:
+                if regex.search(line):
+                    hits += 1
+                    hint = "公开内容命中 soft_redact；发布前请确认可公开" if visibility == "public" else "按库策略人工确认或脱敏"
+                    add_issue(issues, issue("SOFT_REDACT_HIT", doc.rel, lineno, None, f"命中 soft_redact pattern {raw!r}", hint))
                     return
 
     for doc in inbox_docs:
-        scan_doc(doc, "PII_HIT_DRAFT" if doc.fm.get("status") == "draft" else "PII_HIT_ARCHIVE")
+        scan_doc(doc)
     for doc in archived:
-        scan_doc(doc, "PII_HIT_ARCHIVE")
+        scan_doc(doc)
     if scan_wiki:
         for doc in wiki_docs:
-            scan_doc(doc, "PII_HIT_WIKI")
+            scan_doc(doc)
     return hits
 
 
@@ -808,6 +897,7 @@ def _lint_state() -> Dict[str, Any]:
         "PAGE_TYPES": set(PAGE_TYPES),
         "PAGE_STATUSES": set(PAGE_STATUSES),
         "CONFIDENCES": set(CONFIDENCES),
+        "VISIBILITIES": set(VISIBILITIES),
         "INBOX_STATUSES": set(INBOX_STATUSES),
         "SUGGESTED_TYPES": set(SUGGESTED_TYPES),
         "SOURCE_TYPES": set(SOURCE_TYPES),
@@ -829,7 +919,7 @@ def _lint_state() -> Dict[str, Any]:
 
 def _restore_lint_state(state: Dict[str, Any]) -> None:
     global ROOT, INSTANCE_ROOT, SCHEMA, PROFILE_NAME, PROFILE_ISSUES
-    global PAGE_TYPES, PAGE_STATUSES, CONFIDENCES, INBOX_STATUSES, SUGGESTED_TYPES
+    global PAGE_TYPES, PAGE_STATUSES, CONFIDENCES, VISIBILITIES, INBOX_STATUSES, SUGGESTED_TYPES
     global SOURCE_TYPES, SOURCE_STATUSES, SOURCE_ADAPTERS, REVIEW_TYPES, REVIEW_STATUSES, PRIORITIES
     global TYPE_PREFIX, WIKI_ID_RE, INBOX_ID_RE, INBOX_FILE_RE, DATE_RE, ISO_RE, HASH_RE, ERROR_LEVEL
 
@@ -841,6 +931,7 @@ def _restore_lint_state(state: Dict[str, Any]) -> None:
     PAGE_TYPES = state["PAGE_TYPES"]
     PAGE_STATUSES = state["PAGE_STATUSES"]
     CONFIDENCES = state["CONFIDENCES"]
+    VISIBILITIES = state["VISIBILITIES"]
     INBOX_STATUSES = state["INBOX_STATUSES"]
     SUGGESTED_TYPES = state["SUGGESTED_TYPES"]
     SOURCE_TYPES = state["SOURCE_TYPES"]
@@ -927,7 +1018,7 @@ def human_output(data: Dict[str, Any], pii_hits: int, args: argparse.Namespace) 
         f"{status(not any(e['code'] in {'SOURCE_KEY_MISMATCH','SUMMARY_PATH_MISSING'} for e in errors))}source 单主键",
         f"{status(not any(e['code'] in {'ALIAS_CONFLICT','CANONICAL_CHAIN','REDIRECT_INVALID'} for e in errors))}entity 别名（含链式跳转 / status:redirect）: {derived['normalized_alias_index_entries']} entries",
         f"{status(not any(e['code'] == 'INBOX_STATUS_PATH_MISMATCH' for e in errors))}inbox: {derived['inbox_index_drafts']} draft",
-        f"{status(not any(e['code'].startswith('PII_HIT') for e in errors))}PII 扫描（{'inbox + wiki' if args.scan_wiki_pii else 'inbox-only'}）: {pii_hits} 命中",
+        f"{status(not any(e['code'].startswith('PII_HIT') or e['code'] == 'HARD_REDACT_HIT' for e in errors))}脱敏扫描（{'inbox + wiki' if args.scan_wiki_pii else 'inbox-only'}）: {pii_hits} 命中",
         "",
     ]
     if args.check_only:

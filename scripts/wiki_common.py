@@ -55,6 +55,7 @@ BASE_SCHEMA: Dict[str, Any] = {
     "core_enums": {
         "status": ["draft", "active", "stale", "archived", "redirect"],
         "confidence": ["low", "medium", "high"],
+        "visibility": ["public", "internal", "private"],
     },
     "canonical_list_fields": ["source_ids", "related_ids", "supersedes", "superseded_by"],
     "source_required_fields": ["source_id", "hash_sha256", "original_path", "source_url", "imported_at"],
@@ -89,7 +90,36 @@ BASE_SCHEMA: Dict[str, Any] = {
         },
         "capture_policy": {
             "path": ".wiki/capture_policy.json",
-            "required_fields": ["version", "auto_capture", "exclude_patterns", "exclude_paths", "max_inbox_files", "updated_at"],
+            "required_fields": ["version", "auto_capture", "exclude_paths", "max_inbox_files", "updated_at"],
+            "legacy_fields": ["exclude_patterns"],
+            "optional_fields": ["default_visibility", "hard_redact", "soft_redact", "exclude_patterns"],
+            "default_visibility": "private",
+            "hard_redact": {
+                "patterns": [
+                    "AKIA[0-9A-Z]{16}",
+                    "LTAI[A-Za-z0-9]{12,}",
+                    "access[_ -]?key[_ -]?secret",
+                    "secret[_ -]?key",
+                    "api[_ -]?key\\s*[:=]",
+                    "token\\s*[:=]",
+                    "bearer\\s+[A-Za-z0-9._-]+",
+                    "password\\s*[:=]",
+                    "passwd\\s*[:=]",
+                    "密钥",
+                    "私钥",
+                    "连接串",
+                    "connection[_ -]?string",
+                    "-----BEGIN (RSA |DSA |EC |OPENSSH |)PRIVATE KEY-----",
+                ]
+            },
+            "soft_redact": {
+                "patterns": [
+                    "客户(姓名|名单|信息)",
+                    "@[a-z]+\\.com",
+                    "1[3-9]\\d{9}",
+                    "\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b",
+                ]
+            },
             "version": 1,
         },
     },
@@ -118,6 +148,9 @@ BASE_SCHEMA: Dict[str, Any] = {
         "PII_HIT_WIKI": "warning",
         "STALE_PAGE": "warning",
         "UNVERIFIED_HIGH": "warning",
+        "CAPTURE_POLICY_LEGACY": "warning",
+        "SOFT_REDACT_HIT": "warning",
+        "HARD_REDACT_HIT": "error",
     },
 }
 
@@ -408,6 +441,8 @@ def base_field_names(schema: Dict[str, Any]) -> Set[str]:
     for contract in schema.get("json_contracts", {}).values():
         fields.update(contract.get("required_fields", []))
         fields.update(contract.get("item_required_fields", []))
+        fields.update(contract.get("optional_fields", []))
+        fields.update(contract.get("legacy_fields", []))
     fields.update(schema.get("inbox", {}).get("required_fields", []))
     fields.update(schema.get("core_enums", {}).keys())
     fields.update(schema.get("field_enums", {}).keys())
