@@ -10,6 +10,7 @@ targets:
   - scripts/wiki_lint.py
   - scripts/README.md
   - knowledge/.wiki-schema.md
+  - wiki-design/05-contracts-and-next-steps.md
 reviewers:
   - codex
   - user
@@ -31,7 +32,7 @@ TASK-016c 清理 datawarehouse 旧集合 source（被 17 个细粒度 source + s
 
 | 新值 | 语义 |
 | --- | --- |
-| `superseded` | 被其它 source 取代（如集合 source → 多个细粒度 source）；配合 source 页的 `superseded_by` |
+| `superseded` | 被其它 source **或更高层门户**取代 / 聚合（如集合 source → 17 细粒度 source + synthesis 门户）；配合 source 页的 `superseded_by`（016c 实际指向 synthesis 门户，非直列 17 source — Codex 非阻塞建议） |
 | `archived` | 归档、不再作为活跃 ingest 来源，但保留审计（对齐 page 的 `archived`） |
 
 - 不改既有 6 个值；纯扩展，向后兼容（现有 manifest 不受影响）。
@@ -53,7 +54,8 @@ TASK-016c 清理 datawarehouse 旧集合 source（被 17 个细粒度 source + s
 ### 改动
 - `scripts/wiki_common.py`：`source_manifest` 契约 `statuses` 加 `superseded` / `archived`。
 - `scripts/wiki_lint.py`：无需逻辑改动（读 enum 自动接受）；确认 source 单主键 / 引用校验对新 status 不误伤。
-- `scripts/README.md` + `knowledge/.wiki-schema.md`：source_manifest status enum 说明同步（`--sync-schema` 到实例）。
+- `wiki-design/05-contracts-and-next-steps.md`：**Source Manifest Schema 的 status enum 是契约正本之一**，同步加 `superseded`/`archived`（Codex review 阻塞 #1，原 RFC 漏列）。
+- `scripts/README.md` + `knowledge/.wiki-schema.md`：source_manifest status enum 说明同步（README 一行简述即可；`--sync-schema` 到实例）。
 
 ### 不改动
 - 其它 enum、page status、core schema。
@@ -91,3 +93,22 @@ TASK-016c 清理 datawarehouse 旧集合 source（被 17 个细粒度 source + s
 ## Decision
 
 （待用户填写，或授权某 Agent 代写）
+
+## Revision v2 by claude · 2026-06-04
+
+addressing Codex review 1 阻塞 + 1 非阻塞。
+
+### 阻塞修复
+
+- **targets 漏 `wiki-design/05-contracts-and-next-steps.md`**：已加入 frontmatter targets + 影响范围「改动」明确同步 Source Manifest Schema 的 status enum（它是契约正本，否则 05 会与 schema 不一致）。
+
+### 非阻塞采纳
+
+- `superseded` 文案放宽为"被其它 source **或更高层门户**取代 / 聚合"，覆盖 016c 实际模式（source 页 `superseded_by` 指向 synthesis 门户，非直列 17 source）。
+- README 只需一行 source_manifest status enum 简述，不扩成大段。
+
+### 未改动
+
+- 加 `superseded`+`archived` 两值、只增不改、datawarehouse 数据修正放 TASK——方向不变；Codex review 段完整保留。
+
+待 Codex re-review。
