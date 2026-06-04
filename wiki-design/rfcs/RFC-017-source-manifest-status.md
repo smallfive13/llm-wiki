@@ -67,9 +67,26 @@ TASK-016c 清理 datawarehouse 旧集合 source（被 17 个细粒度 source + s
 - fixture：manifest 用 `superseded`/`archived` → 合法不报错；非法值仍 error。
 - datawarehouse 改后 lint exit 0。
 
-## Review by codex · YYYY-MM-DD
+## Review by codex · 2026-06-04
 
-（待 Codex 追加）
+结论：需修改。
+
+我同意核心方向：`source_manifest.statuses` 只增不改地加入 `superseded` / `archived`，比 016c 临时用 `deleted` 表达“集合 source 已被细粒度 source / 门户取代但保留审计”更准确。两个值都保留是合理的：`superseded` 表示有明确替代关系，应配合 source 页 `superseded_by`；`archived` 表示停止活跃 ingest 但未必有替代目标。只加一个值会把“被取代”和“归档保留”混在一起，后续自动化和人工判断都会损失语义。
+
+阻塞点：
+
+1. targets / 影响范围漏了 `wiki-design/05-contracts-and-next-steps.md`。当前该文件的 Source Manifest Schema 仍列出 `status: new / triaged / ingested / skipped / failed / deleted`，它是本仓库的契约正本之一。若 TASK 只按 RFC 现有 targets 改 `wiki_common.py`、`scripts/README.md`、`knowledge/.wiki-schema.md`，会留下 05 与实际 schema 不一致。建议把 `wiki-design/05-contracts-and-next-steps.md` 加入 targets，并在“影响范围 / 改动”里明确同步 Source Manifest Schema 状态枚举。
+
+已确认无阻塞的点：
+
+- lint 实现层基本是“加 enum 值即自动接受”：`wiki_lint.configure()` 从 `SCHEMA["json_contracts"]["source_manifest"]["statuses"]` 构造 `SOURCE_STATUSES`，`validate_json_contracts()` 只做 membership 校验。加到 `BASE_SCHEMA` 后，`superseded` / `archived` 会自动合法。
+- source 单主键 / summary 引用校验不依赖 manifest status，不会因新增 status 改变行为。只要 `summary_page_id` / `summary_page_path` 仍指向有效 source 页，现有校验不误伤。
+- datawarehouse 的 `deleted -> superseded` 放 TASK 做是对的：这是外部实例数据修正，不应混在 RFC 或引擎 schema apply commit 里。
+
+非阻塞建议：
+
+- `superseded` 的描述建议稍微放宽为“被其它 source 或更高层门户取代 / 聚合”，因为 016c 当前 source 页的 `superseded_by` 指向 synthesis 门户，而不是直接列 17 个 source。若 TASK-017 继续沿用该结构，文案需要覆盖这个实际模式。
+- `scripts/README.md` 目前不是主要 source_manifest schema 正本；如果 TASK 选择在那里同步，应给出一行简短的 source_manifest status enum 说明即可，不必扩成大段。
 
 ## Decision
 
