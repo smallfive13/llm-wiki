@@ -221,3 +221,47 @@ addressing Codex review 5 个阻塞点 + 用户 3 项决策（A 方案 / 清理�
 - 三模块方向、多模态边界（工具零 LLM）、Backlog 划分不变；Codex review 段完整保留（append-only）。
 
 待 Codex re-review。
+
+## Review v2 by codex · 2026-06-04
+
+### 结论
+
+- 需修改。
+- v2 已基本闭合我在 v1 提出的 5 个阻塞点；`capture_policy` 兼容、`visibility` 继承、图像硬底线文本兜底、TASK 拆分和 OCR 边界都已经可机械落地。
+- 但主体 "替代方案" 表仍残留一处与 A 方案直接冲突的决策行：`图存哪` 仍写成 **实例 `assets/` 进 git**。这会误导 Decision 和 TASK-016b，因此需要先修。
+
+### 复核结果
+
+1. **`capture_policy` 兼容：已闭合。**
+   - v2 采纳兼容路线：v1 `exclude_patterns` 继续被 lint 接受，作为 `soft_redact` legacy alias，并给 `CAPTURE_POLICY_LEGACY` warning。
+   - `hard_redact` 缺失时走 BASE_SCHEMA 内置默认，能保证现有 v1 policy 不会因为缺新字段而硬断，同时密钥类硬底线仍能扫。
+   - 三库迁移放 TASK-016a，迁移前后三库 lint 验证，这个边界稳。
+
+2. **`visibility` 继承：已闭合。**
+   - core optional、不进 required、缺失不补字段、effective visibility 只内部计算，规则足够明确。
+   - 页/source 显式值 → `capture_policy.default_visibility` → legacy `private` 的顺序可直接实现。
+   - `internal` 涵盖 team / 公司内部、`public` 软项升 warning，也解决了语义分裂问题。
+
+3. **assets 路径：主体仍有一处阻塞残留。**
+   - A 方案本身是对的：我本地复核到 datawarehouse 当前图片确实在 `raw/sources/assets/20260604-international-data-service-tech-docs/...`，raw source 用 `../assets/...`，wiki source 页用 `../../raw/sources/assets/...`。
+   - 相对路径断引校验也可机械实现：从引用所在 markdown 文件目录解析，归一化后确认目标文件存在。
+   - 但 "替代方案" 表仍写 `图存哪 | 实例 assets/ 进 git`，与 M3、影响范围和 Revision v2 的 A 方案矛盾。建议改为：`图存哪 | raw/sources/assets/ 原始证据层进 git | 实例根 assets/ / 外链 / 只留描述`。
+
+4. **图硬底线兜底：已闭合。**
+   - 工具只扫文件名、路径、相邻描述、source notes / manifest caption，不读像素，这个边界正确。
+   - 这能提供最低机械兜底，同时不虚假承诺工具能识别图片中的密钥。
+
+5. **TASK 拆分：已闭合。**
+   - 016a 做 M1/M2 + 三库 capture_policy 迁移。
+   - 016b 做富媒体规则。
+   - 016c 做 datawarehouse 数据对齐、清理旧集合 source、图描述核对，规则和大规模数据动作已经分开。
+
+6. **OCR 决策：认可。**
+   - LLM 多模态产出"语义描述 + 图内关键文字"，不引单独 OCR 引擎，原图保底；这和"工具链零 LLM"边界一致。
+   - TASK-016b/016c 只需验证正本中存在描述，不应尝试评估 OCR 质量。
+
+### 非阻塞建议
+
+- TASK-016b 做相对图片路径校验时，应跳过 `http(s)://`、`data:`、`mailto:` 等非本地引用；本 RFC 聚焦本地 raw 证据图。
+- 图片路径解析应使用 RFC-013 的 `strip_code_spans()`，避免把代码块里的 `![](../assets/example.png)` 当真引用。
+- 归一化后的本地目标路径应限制在实例根内，防止 `../../..` 指到实例外部文件。
