@@ -24,6 +24,7 @@
 | [rfc_20260603_016](RFC-016-ingest-v2.md) | ingest v2 — visibility 分级 + 脱敏分级 + 富媒体（图片多模态） | accepted | claude | `scripts/wiki_common.py`, `scripts/wiki_lint.py`, `scripts/wiki_init.py`, `scripts/README.md`, `knowledge/.wiki-schema.md`, `wiki-design/02-workflows.md` |
 | [rfc_20260604_017](RFC-017-source-manifest-status.md) | source_manifest.status 加 superseded / archived（对齐 source 生命周期） | accepted | claude | `scripts/wiki_common.py`, `scripts/wiki_lint.py`, `scripts/README.md`, `knowledge/.wiki-schema.md`, `wiki-design/05-contracts-and-next-steps.md` |
 | [rfc_20260604_018](RFC-018-ingest-sublink-handling.md) | ingest 子链接处理（关联保留 + source-gap 登记 + 不递归） | accepted | claude | `knowledge/.wiki-schema.md`, `wiki-design/02-workflows.md`, `wiki-design/04-agent-rules.md` |
+| [rfc_20260604_019](RFC-019-ingest-batch-orchestration.md) | ingest 批量编排（triage 全量 + apply 清单 + 逐份处理追踪 + 断点续传） | proposed | claude | `scripts/wiki_lint.py`, `scripts/wiki_common.py`, `scripts/README.md`, `knowledge/.wiki-schema.md`, `wiki-design/02-workflows.md`, `wiki-design/04-agent-rules.md` |
 
 ## 状态
 
