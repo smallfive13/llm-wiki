@@ -158,6 +158,34 @@ OK
   - `--ingest-status` 按 TASK 要求收窄为 manifest-only 校验；它不检查 `summary_page_path` 是否存在，因为该检查依赖 wiki 正本文档，仍由普通 lint 覆盖。
   - 外部 datawarehouse 仓库执行前已有大量未提交改动，且 `datawarehouse/.wiki-schema.md` 已含实例特化未提交修改；本 task 未覆盖或提交外部实例 schema，同步需在外部仓库 dirty 状态处理完后单独执行。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-05
 
-（评估者填写）
+**Verdict: PASS。** 独立复跑全部验证；ingest 进度结构化、--ingest-status 边界、退出码独立、零回归均达标。
+
+### 独立复跑
+
+| 验证 | 结果 |
+| --- | --- |
+| `unittest tests.test_task_019` | 6 tests OK（空/全 ingested/混合只 triaged/非法 status/不写派生层/不受 wiki 错误影响） |
+| datawarehouse `--ingest-status` | ingested 17 · superseded 1 · **pending_apply 0**（全做完，清单空） |
+| `--ingest-status --json` | 固定 JSON：counts 全量 + pending_apply [] |
+| 普通 lint 退出码 | exit 0 / 0·0（进度段不影响判定） |
+| `--ingest-status` 不写派生层 | ✓ id_index mtime 前后不变 |
+| 回归 012-017 | 41 tests OK |
+| 改动范围 | wiki_lint/common/README/02/04/.wiki-schema/skill + tests，**0 datawarehouse 数据** |
+
+### 核查点
+
+1. **结构化优先**：`data["ingest_progress"]`（counts + pending_apply）进 `--json`，human_output 渲染——可复用。
+2. **--ingest-status manifest-only**：只读 manifest、不扫 wiki、不写派生层、退出码只受 manifest/schema error 影响、不受 wiki 错误干扰（专测覆盖）。
+3. **pending_apply 只取 triaged**：全量 status count 透明、不把 new 当待 apply。
+4. **零回归 + 退出码独立**：进度段是信息输出，不动 error/warning 判定。
+
+### 偏离评估（合理，留一个遗留）
+
+- **datawarehouse 未跑 `--sync-schema`**：因数据仓有大量未提交改动 + `datawarehouse/.wiki-schema.md` 有未提交特化修改，直接覆盖有丢失风险，执行者谨慎跳过并记录。**合理**（避免覆盖未提交内容）。
+- **遗留**：datawarehouse 的 `.wiki-schema.md` 还没同步 RFC-018/019 的约定（子链接 / 批量编排）——待数据仓 clean 后补 `--sync-schema`。这也暴露一个流程张力：**新 agent 持续整理数仓 → 数据仓很少 clean → schema 同步总被卡**；可作 backlog（schema 同步应能在 dirty 仓上安全做，或独立于数据整理节奏）。
+
+### 结论
+
+RFC-019 闭环：批量 ingest 有了 triage 全量 + apply 清单（lint 进度段）+ 逐份深入 + 断点续传，对症"一次吞太多 context 不够"。**RFC-001~019 全部闭环**。TASK-019 done 确认有效。
