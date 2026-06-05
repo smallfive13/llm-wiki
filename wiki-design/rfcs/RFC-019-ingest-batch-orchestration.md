@@ -112,3 +112,28 @@ ingest 进度：triaged 待 apply N · ingested 完成 M · failed K
 ## Decision
 
 （待用户填写，或授权某 Agent 代写）
+
+## Review by codex · 2026-06-05
+
+结论：通过(有非阻塞建议)。
+
+阻塞点：无。
+
+我同意核心方向：批量 ingest 的主问题不是单页 schema 缺失，而是编排层缺失。把流程拆成 triage 全量轻扫、apply 逐份深入、每份 commit、manifest status 断点续传，能直接对症 datawarehouse 这次 5-6 轮补救暴露的问题。
+
+清单载体选择合理。`source_manifest.status` 已经是 source 生命周期的 canonical 字段，用它派生「ingest 进度」比新建队列文件更稳；新队列会和 manifest 的 `status` / `summary_page_id` / `summary_page_path` 形成双写 drift。lint 进度段纯读 manifest、不改变 errors/warnings/退出码也合理。实现时需要注意：当前 `wiki_lint.run_lint()` 在 `validate_json_contracts()` 后拿到 `source_manifest`，但 `data` 里只暴露 `scanned.sources`；TASK 应把聚合结果显式放进结构化输出，例如 `data["ingest_progress"]`，再由 `human_output()` 渲染，否则 `--json` / `evaluate_instance()` / 后续工具无法复用。
+
+`--ingest-status` 的边界建议在 TASK 钉死：它应仍先走 `configure()` 和 JSON 读取 / JSON 基本校验，但只输出进度段，且不写派生层；exit code 可沿用“manifest 读取或 schema error 则 1，否则 0”。普通 lint 输出新增进度段不应影响现有 error/warning 判定。若 `--json --ingest-status` 组合存在，建议输出固定 JSON 结构，只含 `ingest_progress` 加少量元信息，避免 stdout 混人类文本。
+
+triage 全量 + apply 逐份的轻重分离方向正确，但需要把“轻 triage”的定义写硬一点。triage 全量可以登记 manifest、hash、标题、source_type、粗略摘要或占位、alias matching 候选；不应读取所有长正文进同一上下文、不做图多模态描述、不写详细 source 正文。否则 17 份的 triage 本身仍可能撑爆 context。换句话说，全量 triage 是“目录级 / 元信息级扫一遍”，不是“一次读完所有原文再少写一点”。
+
+断点续传可靠性基本成立，因为 manifest status 是单一真相。建议 TASK 明确 apply 状态转换顺序：开始前 source 应为 `triaged`；成功写完 source/wiki/log 并 lint 通过后再改 `status: ingested` 并 commit；失败但保留可审计信息时标 `failed`，notes 写失败原因或下一步。避免出现正文未完成但 status 已是 `ingested` 的假完成。
+
+每份 commit 是合理边界，尤其是外部数据仓这种资料量大、图片多、可能中断的场景。建议文档允许“≤3 小批”只用于短小同质资料；含图片、多子链接、强业务语义或长正文时默认逐份 commit。这个约定不需要工具强制，当前没有稳定 token 预算接口，强制反而会制造低价值限制。
+
+非阻塞建议：
+
+1. `ingest_progress` 统计不要只列 triaged/ingested/failed，最好同时列 `new/skipped/deleted/superseded/archived` 的 count，但“待 apply”只取 `triaged`。这样全量状态透明，不误把 `new` 当作待 apply。
+2. 待 apply 列表应按 manifest 原顺序，并至少显示 `source_id`、`title`、`status`、`summary_page_path`，方便人判断下一份；长列表可默认截断，例如前 20 条，`--ingest-status` 全量输出。
+3. 回归 fixture 需要覆盖：空 manifest、全 ingested、混合 triaged/failed/ingested、非法 status 时既报 enum error 又仍可生成尽力而为的 progress。
+4. 文档同步除 `02` / `04` / `.wiki-schema.md` 外，建议 TASK 继续同步 `skill/wiki/references/schema.md`，保持 skill 侧 ingest 指令一致。
