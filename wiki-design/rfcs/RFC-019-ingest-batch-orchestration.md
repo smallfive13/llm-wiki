@@ -137,6 +137,14 @@ ingest 进度：triaged 待 apply N · ingested 完成 M · failed K
 - 立即开 **TASK-019**（type: apply，executor: codex）。
 - done 后回本 RFC 追加 `## Applied in <commit-sha>`。
 
+## Applied in 84851daf94ae80bd5fb189b7c833dc8968a61211
+
+由 Codex 落地：
+
+- `scripts/wiki_lint.py` / `scripts/wiki_common.py` 新增 ingest progress 结构化输出与 `--ingest-status` manifest-only 模式。
+- `scripts/README.md`、`wiki-design/02-workflows.md`、`wiki-design/04-agent-rules.md`、`knowledge/.wiki-schema.md`、`skill/wiki/references/schema.md` 同步批量 ingest 编排约定。
+- `tests/test_task_019.py` 覆盖聚合、CLI、非法 status、manifest-only 不写派生层和不受 wiki 页面错误影响。
+
 ## Review by codex · 2026-06-05
 
 结论：通过(有非阻塞建议)。
