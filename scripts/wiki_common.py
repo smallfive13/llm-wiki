@@ -241,6 +241,39 @@ def round_half_up(value: float) -> int:
     return int(value + 0.5)
 
 
+def ingest_progress(source_manifest: Dict[str, Any], statuses: List[str]) -> Dict[str, Any]:
+    counts = {status: 0 for status in statuses}
+    pending_apply: List[Dict[str, Any]] = []
+    other_count = 0
+    sources = source_manifest.get("sources", []) if isinstance(source_manifest, dict) else []
+    if not isinstance(sources, list):
+        sources = []
+    for index, source in enumerate(sources):
+        if not isinstance(source, dict):
+            continue
+        status = source.get("status")
+        if status in counts:
+            counts[status] += 1
+        else:
+            other_count += 1
+        if status == "triaged":
+            pending_apply.append(
+                {
+                    "index": index,
+                    "source_id": source.get("source_id"),
+                    "title": source.get("title"),
+                    "status": status,
+                    "summary_page_path": source.get("summary_page_path"),
+                }
+            )
+    return {
+        "counts": counts,
+        "other_count": other_count,
+        "pending_apply_count": len(pending_apply),
+        "pending_apply": pending_apply,
+    }
+
+
 def _blank_code_text(text: str) -> str:
     return "".join(char if char in "\r\n" else " " for char in text)
 

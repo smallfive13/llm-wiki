@@ -68,6 +68,16 @@ knowledge/.wiki/inbox_index.json
 
 `review_queue.type: source_gap` 只作为 triage 阶段临时队列或人工审查入口；决定长期保留的缺口应晋升为 `wiki/open-questions/*-source-gap.md`，使其可被图谱、查询和回答阶段看见。
 
+## 批量 Ingest 规则
+
+批量 ingest 必须拆成 triage 和 apply 两种重量级别。
+
+- Triage 可以全量做，但只做轻扫：目录、文件名、元信息、标题、hash、source_type、粗摘要或占位、alias 候选和 manifest 登记；不要读完所有长正文，不做图片多模态，不写详细 source 正文。
+- Triage 后运行 `python3 scripts/wiki_lint.py --ingest-status`，以 `raw/source_manifest.json` 的 `status: triaged` 作为唯一待 apply 清单。
+- Apply 必须逐份深入；只有短小且同质的材料可一批最多 3 份。含图、子链接、长正文、权限缺口或明显主题差异的材料必须逐份处理。
+- 状态转换顺序固定：`triaged` → 写完 wiki 正本并跑 lint 通过 → `ingested` + commit。失败时改 `failed`，在 `notes` 记录原因和下一步，不伪装为完成。
+- 每份 source 完成后单独 commit。新会话续传时先看 `--ingest-status` 的 ingest 进度段，不从聊天记忆推断剩余工作。
+
 ## 审核规则
 
 大规模更新前先输出 triage：

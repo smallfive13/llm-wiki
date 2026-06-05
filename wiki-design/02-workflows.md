@@ -110,7 +110,8 @@ obsidian/knowledge/               # 一个 git repo 包多个 vault
 1. Triage 阶段
    - 识别来源类型
    - 计算 hash
-   - 生成来源摘要
+   - 批量 ingest 时先全量轻扫：只看目录 / 文件名 / 元信息 / 标题 / hash / source_type，允许写粗摘要或占位、alias 候选和 manifest 记录；不要读完所有长正文，不做图片多模态，不写详细 source 正文
+   - manifest 新条目先写 `status: triaged`，`summary_page_id: null`，`summary_page_path: null`
    - 富媒体处理：原始图片证据落在 `raw/sources/assets/`，写入 AI 生成语义描述和关键文字摘录；wiki 正文使用相对 `![alt](../../raw/sources/assets/...)` 引用，并在同一行或随后 3 行写紧邻描述
    - 富媒体安全兜底：含 hard_redact 信息的图片不落地；工具只扫图片文件名、路径、相邻描述和 manifest caption/notes，不读图像像素
    - **子链接处理**（写入 AI 约定，不新增工具强制）：
@@ -126,13 +127,16 @@ obsidian/knowledge/               # 一个 git repo 包多个 vault
      4. 完全未命中 → 新建 entity 页（默认 `canonical_id: null`，仅当确需薄重定向时建别名页并 `status: redirect`）
    - 判断新增页面、更新页面、冲突点、开放问题
    - 写入 review queue 或展示计划
+   - 运行 `python3 scripts/wiki_lint.py --ingest-status` 查看 apply 清单；`triaged` 是待 apply，`ingested` / `failed` / `skipped` 等只进入计数
 
 2. Apply 阶段
+   - 按 apply 清单逐份处理；只有短小且同质的材料可一批最多 3 份，含图、子链接或长正文的材料必须逐份
    - 写入 wiki/sources/
    - 更新 entities/topics/synthesis/decisions
    - 更新 index/overview/log
+   - 运行 `python3 scripts/wiki_lint.py`；通过后把对应 manifest 条目改为 `status: ingested`，回填 `summary_page_id` / `summary_page_path`
+   - 每份 source 完成后单独 commit；失败则把 manifest 条目改为 `status: failed` 并在 `notes` 记录原因，方便新会话从 lint 进度段续传
    - 刷新图谱和搜索索引
-   - 运行 `python3 scripts/wiki_lint.py`
 ```
 
 补抓 source-gap 时，不从父 source 自动递归；应把待补子文档作为新的 ingest 输入，补齐后把对应 `*-source-gap` open-question 标为 `status: archived`，并在正文记录收尾结果。

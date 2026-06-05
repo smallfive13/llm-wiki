@@ -3,7 +3,7 @@ id: task_20260604_019
 title: Apply RFC-019 — ingest 批量编排（lint ingest 进度段 + 流程文档）
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-06-05
 updated: 2026-06-05
@@ -84,9 +84,79 @@ $PY -m unittest tests.test_task_012 tests.test_task_013 tests.test_task_014 test
 - commit sha
 - 偏离或异常
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-06-05
 
-（执行者填写）
+- Step 0 spec-review 结论：
+  - `wiki_lint.run_lint()` 当前在 `validate_json_contracts()` 后拿到 `source_manifest`，普通 lint 可在 `data` 中追加 `ingest_progress`，再由 `human_output()` 渲染。
+  - `human_output()` 是插入普通「ingest 进度」段和 `--ingest-status` 专用输出的正确落点。
+  - `configure()` 已统一处理 `--root` / profile / schema overlay；`--ingest-status` 应复用它，但必须提前走 manifest-only 分支，避免 wiki 页面错误影响该模式退出码。
+  - 未发现需先向用户确认的歧义。
+
+- 改动文件 + 关键位置：
+  - `scripts/wiki_common.py`：新增 `ingest_progress()` 纯函数，聚合全量 status count，并按 manifest 原顺序抽取 `triaged` 作为 `pending_apply`。
+  - `scripts/wiki_lint.py`：普通 lint 的 `data["ingest_progress"]` + human 渲染；新增 `--ingest-status`；新增 manifest-only 校验分支，仅读取 `raw/source_manifest.json`，不扫描 wiki、不写派生层。
+  - `scripts/README.md`：补 `--ingest-status` 用法、固定 JSON / 退出码边界。
+  - `wiki-design/02-workflows.md`、`wiki-design/04-agent-rules.md`、`knowledge/.wiki-schema.md`、`skill/wiki/references/schema.md`：同步 triage 全量轻扫、apply 逐份、状态转换、每份 commit、断点续传约定。
+  - `tests/test_task_019.py`：覆盖空 manifest、全 ingested、混合 status、非法 status、`--ingest-status` 不写派生层、`--ingest-status` 不受 wiki 页面错误影响。
+
+- 验证输出：
+
+```text
+$ conda run -n py312 python -m unittest -v tests.test_task_019
+test_ingest_status_does_not_write_derived_layers ... ok
+test_ingest_status_ignores_unrelated_wiki_errors ... ok
+test_ingest_status_json_reports_invalid_status_and_progress ... ok
+test_progress_all_ingested_has_no_pending ... ok
+test_progress_empty_manifest ... ok
+test_progress_mixed_statuses_only_pending_triaged ... ok
+Ran 6 tests in 1.148s
+OK
+
+$ conda run -n py312 python scripts/wiki_lint.py --root /Users/zhangjunwu/workspace/obsidian/knowledge/datawarehouse --ingest-status
+状态计数：new 0 · triaged 0 · ingested 17 · skipped 0 · failed 0 · deleted 0 · superseded 1 · archived 0
+triaged 待 apply: 0
+待 apply（按 manifest 顺序）：0
+
+$ conda run -n py312 python scripts/wiki_lint.py --root /Users/zhangjunwu/workspace/obsidian/knowledge/datawarehouse --ingest-status --json
+{
+  "errors": [],
+  "ingest_progress": {
+    "counts": {
+      "archived": 0,
+      "deleted": 0,
+      "failed": 0,
+      "ingested": 17,
+      "new": 0,
+      "skipped": 0,
+      "superseded": 1,
+      "triaged": 0
+    },
+    "other_count": 0,
+    "pending_apply": [],
+    "pending_apply_count": 0
+  },
+  "instance_root": "/Users/zhangjunwu/workspace/obsidian/knowledge/datawarehouse",
+  "profile": "base",
+  "warnings": [],
+  "wiki_lint_version": "0.1.0"
+}
+
+$ conda run -n py312 python scripts/wiki_lint.py --root /Users/zhangjunwu/workspace/obsidian/knowledge/datawarehouse --check-only; echo "exit=$?"
+错误: 0 · 警告: 0
+exit=0
+
+$ conda run -n py312 python -m unittest tests.test_task_012 tests.test_task_013 tests.test_task_014 tests.test_task_015 tests.test_task_016a tests.test_task_016b tests.test_task_017
+Ran 41 tests in 8.723s
+OK
+```
+
+- commit sha：
+  - 引擎 apply commit：见最终执行报告。
+  - RFC Applied 闭环 commit：见最终执行报告。
+
+- 偏离或异常：
+  - `--ingest-status` 按 TASK 要求收窄为 manifest-only 校验；它不检查 `summary_page_path` 是否存在，因为该检查依赖 wiki 正本文档，仍由普通 lint 覆盖。
+  - 外部 datawarehouse 仓库执行前已有大量未提交改动，且 `datawarehouse/.wiki-schema.md` 已含实例特化未提交修改；本 task 未覆盖或提交外部实例 schema，同步需在外部仓库 dirty 状态处理完后单独执行。
 
 ## Evaluation by claude · <date>
 

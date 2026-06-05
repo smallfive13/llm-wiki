@@ -98,23 +98,27 @@ suggested_target_title: <晋升后页面标题>
 
 ### Triage（识别 + 登记，不动 wiki/）
 
-1. 算 `sha256`
-2. 在 `raw/source_manifest.json` 的 `sources[]` 追加一条：`source_id`（`src_YYYYMMDD_slug`）/ title / source_type / hash_sha256 / original_path / status: triaged / summary_page_id: null
-3. 抽实体 → alias matching（查 `.wiki/normalized_alias_index.json` 复用现有 entity，编辑距离近的入 review_queue duplicate）
-4. 子链接处理：
+1. 轻扫输入：目录、文件名、元信息、标题、hash、source_type、粗摘要或占位、alias 候选。批量 ingest 时可以全量 triage，但不要读完所有长正文，不做图片多模态，不写详细 source 正文。
+2. 算 `sha256`
+3. 在 `raw/source_manifest.json` 的 `sources[]` 追加一条：`source_id`（`src_YYYYMMDD_slug`）/ title / source_type / hash_sha256 / original_path / status: triaged / summary_page_id: null / summary_page_path: null
+4. 抽实体 → alias matching（查 `.wiki/normalized_alias_index.json` 复用现有 entity，编辑距离近的入 review_queue duplicate）
+5. 子链接处理：
    - 内部文档链接：脱 token / 内部 URL，但保留"链向 X 文档"；目标值得收时建子 source，正文未抓到时用 `status: draft` + `confidence: low` 占位，父 source 用 `related_ids` / `related` 关联子 source
    - 相关且未抓到 / 未 ingest 的子文档：建 `wiki/open-questions/*-source-gap.md`，正文写 `## 已知信息` + `## 待确认`
    - 导航、页脚、泛工单入口等弱相关链接不建 source-gap；外部链接只保留脱敏说明，不建 source
    - 不自动递归；用户要求补抓某子文档时，作为新的独立 ingest
-5. 冲突/重复/缺口 → 写 `.wiki/review_queue.json` 的 `items[]`；其中 `source_gap` 只作临时队列，长期待办晋升为 open-question
-6. 给用户审阅计划，**先不写 wiki/**
+6. 冲突/重复/缺口 → 写 `.wiki/review_queue.json` 的 `items[]`；其中 `source_gap` 只作临时队列，长期待办晋升为 open-question
+7. 给用户审阅计划，**先不写 wiki/**
+8. 运行 `python3 scripts/wiki_lint.py --ingest-status`，用 `triaged` 清单安排 apply；其它 status 只进入进度计数
 
 ### Apply（用户确认后）
 
-1. 写 `wiki/sources/<slug>.md` 摘要页（id == source_id == summary_page_id）
-2. 联动 entities/topics（新建或更新 last_verified + source_ids）
-3. 回填 manifest：status: ingested、summary_page_id = source_id、summary_page_path
-4. 跑 lint + graph + 更新 log
+1. 按 `--ingest-status` 清单逐份处理；只有短小且同质的材料可一批最多 3 份，含图、子链接或长正文必须逐份
+2. 写 `wiki/sources/<slug>.md` 摘要页（id == source_id == summary_page_id）
+3. 联动 entities/topics（新建或更新 last_verified + source_ids）
+4. 跑 lint；通过后回填 manifest：status: ingested、summary_page_id = source_id、summary_page_path
+5. 每份 source 单独 commit；失败则 status: failed，并在 notes 记录原因和下一步
+6. 跑 graph + 更新 log
 
 ## 硬约束
 

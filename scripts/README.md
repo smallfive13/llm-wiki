@@ -26,6 +26,7 @@ python3 scripts/wiki_lint.py --root knowledge # 指定实例根；缺省为 know
 python3 scripts/wiki_lint.py --check-only     # 只校验，不写派生层
 python3 scripts/wiki_lint.py --json           # 机器可读输出
 python3 scripts/wiki_lint.py --scan-wiki-pii  # 加扫 wiki/ PII（默认只扫 inbox）
+python3 scripts/wiki_lint.py --ingest-status  # 只读 source_manifest，输出批量 ingest 进度
 ```
 
 退出码：
@@ -48,6 +49,8 @@ python3 scripts/wiki_lint.py --scan-wiki-pii  # 加扫 wiki/ PII（默认只扫 
 8. **跨流程一致性** — manifest <-> 摘要页 / review_queue path / inbox archive 状态
 
 `source_manifest.sources[].status` 合法值：`new` / `triaged` / `ingested` / `skipped` / `failed` / `deleted` / `superseded` / `archived`。
+
+普通 lint 的 human/json 输出包含 `ingest_progress`：全量统计各 status，并把 `triaged` 条目列为待 apply 清单（human 默认显示前 20 条）。`--ingest-status` 只读取并基本校验 `raw/source_manifest.json`，不扫描 wiki 页面、不写 `.wiki/` 派生层；退出码只由 manifest 读取 / schema error 决定，`--json --ingest-status` 输出固定 JSON 结构。
 
 后续 RFC 增强：
 

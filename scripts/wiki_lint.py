@@ -33,6 +33,7 @@ from wiki_common import (
     ProfileIssue,
     effective_id_regex,
     first_h1,
+    ingest_progress,
     is_stale,
     load_markdown as common_load_markdown,
     load_profile,
@@ -243,12 +244,16 @@ def parse_iso_tz(value: Any) -> bool:
         return False
 
 
-def read_json(path: Path, errors: List[Issue]) -> Dict[str, Any]:
+def read_json(path: Path, errors: Any) -> Dict[str, Any]:
     try:
         with path.open("r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as exc:
-        errors.append(Issue("TYPE_MISMATCH", rel_to_knowledge(path), None, None, f"JSON 解析失败: {exc}", "修复 JSON 格式"))
+        item = Issue("TYPE_MISMATCH", rel_to_knowledge(path), None, None, f"JSON 解析失败: {exc}", "修复 JSON 格式")
+        if isinstance(errors, dict):
+            add_issue(errors, item)
+        else:
+            errors.append(item)
         return {}
 
 
@@ -676,6 +681,42 @@ def validate_json_contracts(id_index: Dict[str, MarkdownDoc], issues: Dict[str, 
     return source_manifest, review_queue, capture_policy
 
 
+def validate_source_manifest_for_ingest_status(issues: Dict[str, List[Issue]]) -> Dict[str, Any]:
+    rel = "raw/source_manifest.json"
+    path = INSTANCE_ROOT / SCHEMA["json_contracts"]["source_manifest"]["path"]
+    source_manifest = read_json(path, issues)
+    json_version(source_manifest, rel, issues)
+    if "updated_at" in source_manifest:
+        check_iso_field(source_manifest, rel, "updated_at", issues, allow_missing=True)
+    sources = source_manifest.get("sources", [])
+    if not isinstance(sources, list):
+        add_issue(issues, issue("TYPE_MISMATCH", rel, None, "sources", "sources 必须是数组", "使用 []"))
+        return source_manifest
+    for idx, src in enumerate(sources):
+        if not isinstance(src, dict):
+            add_issue(issues, issue("TYPE_MISMATCH", rel, None, "sources", f"sources[{idx}] 必须是 object", "使用对象"))
+            continue
+        for field in SCHEMA["json_contracts"]["source_manifest"]["required_fields"]:
+            if field not in src:
+                add_issue(issues, issue("MISSING_FIELD", rel, None, field, f"sources[{idx}] 缺少 {field}", "补齐字段"))
+        if src.get("source_type") not in SOURCE_TYPES:
+            add_issue(issues, issue("ENUM_INVALID", rel, None, "source_type", "source_type 非法", "使用合法 source_type"))
+        if src.get("status") not in SOURCE_STATUSES:
+            add_issue(issues, issue("ENUM_INVALID", rel, None, "status", "source status 非法", "使用合法 status"))
+        if src.get("adapter") not in SOURCE_ADAPTERS:
+            add_issue(issues, issue("ENUM_INVALID", rel, None, "adapter", "adapter 非法", "使用合法 adapter"))
+        if "visibility" in src and src.get("visibility") not in VISIBILITIES:
+            add_issue(issues, issue("ENUM_INVALID", rel, None, "visibility", f"sources[{idx}].visibility 非法", "使用 public/internal/private"))
+        if not (isinstance(src.get("hash_sha256"), str) and HASH_RE.match(src.get("hash_sha256", ""))):
+            add_issue(issues, issue("HASH_FORMAT", rel, None, "hash_sha256", "hash_sha256 必须是 64 位小写十六进制", "重新计算 hash"))
+        check_date_json(src.get("imported_at"), rel, "imported_at", issues)
+        check_date_json(src.get("last_ingested_at"), rel, "last_ingested_at", issues)
+        sid, summary_id = src.get("source_id"), src.get("summary_page_id")
+        if summary_id is not None and summary_id != sid:
+            add_issue(issues, issue("SOURCE_KEY_MISMATCH", rel, None, "summary_page_id", "summary_page_id 必须等于 source_id 或 null", "统一 source_id"))
+    return source_manifest
+
+
 def validate_canonical(wiki_docs: List[MarkdownDoc], id_index: Dict[str, MarkdownDoc], issues: Dict[str, List[Issue]]) -> None:
     for doc in wiki_docs:
         for field, ref in canonical_fields(doc):
@@ -1042,8 +1083,35 @@ def run_lint(args: argparse.Namespace) -> Tuple[int, Dict[str, Any], str]:
                 "inbox_index_drafts": 0,
                 "written": False,
             },
+            "ingest_progress": ingest_progress({}, list(SCHEMA["json_contracts"]["source_manifest"]["statuses"])),
         }
         return 1, data, human_output(data, 0, args)
+
+    if getattr(args, "ingest_status", False):
+        source_manifest = validate_source_manifest_for_ingest_status(issues)
+        sources = source_manifest.get("sources", [])
+        source_count = len(sources) if isinstance(sources, list) else 0
+        data = {
+            "wiki_lint_version": VERSION,
+            "ran_at": now_iso(),
+            "scanned": {
+                "wiki_pages": 0,
+                "inbox_drafts": 0,
+                "inbox_archived": 0,
+                "sources": source_count,
+                "review_queue_items": 0,
+            },
+            "errors": [i.as_json() for i in issues["errors"]],
+            "warnings": [i.as_json() for i in issues["warnings"]],
+            "derived_layers": {
+                "id_index_entries": 0,
+                "normalized_alias_index_entries": 0,
+                "inbox_index_drafts": 0,
+                "written": False,
+            },
+            "ingest_progress": ingest_progress(source_manifest, list(SCHEMA["json_contracts"]["source_manifest"]["statuses"])),
+        }
+        return (1 if issues["errors"] else 0), data, human_output(data, 0, args)
 
     validate_context_docs(issues)
     wiki_docs, inbox_docs, archived_docs = scan_markdown_files()
@@ -1086,6 +1154,7 @@ def run_lint(args: argparse.Namespace) -> Tuple[int, Dict[str, Any], str]:
         "errors": [i.as_json() for i in issues["errors"]],
         "warnings": [i.as_json() for i in issues["warnings"]],
         "derived_layers": derived,
+        "ingest_progress": ingest_progress(source_manifest, list(SCHEMA["json_contracts"]["source_manifest"]["statuses"])),
     }
     text = human_output(data, pii_hits, args)
     return (1 if issues["errors"] else 0), data, text
@@ -1176,6 +1245,7 @@ def evaluate_instance(root: Path, *, now: Optional[date_cls] = None, scan_wiki_p
         root=str(requested_root),
         check_only=True,
         json_output=False,
+        ingest_status=False,
         scan_wiki_pii=scan_wiki_pii,
         now=now or datetime.now(LOCAL_TZ).date(),
     )
@@ -1206,7 +1276,41 @@ def status(ok: bool) -> str:
     return "[OK]    " if ok else "[FAIL]  "
 
 
+def ingest_status_output(data: Dict[str, Any], *, full: bool = False) -> str:
+    progress = data.get("ingest_progress") or {}
+    counts = progress.get("counts") if isinstance(progress.get("counts"), dict) else {}
+    pending = progress.get("pending_apply") if isinstance(progress.get("pending_apply"), list) else []
+    pending_to_show = pending if full else pending[:20]
+    ordered = SCHEMA["json_contracts"]["source_manifest"]["statuses"]
+    count_text = " · ".join(f"{item} {counts.get(item, 0)}" for item in ordered)
+    lines = [
+        "ingest 进度",
+        "===========",
+        f"状态计数：{count_text}",
+        f"triaged 待 apply: {progress.get('pending_apply_count', 0)}",
+    ]
+    other_count = progress.get("other_count", 0)
+    if other_count:
+        lines.append(f"非法/未知 status: {other_count}")
+    lines.append("")
+    if pending_to_show:
+        lines.append("待 apply（按 manifest 顺序）:")
+        for item in pending_to_show:
+            source_id = item.get("source_id") or "(missing source_id)"
+            title = item.get("title") or "(untitled)"
+            summary_path = item.get("summary_page_path")
+            path_text = f" · {summary_path}" if summary_path else ""
+            lines.append(f"  - {source_id} · {title} ({item.get('status')}){path_text}")
+        if not full and len(pending) > len(pending_to_show):
+            lines.append(f"  ... 还有 {len(pending) - len(pending_to_show)} 条，使用 --ingest-status 查看完整列表")
+    else:
+        lines.append("待 apply（按 manifest 顺序）：0")
+    return "\n".join(lines)
+
+
 def human_output(data: Dict[str, Any], pii_hits: int, args: argparse.Namespace) -> str:
+    if getattr(args, "ingest_status", False):
+        return ingest_status_output(data, full=True)
     errors, warnings = data["errors"], data["warnings"]
     scanned = data["scanned"]
     derived = data["derived_layers"]
@@ -1225,6 +1329,7 @@ def human_output(data: Dict[str, Any], pii_hits: int, args: argparse.Namespace) 
         f"{status(not any(e['code'].startswith('PII_HIT') or e['code'] == 'HARD_REDACT_HIT' for e in errors))}脱敏扫描（{'inbox + wiki' if args.scan_wiki_pii else 'inbox-only'}）: {pii_hits} 命中",
         "",
     ]
+    lines.extend([ingest_status_output(data), ""])
     if args.check_only:
         lines.append("派生层未重建（--check-only）")
     else:
@@ -1259,16 +1364,31 @@ def main() -> int:
     parser.add_argument("--root", help="实例根目录；缺省为 ./knowledge")
     parser.add_argument("--check-only", action="store_true")
     parser.add_argument("--json", action="store_true", dest="json_output")
+    parser.add_argument("--ingest-status", action="store_true", help="只输出 source_manifest 派生的 ingest 进度，不写派生层")
     parser.add_argument("--scan-wiki-pii", action="store_true")
     parser.add_argument("--now", type=lambda value: datetime.strptime(value, "%Y-%m-%d").date(), help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.now is None:
         args.now = datetime.now(LOCAL_TZ).date()
+    if args.ingest_status:
+        args.check_only = True
     configure(args)
     print(f"wiki-lint instance root: {INSTANCE_ROOT} · profile: {PROFILE_NAME}", file=sys.stderr)
     code, data, text = run_lint(args)
     if args.json_output:
-        print(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True))
+        if args.ingest_status:
+            output = {
+                "wiki_lint_version": data.get("wiki_lint_version"),
+                "ran_at": data.get("ran_at"),
+                "instance_root": str(INSTANCE_ROOT),
+                "profile": PROFILE_NAME,
+                "ingest_progress": data.get("ingest_progress"),
+                "errors": data.get("errors", []),
+                "warnings": data.get("warnings", []),
+            }
+            print(json.dumps(output, ensure_ascii=False, indent=2, sort_keys=True))
+        else:
+            print(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True))
     else:
         print(text)
     return code
