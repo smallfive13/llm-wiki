@@ -2,9 +2,9 @@
 id: rfc_20260604_019
 title: ingest 批量编排（triage 全量 + apply 清单 + 逐份处理追踪 + 断点续传）
 author: claude
-status: proposed
+status: accepted
 created: 2026-06-04
-updated: 2026-06-04
+updated: 2026-06-05  # accepted; decision by claude（用户授权 Path A），基于 codex 通过(有非阻塞建议)
 targets:
   - scripts/wiki_lint.py
   - scripts/wiki_common.py
@@ -109,9 +109,33 @@ ingest 进度：triaged 待 apply N · ingested 完成 M · failed K
 
 （待 Codex 追加）
 
-## Decision
+## Decision by claude · 2026-06-05（用户授权 Path A 代写）
 
-（待用户填写，或授权某 Agent 代写）
+**Accepted**。Codex「通过(有非阻塞建议)」、无阻塞点。核心方案（triage 全量轻扫 + apply 逐份深入 + manifest status 作清单真相 + lint 进度段 + 每份 commit 断点续传）确认。一批很实在的非阻塞建议**全部钉进 TASK-019 spec**。
+
+### 关键决策点
+
+| 决策 | 选择 |
+| --- | --- |
+| 编排 | triage 全量（轻）→ apply 逐份（≤3 小批仅短小同质）→ 每份 commit → 续传 |
+| 清单载体 | `source_manifest.status` 派生（lint「ingest 进度」段），不新建队列文件 |
+| 断点续传 | manifest status 单一真相；新会话查进度段续 apply |
+
+### 留给 TASK-019 spec 钉死的事项（含 Codex 非阻塞建议）
+
+1. **结构化输出**：`ingest_progress` 进 `data["ingest_progress"]`（供 `--json` / `evaluate_instance` / 后续工具复用），`human_output()` 再渲染——不只人类文本。
+2. **`--ingest-status` 边界**：仍走 `configure()` + JSON 读取/基本校验，**只输出进度段、不写派生层**；exit code = manifest 读取或 schema error → 1，否则 0；`--json --ingest-status` 输出固定 JSON（只含 `ingest_progress` + 少量元信息，不混人类文本）。
+3. **triage 轻量定义写硬**：全量 triage = **目录级/元信息级扫一遍**（登记 manifest/hash/标题/source_type/粗摘要或占位 + alias matching 候选）；**不读所有长正文进同一上下文、不做图多模态、不写详细 source 正文**。
+4. **apply 状态转换顺序（防假完成）**：开始前 source 为 `triaged` → 写完 source/wiki/log 且 lint 通过后才 `status: ingested` + commit；失败标 `failed` + notes 写原因/下一步。
+5. **进度统计**：`ingest_progress` 列**全量 status count**（new/triaged/ingested/skipped/failed/deleted/superseded/archived），但**"待 apply"只取 `triaged`**（不把 `new` 当待 apply）。待 apply 列表按 manifest 原顺序、显示 `source_id`/`title`/`status`/`summary_page_path`，默认截断（如前 20），`--ingest-status` 全量。
+6. **一批份数**：≤3 小批仅用于短小同质资料；含图/多子链接/强业务语义/长正文**默认逐份 commit**。约定不强制（无 token 预算接口）。
+7. **fixture**：空 manifest / 全 ingested / 混合 triaged·failed·ingested / 非法 status（既报 enum error 又尽力生成 progress）。
+8. **同步 `skill/wiki/references/schema.md`**（skill 侧 ingest 指令一致）。
+
+### Apply 触发
+
+- 立即开 **TASK-019**（type: apply，executor: codex）。
+- done 后回本 RFC 追加 `## Applied in <commit-sha>`。
 
 ## Review by codex · 2026-06-05
 
