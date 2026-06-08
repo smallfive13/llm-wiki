@@ -161,6 +161,29 @@ OK
 
 Commit：本提交（sha 见最终报告）。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-08
 
-（评估者填写）
+**Verdict: PASS。** 独立复跑全部验证，M1 达标。
+
+### 独立复跑
+
+| 验证 | 结果 |
+| --- | --- |
+| `unittest tests.test_task_021a` | 7 tests OK（v1/v2 pass、below_min/above_base/missing/non_int 反向 error） |
+| **personal（真实 v1 profile）** | `--check-only` **exit 0**——bump 到 2 后旧 v1 profile 仍兼容（M1 核心目标） |
+| knowledge / datawarehouse（无 profile） | exit 0 |
+| `--check-docs` | exit 0（`.wiki-schema.md` profile 文案改动未破坏 6 生成块） |
+| 回归 012~020a | OK |
+| `BASE_SCHEMA` | `schema_version: 2`、`min_compatible_profile_version: 1`（`wiki_common.py:21/22`） |
+| git working tree | clean |
+
+### 核查点
+
+1. **兼容范围校验真实有效**：test 覆盖 below_min（0）/ above_base（3）均报 `PROFILE_SCHEMA_VERSION` error，不是永真 pass。
+2. **bool 防御**：codex 用 `type(x) is not int` 排除 `bool`（True 是 int 子类），避免 `True` 被当 v1 误放行——细致。
+3. **缺失 / 非 int 不抛异常**：missing / 字符串 / null / 浮点 / bool 全报 error 而非 traceback。
+4. **复用错误码 + 不动 M2**：`PROFILE_SCHEMA_VERSION` 复用、message 调边界提示；sync 逻辑未动（留 021b）。
+
+### 结论
+
+RFC-021 **M1（schema_version 递增纪律 + 兼容范围校验）闭环**。从此 schema 演进有版本依据，bump 不再立刻破坏旧 profile（向后兼容到 `min_compatible_profile_version`）。TASK-021a done 确认有效。**剩 M2（sync 保护 + datawarehouse 迁移）走 TASK-021b。**

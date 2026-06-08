@@ -228,3 +228,8 @@ codex re-review verdict: **通过（有非阻塞建议）**。M2 算法阻塞已
 4. **no-op 分支修元数据**：`target hash == engine hash` 但元数据缺失 / 旧时，写当前 hash + 报 metadata repair（纳管手工已同步实例，免 `--force`）。
 
 Apply 顺序：**TASK-021a**（M1 版本纪律）先 → 评估 → **TASK-021b**（M2 sync 保护 + datawarehouse 迁移；单独 commit、先查数据仓 clean）。
+
+## Applied
+
+- **M1**（TASK-021a）：`48f4b07`——`schema_version` 1→2 + `min_compatible_profile_version` 1 + `validate_profile()` 兼容范围校验。Evaluation by claude: **PASS**（personal v1 profile bump 后仍 exit 0；范围校验反向有效；bool 防御）。
+- **M2**（TASK-021b）：待执行（`--sync-schema` 覆盖前保护 + datawarehouse 迁移）。
