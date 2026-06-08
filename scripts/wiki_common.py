@@ -18,7 +18,8 @@ LOCAL_TZ = timezone(timedelta(hours=8))
 
 
 BASE_SCHEMA: Dict[str, Any] = {
-    "schema_version": 1,
+    "schema_version": 2,
+    "min_compatible_profile_version": 1,
     "page_types": {
         "source": {"id_prefix": "src", "dir": "wiki/sources", "required_fields": [], "optional_fields": []},
         "entity": {"id_prefix": "ent", "dir": "wiki/entities", "required_fields": [], "optional_fields": []},
@@ -623,13 +624,34 @@ def validate_profile(profile: Dict[str, Any], base: Dict[str, Any]) -> List[Prof
             )
         ]
 
-    if profile.get("schema_version") != base.get("schema_version"):
+    schema_version = profile.get("schema_version")
+    base_version = base.get("schema_version")
+    min_version = base.get("min_compatible_profile_version", base_version)
+    if type(schema_version) is not int:
         issues.append(
             _profile_issue(
                 "PROFILE_SCHEMA_VERSION",
                 "schema_version",
-                "profile schema_version 与 BASE_SCHEMA 不兼容",
-                f"设置为 {base.get('schema_version')}",
+                "profile schema_version 缺失或不是整数",
+                f"设置为 {min_version} 到 {base_version} 之间的整数",
+            )
+        )
+    elif schema_version < min_version:
+        issues.append(
+            _profile_issue(
+                "PROFILE_SCHEMA_VERSION",
+                "schema_version",
+                f"profile schema_version {schema_version} 低于当前引擎兼容下界 {min_version}",
+                "按 migration note 升级 profile 后重试",
+            )
+        )
+    elif schema_version > base_version:
+        issues.append(
+            _profile_issue(
+                "PROFILE_SCHEMA_VERSION",
+                "schema_version",
+                f"profile schema_version {schema_version} 高于当前引擎 schema_version {base_version}",
+                "升级 llm-wiki 引擎后重试",
             )
         )
 

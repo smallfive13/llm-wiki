@@ -99,7 +99,7 @@ python3 scripts/wiki_lint.py --check-docs --fix # 只修复 GENERATED 块内部
 | `DOC_BLOCK_DRIFT` | error | `--check-docs` 下生成块内容与 BASE_SCHEMA 不一致 |
 | `DOC_BLOCK_MISSING` | error | `--check-docs` 下生成块缺失或未闭合 |
 | `DOC_BLOCK_DUPLICATE` | error | `--check-docs` 下生成块重复或嵌套 |
-| `PROFILE_SCHEMA_VERSION` | error | `.wiki-profile.json` schema_version 与引擎不兼容 |
+| `PROFILE_SCHEMA_VERSION` | error | `.wiki-profile.json` schema_version 缺失、非整数或超出引擎兼容范围 |
 | `PROFILE_PREFIX_FORMAT` | error | profile `id_prefix` 不是 2-5 位小写字母 |
 | `PROFILE_PREFIX_COLLISION` | error | profile `id_prefix` 撞 base/inbox/其它 profile prefix |
 | `PROFILE_TYPE_COLLISION` | error | profile 新 type 撞 base/其它 profile type |
@@ -112,7 +112,7 @@ python3 scripts/wiki_lint.py --check-docs --fix # 只修复 GENERATED 块内部
 
 ### Schema profile 与多实例
 
-`wiki_lint.py` 使用 `wiki_common.BASE_SCHEMA` 作为 RFC-002~007 的冻结 base schema。实例根可放 `.wiki-profile.json` 叠加只增扩展；缺省没有 profile 时等价纯 base。
+`wiki_lint.py` 使用 `wiki_common.BASE_SCHEMA` 作为当前 base schema。实例根可放 `.wiki-profile.json` 叠加只增扩展；缺省没有 profile 时等价纯 base。`BASE_SCHEMA["schema_version"]` 随引擎契约递增，`BASE_SCHEMA["min_compatible_profile_version"]` 表示仍可接受的最老 profile 版本；profile `schema_version` 必须是整数且落在 `[min_compatible_profile_version, schema_version]` 内。低于下界表示需要迁移 profile，高于 base 表示实例 profile 需要更新版引擎。
 
 `--root` 指向实例根，而不是仓库根：
 
