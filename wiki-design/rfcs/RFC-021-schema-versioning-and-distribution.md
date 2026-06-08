@@ -185,3 +185,33 @@ codex verdict: 需修改，唯一阻塞是 M2 sync 保护算法未钉死。已�
 - gate 自检、Apply 拆分 codex 已通过，不变。
 
 > 待 codex 对修订后的 M2 算法做一次聚焦 re-review，确认后再 accept + 起草 TASK-021a/021b。
+
+## Re-review by codex · 2026-06-08
+
+结论：通过（有非阻塞建议）。
+
+### M2 算法结论
+
+last-synced hash 三方比较已闭合上一轮唯一阻塞。
+
+- `target` 缺失 → 写入并记录 sync 元数据；`target hash == engine current hash` → 已一致；`target hash == last_synced_engine_sha256` → 可证明实例自上次同步后未本地改动，可安全覆盖；否则默认拒绝并打印 diff，`--force` 才覆盖。这是机械可实现的状态机，不需要解释 unified diff 的语义。
+- 它解决了我上一轮指出的三类 diff 难区分问题：旧镜像正常陈旧、实例本地特化、引擎模板重排都不再靠内容语义判断，而靠“是否由本工具上次同步过且未被改动”判断。
+- datawarehouse 当前没有 `.wiki/schema_sync.json`，按新算法会落入“无记录 → 默认拒绝”；021b 在人工核实特化已外移后用 `--force` 首次纳管，是正确路径。
+
+### 实现注意点（非阻塞，建议写进 TASK）
+
+- hash 口径要钉死为 `.wiki-schema.md` 文件字节级 sha256，与当前 `sha256_file()` 风格一致；不做换行、编码、Markdown 解析或 frontmatter 归一化。写入模板时用同一份 bytes，避免 LF/CRLF 或编码转换造成假 drift。
+- `.wiki-schema.md` 与 `.wiki/schema_sync.json` 都应原子写：写到同目录临时文件，`os.replace()`；最好先写 schema，再写 sync 元数据。崩溃时最多导致下一次保守拒绝，不应导致误覆盖。
+- `.wiki/schema_sync.json` 建议作为实例正本元数据进 Git，不进 `.gitignore`。理由：它是安全同步的审计状态，跨机器 / 跨 agent 共享后才能让后续无 `--force` 的安全覆盖成立；若只当本地派生层，算法会频繁退化为“无记录 → 拒绝”，虽安全但失去自动升级价值。
+- no-op 分支建议也修复 / 写入 `schema_sync.json`：当 `target hash == engine current hash` 但 sync 元数据缺失或旧时，可写入当前 hash 并报告 metadata repair。这样手工已同步的实例能被纳管，不需要额外 `--force`。
+
+### 非阻塞建议吸收情况
+
+已吸收。
+
+- Revision 明确 021a fixture 覆盖 `schema_version` 缺失 / 非整数 / 低于下界 / 高于 base，且要求非 int 不抛 Python 异常。
+- Revision 明确 personal 有 v1 `.wiki-profile.json`，应作为 bump 后 smoke。
+- Revision 明确 `.wiki-schema.md` 的 profile 版本兼容文案需单独验证，不能只靠 `--check-docs`。
+- Revision 明确 021b 先查 `/Users/zhangjunwu/workspace/obsidian/knowledge` clean，datawarehouse 迁移单独 commit，不混入引擎 apply commit。
+
+可以进入 Decision / TASK-021a / TASK-021b。
