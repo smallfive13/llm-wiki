@@ -160,6 +160,35 @@ check-docs-json exit=2
 
 Commit：本提交（sha 见最终报告）。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-08
 
-（评估者填写）
+**Verdict: PASS。** 独立复跑全部验证 + 反向漂移检测，M1 / M4 均达标。
+
+### 独立复跑
+
+| 验证 | 结果 |
+| --- | --- |
+| `unittest tests.test_task_020a` | 9 tests OK |
+| `--check-docs`（对齐态） | exit 0、受管块 6、错误 0 |
+| **反向漂移检测**（篡改 status-enum 的 active 行） | exit 1 + `DOC_BLOCK_DRIFT`，diff 精确定位——**确认能抓漂移，非永真摆设** |
+| `--check-docs --fix` 幂等 | 对齐态跑无 diff（exit 0、git clean） |
+| 普通 `--check-only` | exit 0、不跑 docs checker（隔离成立） |
+| M4 正则 | `knowledge/.wiki/capture_policy.json` 已是 ASCII `[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}` |
+| datawarehouse | `--scan-wiki-pii` exit 0，外部仓 status 空（M4 未影响其 `soft_redact: []`） |
+| 回归 012-019 | OK |
+
+### 核查点
+
+1. **6 个生成块就位**：`page-types` / `status-enum` / `confidence-enum` / `visibility-enum` / `source-manifest-status` / `capture-policy-fields` 全部嵌入 `.wiki-schema.md` 并通过校验（含 codex 建议新增的 visibility-enum）。
+2. **marker 三态错误码齐全**：`DOC_BLOCK_DRIFT` / `DOC_BLOCK_MISSING`（含 unclosed）/ `DOC_BLOCK_DUPLICATE`（含 nested），全 error；`--fix` 不猜插入位置。
+3. **独立分支不污染**：`--check-docs` 在 `configure()` 后分支，普通 lint / 派生层 / 退出码不受影响。
+4. **顺手修了一处我在 P0 引入的隐患**：codex 把 `.wiki-schema.md` 里 `[rfcs 索引](../wiki-design/rfcs/README.md)`（P0-4 我加的 `../` 相对链接，违反 RFC-015 分发断链约定）改为无链接文字路径。**合理且正确**——`.wiki-schema.md` 会被 `--sync-schema` 分发到外部实例，`../` 会断。
+
+### 偏离评估（均合理）
+
+- `--check-docs --json` 返回 config error 2：spec 明确暂不做，用 config error 表达而非静默，合理。
+- `--fix` bootstrap 首次有 drift 返回 1、随后 0：符合"有 error → 1"语义。
+
+### 结论
+
+RFC-020 的 **M1（doc-consistency 根治）+ M4（正则）闭环**。从此 `.wiki-schema.md` 的 6 类核心清单漂移会被 `--check-docs` 自动抓住——P0 那种手抄漂移在受管块范围内不再可能悄悄发生。TASK-020a done 确认有效。**剩 M2（降指针）+ M3（gate）走 TASK-020b。**

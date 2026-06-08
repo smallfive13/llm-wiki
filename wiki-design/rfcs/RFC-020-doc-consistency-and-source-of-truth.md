@@ -159,3 +159,8 @@ codex spec-review verdict：**通过（有非阻塞建议）**。无阻塞项，
 - M3 模板两必填段注明非机制类可写「不适用：纯 bugfix/文档修复，未引入新机制」；工具改进若实际新增 schema / 派生信号 / 工作流机制仍受 gate，仅鲁棒性修复豁免。
 
 **Apply 顺序**：TASK-020a（M1+M4）先 → 评估 → TASK-020b（M2+M3，依赖 020a 生成块就位）。各一 commit；改 `.wiki-schema.md` 后 `--sync-schema` 前确认 datawarehouse clean（当前已 clean）。
+
+## Applied
+
+- **M1 + M4**（TASK-020a）：`55ccd90`——`--check-docs` doc-consistency 校验 + 6 个生成块（含 visibility-enum）+ ASCII soft_redact 邮箱正则。Evaluation by claude: **PASS**（含反向漂移检测）。
+- **M2 + M3**（TASK-020b）：待执行。
