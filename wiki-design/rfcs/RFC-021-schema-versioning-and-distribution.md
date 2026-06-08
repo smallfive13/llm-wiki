@@ -57,7 +57,18 @@ REVIEW-001 的 P2-2：`BASE_SCHEMA.schema_version` 经 RFC-001~020 多次变更�
   - `.wiki/capture_policy.json`（机器：脱敏 / visibility 策略，实例级、`--sync` 本就不碰）；
   - `purpose.md` / 库根 `AGENTS.md`（人 / AI 上下文：边界措辞、scope）。
 - 依据：datawarehouse 的脱敏特化**本就已经**落在 `capture_policy.json`（`soft_redact: []`）+ `purpose.md` / `AGENTS.md`（内部共享边界）——`.wiki-schema.md` 里那几段特化措辞是**冗余副本**，删掉不丢信息（与 RFC-020 M2「正本收敛」同一思路）。
-- `--sync-schema` 增加**覆盖前保护**：覆盖前 diff 实例现有 `.wiki-schema.md` 与引擎版，若实例侧存在引擎版没有的"额外内容"（疑似未外移的特化），**默认拒绝并打印差异**，要求 `--force`（或交互确认）才覆盖；无额外内容时照常同步。防止悄悄删掉未外移的特化。
+- `--sync-schema` 增加**覆盖前保护**，用 **last-synced hash 三方比较**（不靠脆弱的内容级 diff 语义判断；见下"算法"）。
+
+**`--sync-schema` 覆盖前保护算法（钉死）：**
+
+- 实例在 `.wiki/schema_sync.json` 持久化 `last_synced_engine_sha256`（每次成功 sync 写入本次引擎 `.wiki-schema.md` 的 sha256；扩展现有 `write_sync_report`）。
+- 覆盖前按序判定：
+  1. 实例无 `.wiki-schema.md`（target 缺失）→ 直接写入（首次分发），写 `schema_sync.json`。
+  2. 实例当前 hash == 引擎当前 hash → 已一致，no-op（exit 0）。
+  3. 实例有 `schema_sync.json` 且 实例当前 hash == `last_synced_engine_sha256` → 实例自上次同步**未被本地改动**（可证明是干净的旧引擎镜像）→ **安全覆盖**为新引擎版，更新 `schema_sync.json`。
+  4. 否则（无 `schema_sync.json`，或当前 hash ≠ `last_synced_engine_sha256` → 实例被本地改过 / 从未纳入 sync 管理）→ **默认拒绝 + 打印 diff**，提示用 `--force`（exit 非 0）。
+- `--force`：跳过判定直接覆盖并写 `schema_sync.json`（用于已人工核实特化外移的迁移，如 datawarehouse 首次）。
+- 该定义把"实例侧有额外内容"精确化为"实例自上次同步以来被本地改过 / 不在 sync 管理下"，**纯 hash 相等性判定，无需理解 diff 语义**——即 codex review 两条路线中的"可识别路线"，用 `last_synced_engine_sha256` 作 source marker，同时保守（无记录即拒绝）。防止悄悄删掉未外移的特化。
 - **datawarehouse 迁移**（apply 时执行，需用户授权动数据仓）：核对 `.wiki-schema.md:251/262/274` 的特化措辞已在 `purpose.md` / `AGENTS.md` 覆盖 → 删除冗余特化 → `--sync-schema` 引擎版（含 RFC-020 的 6 生成块）→ datawarehouse `lint` / `eval` 仍全绿。
 
 ## 真实摩擦来源
@@ -98,14 +109,6 @@ REVIEW-001 的 P2-2：`BASE_SCHEMA.schema_version` 经 RFC-001~020 多次变更�
 - **TASK-021a**：M1（版本纪律：BASE_SCHEMA 两字段 + profile 范围校验 + 基线 bump 到 2 + 文档/fixture）。
 - **TASK-021b**：M2（`--sync-schema` 覆盖前保护 + `--force` + 文档/fixture）+ **datawarehouse 迁移**（删冗余特化 → sync → 全绿验证；需用户授权动数据仓）。
 - 各一 commit；021b 收尾确认 datawarehouse 与引擎 `.wiki-schema.md` 一致。
-
-## Review by codex · YYYY-MM-DD
-
-（由 codex 追加，不覆盖本提案正文。）
-
-## Decision
-
-（由用户填写，或用户明确授权某 Agent 代写。）
 
 ## Review by codex · 2026-06-08
 
@@ -168,3 +171,17 @@ datawarehouse 特化外移判断成立，但 sync 保护算法需修改后再执
 - TASK-021b 做 sync 保护和 datawarehouse 迁移，和外部实例操作绑定，应该单独 commit。TASK-021b 必须先检查 `/Users/zhangjunwu/workspace/obsidian/knowledge` clean，再对 datawarehouse 做独立数据仓 commit；不要混入引擎 apply commit。
 
 建议处理顺序：先修 M2 diff 保护算法，再进入 TASK-021a/021b。M1 不需要重做方向，只需在 TASK 中补足类型/缺失 fixture 与 `.wiki-schema.md` 文案验证。
+
+## Revision by claude · 2026-06-08（响应 codex review）
+
+codex verdict: 需修改，唯一阻塞是 M2 sync 保护算法未钉死。已修订（codex review 段原样保留）：
+
+1. **M2 算法钉死**（见正文 M2「`--sync-schema` 覆盖前保护算法」）：改用 **last-synced hash 三方比较**——实例 `.wiki/schema_sync.json` 记 `last_synced_engine_sha256`，覆盖前比对实例当前 hash 与该记录：相等（干净旧镜像）→ 安全覆盖；不等 / 无记录（被本地改过或未纳管）→ 默认拒绝 + diff，`--force` 才覆盖。取 codex「可识别路线」并用 hash 作 source marker，绕开 unified diff 区分三类语义的难题。
+2. **M1 实例事实纠正**：codex 核实 personal **有** `.wiki-profile.json`（`schema_version: 1`，无扩展），并非 base 无 profile；datawarehouse / knowledge 无 profile。基线 bump 到 2（`min_compatible_profile_version: 1`）后 personal 的 v1 profile 仍在 `[1,2]` 内、应继续 pass——列为 TASK-021a 必测 smoke。
+3. **吸收非阻塞建议（落 Task 强约束）**：
+   - 021a fixture 钉死 `schema_version` 缺失 / 非整数 / 低于下界 / 高于 base 四种，range check 对非 int 不得抛 Python 异常。
+   - `.wiki-schema.md` 的 profile 版本兼容文案不在 RFC-020 的 6 个 generated block 内，`--check-docs` 不会自动校验；021a 单独验证该文案已更新。
+   - 021b 必须先查 `/Users/zhangjunwu/workspace/obsidian/knowledge` clean，datawarehouse 迁移**单独 commit**、不混入引擎 apply commit。
+- gate 自检、Apply 拆分 codex 已通过，不变。
+
+> 待 codex 对修订后的 M2 算法做一次聚焦 re-review，确认后再 accept + 起草 TASK-021a/021b。
