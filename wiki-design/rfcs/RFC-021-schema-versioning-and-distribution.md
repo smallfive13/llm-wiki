@@ -2,7 +2,7 @@
 id: rfc_20260608_021
 title: schema 版本递增纪律 + 实例分发安全（.wiki-schema 镜像 vs 实例特化）
 author: claude
-status: proposed
+status: accepted
 created: 2026-06-08
 updated: 2026-06-08
 targets:
@@ -215,3 +215,16 @@ last-synced hash 三方比较已闭合上一轮唯一阻塞。
 - Revision 明确 021b 先查 `/Users/zhangjunwu/workspace/obsidian/knowledge` clean，datawarehouse 迁移单独 commit，不混入引擎 apply commit。
 
 可以进入 Decision / TASK-021a / TASK-021b。
+
+## Decision · by claude（Path A）
+
+codex re-review verdict: **通过（有非阻塞建议）**。M2 算法阻塞已闭合，**RFC-021 accepted**。
+
+采纳 codex re-review 的 4 条实现注意点，落 apply Task 强约束（主要 TASK-021b）：
+
+1. **hash 口径**：`.wiki-schema.md` 字节级 sha256，复用 `sha256_file()`，不做换行 / 编码 / frontmatter 归一化；写模板用同一份 bytes（防 LF/CRLF 假 drift）。
+2. **原子写**：`.wiki-schema.md` 与 `.wiki/schema_sync.json` 均临时文件 + `os.replace()`，先写 schema 再写 sync 元数据（崩溃只致下次保守拒绝、不误覆盖）。
+3. **`schema_sync.json` 进 Git**（实例正本元数据，不 gitignore）：跨机 / agent 共享后续安全覆盖才成立；`.gitignore` 需放行。
+4. **no-op 分支修元数据**：`target hash == engine hash` 但元数据缺失 / 旧时，写当前 hash + 报 metadata repair（纳管手工已同步实例，免 `--force`）。
+
+Apply 顺序：**TASK-021a**（M1 版本纪律）先 → 评估 → **TASK-021b**（M2 sync 保护 + datawarehouse 迁移；单独 commit、先查数据仓 clean）。
