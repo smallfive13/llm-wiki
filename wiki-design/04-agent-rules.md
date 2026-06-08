@@ -94,6 +94,24 @@ knowledge/.wiki/inbox_index.json
 
 如果用户选择“稍后审阅”或存在不确定冲突，把待办写入 `knowledge/.wiki/review_queue.json`，不要只写在对话里。
 
+## 新机制 RFC 准入 Gate
+
+机制类 RFC 必须包含 `## 真实摩擦来源` 和 `## 验证方式` 两段。
+
+适用范围：
+
+- 动 schema、字段、页面类型、目录结构、JSON 契约或 profile 机制。
+- 新增派生信号、lint/graph/eval 行为、索引、健康度或工具输出。
+- 新增或改变 Agent 工作流机制，例如 ingest 编排、capture 策略、写入模式、review gate。
+- 工具改进如果实际引入新机制，也按机制类处理。
+
+豁免范围：
+
+- 纯 bugfix、鲁棒性修复、文档修复、措辞 / 链接 / 示例补全，不引入新机制时可不展开验证设计。
+- 豁免 RFC 仍保留两段标题，并写明：`不适用：纯 bugfix / 文档修复，未引入新机制`。
+
+`真实摩擦来源` 应指向具体证据，例如某次 datawarehouse / personal 实例摩擦、REVIEW 审计项、重复失败的 task、用户明确痛点或真实 fixture。`验证方式` 应说明 apply 后如何证明有效，优先包含机械测试、真实实例 smoke 和回归命令。
+
 ## 禁止事项
 
 - 不要把 `.wiki/` 中的索引缓存当作知识正本。

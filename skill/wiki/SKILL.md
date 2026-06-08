@@ -1,6 +1,6 @@
 ---
 name: wiki
-description: 把知识按 llm-wiki 标准沉淀进个人或业务知识库（Obsidian vault 实例）。当用户想把内容整理 / 记录 / 沉淀 / 结晶化进知识库、个人库、某个业务库，或说"存进 inbox""capture 一下""消化这篇资料""整理 inbox""存下来供以后参考"时，使用此 skill。即使用户没说"知识库"三字，只要表达"把这个记下来供长期学习 / 参考"的沉淀意图、且涉及一个已配置的库，也应触发。它会：识别目标库 → 按 8 类页面 schema 写合法页面 → 跑 wiki_lint 校验 + wiki_graph 投影 + 更新 log。不要在普通问答、临时草稿、或与已配置知识库无关的写作里触发。
+description: 把知识按 llm-wiki 标准沉淀进个人或业务知识库（Obsidian vault 实例）。当用户想把内容整理 / 记录 / 沉淀 / 结晶化进知识库、个人库、某个业务库，或说"存进 inbox""capture 一下""消化这篇资料""整理 inbox""存下来供以后参考"时，使用此 skill。即使用户没说"知识库"三字，只要表达"把这个记下来供长期学习 / 参考"的沉淀意图、且涉及一个已配置的库，也应触发。它会：识别目标库 → 按库根 AGENTS.md 与 .wiki-schema.md 写合法页面 → 跑 wiki_lint 校验 + wiki_graph 投影 + 更新 log。不要在普通问答、临时草稿、或与已配置知识库无关的写作里触发。
 ---
 
 # wiki — 知识库标准写入
@@ -25,6 +25,17 @@ description: 把知识按 llm-wiki 标准沉淀进个人或业务知识库（Obs
 
 确认目标库后记住它的 `root`，后续所有路径都是 `<root>/...`。
 
+## 写入正本
+
+字段、模板和 JSON 契约不在 skill 里镜像维护。写入前按顺序读取：
+
+1. `<root>/AGENTS.md`（如果存在）：目标库的行为规则和团队约定。
+2. `<root>/.wiki-schema.md`：目标库的数据契约、页面模板、JSON 契约和引用格式。
+3. `<root>/.wiki-profile.json`（如果存在）：目标库额外 schema profile。
+4. 引擎仓 `AGENTS.md`：通用 Agent 协作与 lint 规则。
+
+如果 skill 文案与目标库正本冲突，以目标库 `AGENTS.md` 和 `.wiki-schema.md` 为准。
+
 ## 三种写入模式
 
 判断用户意图属于哪种，按对应方式写。
@@ -34,17 +45,17 @@ description: 把知识按 llm-wiki 标准沉淀进个人或业务知识库（Obs
 触发："存一下""capture""记到 inbox"。
 
 - 写到 `<root>/inbox/YYYYMMDD-HHmmss-<slug>.md`
-- frontmatter：`id: inb_YYYYMMDD_HHmmss_<slug>` / `type: inbox` / `status: draft` / `created` / `review: true` / `suggested_target_type` / `suggested_target_title`
+- 字段和文件命名按 `<root>/.wiki-schema.md` 的 inbox 段
 - 不进 `wiki/`，是缓冲层，以后用户说"整理 inbox"时再晋升
-- **PII 兜底**：含密钥/token/客户姓名/身份证/手机号等，只建议不自动写（提示用户确认）
+- PII / visibility / capture policy 以 `<root>/.wiki/capture_policy.json` 和 `.wiki-schema.md` 为准；命中硬底线时只建议，不自动写
 
 ### crystallize（整理成正式页面）
 
 触发："整理 / 结晶化 / 沉淀进知识库""把这个主题写进去"。
 
 1. 抽稳定结论，区分事实 / 判断 / 决策 / 开放问题
-2. 选页面类型（8 类，见下方速查）→ 写到 `<root>/wiki/<dir>/<slug>.md`
-3. 完整 frontmatter + 正文 + `[[slug|显示标题]]` wikilink
+2. 按 `<root>/.wiki-schema.md` 选择页面类型和模板，写到 `<root>/wiki/<dir>/<slug>.md`
+3. 写完整 frontmatter、正文、canonical ID 引用和显示层 wikilink
 4. 多个相关页用 `related_ids`（canonical，按 ID）互联；`related`（显示层 wikilink）同步
 
 ### ingest（摄入 raw 资料）
@@ -52,9 +63,10 @@ description: 把知识按 llm-wiki 标准沉淀进个人或业务知识库（Obs
 触发："消化这篇 PDF / 文章""把这份资料整理进来"。
 
 - 资料应在 `<root>/raw/sources/`
-- 两步走（详见 `references/schema.md` 的 ingest 段）：
+- 两步走：
   - **Triage**：算 hash、登记 `raw/source_manifest.json`、抽实体做 alias matching、冲突进 `.wiki/review_queue.json`、给用户审阅计划（先不写 wiki/）
   - **Apply**：写 `wiki/sources/` 摘要页、联动 entities/topics、回填 manifest
+- 批量 ingest、子链接、source-gap 和图片规则以 `<root>/.wiki-schema.md` 与引擎 `AGENTS.md` 为准
 
 ## 写完必做：校验 + 投影 + log
 
@@ -76,26 +88,6 @@ description: 把知识按 llm-wiki 标准沉淀进个人或业务知识库（Obs
 ## 报告
 
 写完告诉用户：目标库 + 新建/更新了哪些页 + lint exit 0 + graph 节点/边数 + 0 dangling。派生层（`.wiki/*_index.json`、`maps/*`）由工具自动管，不要手动碰、不要 commit（已 gitignore）。
-
-## schema 速查
-
-| 类型 | 目录 | prefix |
-| --- | --- | --- |
-| source | `wiki/sources/` | `src` |
-| entity | `wiki/entities/` | `ent` |
-| topic | `wiki/topics/` | `top` |
-| comparison | `wiki/comparisons/` | `cmp` |
-| synthesis | `wiki/synthesis/` | `syn` |
-| decision | `wiki/decisions/` | `dec` |
-| query | `wiki/queries/` | `que` |
-| open-question | `wiki/open-questions/` | `oq` |
-| inbox（非 wiki 页） | `inbox/` | `inb`（`inb_YYYYMMDD_HHmmss_slug`） |
-
-- **ID 格式** `<prefix>_YYYYMMDD_<slug>`，一次创建永不变。
-- **wikilink** 用 `[[slug|显示标题]]`（slug = 目标页文件名，不含 .md/目录）—— Obsidian 和 wiki_graph 都解析。
-- **canonical（按 ID，lint 校验）**：`source_ids`/`related_ids`/`supersedes`/`superseded_by`/`canonical_id`；**显示层（wikilink，给人看）**：`sources`/`related`。
-
-完整 frontmatter 字段、各类页面模板、inbox 模板、ingest 详细流程、别名规则 → 读 `references/schema.md`。
 
 ## git（用户的数据仓，不擅自提交）
 
