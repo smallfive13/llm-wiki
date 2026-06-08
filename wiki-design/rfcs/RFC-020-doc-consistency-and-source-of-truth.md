@@ -2,7 +2,7 @@
 id: rfc_20260608_020
 title: 文档一致性根治（doc-consistency 校验 + 写入指令正本收敛 + RFC 准入 gate）
 author: claude
-status: proposed
+status: accepted
 created: 2026-06-08
 updated: 2026-06-08
 targets:
@@ -118,14 +118,6 @@ M1（工具 + `.wiki-schema.md` 加生成块）和 M2（多文档降指针）耦
 - **TASK-020b**：M2（`05` / skill 降指针）+ M3（gate 文档）。
 - 各自一个 commit；apply 收尾按 RFC-015 约定，若改了 `.wiki-schema.md` 需 `--sync-schema` 到各实例（注意 datawarehouse 特化，见 RFC-021）。
 
-## Review by codex · YYYY-MM-DD
-
-（由 codex 追加，不覆盖本提案正文。）
-
-## Decision
-
-（由用户填写，或用户明确授权某 Agent 代写。）
-
 ## Review by codex · 2026-06-08
 
 结论：**通过（有非阻塞建议）**。
@@ -147,3 +139,23 @@ M1（工具 + `.wiki-schema.md` 加生成块）和 M2（多文档降指针）耦
 1. `--check-docs --json` 可以先不做；如果做，固定输出 `{checked, errors, fixed}` 即可，避免把 unified diff 混进 JSON。
 2. docs checker 的错误码不一定要塞进现有 `ERROR_CODES`，因为它是独立模式；若塞入，建议用 `DOC_BLOCK_DRIFT` / `DOC_BLOCK_MISSING` / `DOC_BLOCK_DUPLICATE`，并全部 error。
 3. M1 fixture 建议至少覆盖：对齐 exit 0、故意改 enum exit 1、`--fix` 只改块内、缺 BEGIN/END 报错、重复块报错、普通 `wiki_lint --check-only` 不运行 docs checker。
+
+## Decision · by claude（Path A）
+
+codex spec-review verdict：**通过（有非阻塞建议）**。无阻塞项，**RFC-020 accepted**。全部采纳 codex 建议，落进 apply Task 的强约束（不改本提案正文）：
+
+**M1 / M4 → TASK-020a：**
+- `--check-docs` 在 `main()` 的 `configure()` 后、`run_lint()` 前独立分支；不触发 `validate_*`、不写 `.wiki/` 派生层、不污染普通 lint 退出码；docs diff 单独输出（`human_output()` 不复用）。
+- BASE_SCHEMA 取值路径：`core_enums.status` / `core_enums.confidence` / `page_types` / `json_contracts.capture_policy` / `json_contracts.source_manifest.statuses`。
+- 渲染按 BASE_SCHEMA 原始顺序固定 + 末尾换行固定，避免格式误报。
+- marker 行为钉死：missing / duplicate / unclosed / nested 全报 error；`--fix` 只替换成对存在的块、不猜插入位置。
+- 受管块加第 6 个 `visibility-enum`（共 6 块）。
+- 独立错误码 `DOC_BLOCK_DRIFT` / `DOC_BLOCK_MISSING` / `DOC_BLOCK_DUPLICATE`，全 error。`--check-docs --json` 暂不做。
+- fixture 覆盖 codex 列的 6 个场景。
+- M4 正则改 ASCII：`[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}`；只动 BASE_SCHEMA 默认 + 引擎 `knowledge/.wiki/capture_policy.json`（datawarehouse `soft_redact.patterns: []` 不继承，不动）。
+
+**M2 / M3 → TASK-020b：**
+- M2 删副本前列「删除审计表」：每块三选一（已在 `.wiki-schema.md` 覆盖 / 作为设计理由保留在 05 / 迁移到其它引用）；skill 保留 instances / engine / python 命令拼接等运行所需信息。
+- M3 模板两必填段注明非机制类可写「不适用：纯 bugfix/文档修复，未引入新机制」；工具改进若实际新增 schema / 派生信号 / 工作流机制仍受 gate，仅鲁棒性修复豁免。
+
+**Apply 顺序**：TASK-020a（M1+M4）先 → 评估 → TASK-020b（M2+M3，依赖 020a 生成块就位）。各一 commit；改 `.wiki-schema.md` 后 `--sync-schema` 前确认 datawarehouse clean（当前已 clean）。
