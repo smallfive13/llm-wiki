@@ -125,3 +125,25 @@ M1（工具 + `.wiki-schema.md` 加生成块）和 M2（多文档降指针）耦
 ## Decision
 
 （由用户填写，或用户明确授权某 Agent 代写。）
+
+## Review by codex · 2026-06-08
+
+结论：**通过（有非阻塞建议）**。
+
+我复核了 `scripts/wiki_lint.py` 的 `configure()` / `run_lint()` / `human_output()` 结构、`scripts/wiki_common.py` 的 `BASE_SCHEMA`、引擎与 datawarehouse 的 `capture_policy.json`，以及 05 / skill / `.wiki-schema.md` 当前正本状态。RFC-020 的拆分方向成立：M1 先用生成块把最易漂移的 schema 清单机器化，M2 再删冗余副本，M3 把 P2-1 从“暂停 RFC”改成机制类准入 gate，M4 修默认邮箱 soft_redact。未发现必须退回重写的阻塞点。
+
+逐 milestone 意见：
+
+| milestone | 判定 | 复核意见 |
+| --- | --- | --- |
+| M1 生成块同步校验 | **通过，有实现细节建议** | 现有 `wiki_lint.py` 可以干净挂 `--check-docs` 独立模式：`main()` 解析参数后先 `configure(args)`，再在 `run_lint(args)` 前分支到 docs checker；不触发 `validate_*`、不写 `.wiki/` 派生层，也不污染普通 lint 退出码。`human_output()` 不必复用，可单独输出 docs diff。`BASE_SCHEMA` 中 `core_enums.status`、`core_enums.confidence`、`page_types`、`json_contracts.capture_policy`、`json_contracts.source_manifest.statuses` 都能稳定取到；其中 status/confidence/source statuses 是 list，page_types 是 literal dict，在当前 Python 版本有插入顺序，但 TASK 仍应显式规定渲染顺序（按 `BASE_SCHEMA` 顺序或 sorted 二选一）和末尾换行，避免格式误报。`--fix` 只改 BEGIN/END 块内可实现，但 TASK 需钉死 missing / duplicate / unclosed / nested marker 的行为：建议全部报 error，`--fix` 只替换已成对存在的块，不自动猜插入位置。首批 5 个受管块合理；非阻塞建议加第 6 个 `visibility-enum`，因为 `visibility` 正是 P0 漂移的一部分。 |
+| M2 写入指令正本收敛 | **通过，有删除审计要求** | 指定 `AGENTS.md`（行为）+ `knowledge/.wiki-schema.md`（数据契约）为正本是正确方向。当前 `.wiki-schema.md` 已覆盖标准 frontmatter、source manifest、capture_policy、写入规则、alias、split/merge、ingest 等核心契约，具备承接降指针的基础。但 `wiki-design/05-contracts-and-next-steps.md` 仍含一些可能有独立价值的设计理由和页面正文模板示例；TASK-020b 删除前应列一个“删除审计表”：每个被删块是“已在 `.wiki-schema.md` 覆盖 / 作为设计理由保留在 05 / 迁移到其它引用”三选一，避免把唯一信息当重复删掉。skill 可以降为入口和流程索引，但不要删掉 instances / engine / python 命令拼接这些 skill 运行所需信息。 |
+| M3 RFC 准入 gate | **通过，需澄清 N/A 口径** | 把 P2-1 改成机制类 gate 是对的，尤其 REVIEW-001 已确认真实 datawarehouse 实例存在，不能再用空库继续堆机制。当前 RFC 正文已写“新增机制类 RFC（动 schema / 新页面机制 / 新派生信号）必须能指向真实摩擦，纯 bugfix / 文档 / 工具鲁棒性不受限”，方向清楚。非阻塞建议：模板里新增的两个“必填段”应注明非机制类 RFC 可以写 `不适用：纯 bugfix/文档修复，未引入新机制`，否则容易被理解成所有 RFC 都必须提供 datawarehouse 验证。另需防一个绕口：如果“工具改进”实际新增 schema、派生信号或工作流机制，仍应受 gate；只有鲁棒性修复可豁免。 |
+| M4 soft_redact 邮箱正则 | **通过，有正则细节建议** | `[\w.+-]+@[\w.-]+\.\w{2,}` 比当前 `@[a-z]+\.com` 明显更好，能覆盖完整 local-part、`.cn`、数字、子域名。实现影响边界也成立：datawarehouse 有自己的 `/Users/zhangjunwu/workspace/obsidian/knowledge/datawarehouse/.wiki/capture_policy.json`，且 `soft_redact.patterns: []`，不会继承 BASE_SCHEMA 默认；现有 v2 实例只按自己的 JSON 扫描。BASE_SCHEMA 默认主要影响新 init 模板、引擎 `knowledge/.wiki/capture_policy.json` 和缺省模板。非阻塞建议把 `\w` 改成 ASCII 范围 `[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}`；lint 编译正则时已有 `re.IGNORECASE`，ASCII 写法更可控，避免 Python `\w` 的 Unicode 行为带来意外匹配。 |
+| Apply 拆分 | **通过** | `TASK-020a = M1 工具 + .wiki-schema 生成块 + M4 正则`、`TASK-020b = M2 降指针 + M3 gate 文档` 的顺序合理。M2 依赖 M1 先把 `.wiki-schema.md` 的受管块落稳。若 020a/020b 改 `.wiki-schema.md` 后需要 sync 到实例，必须先检查外部 datawarehouse 是否 clean；当前仓库历史上已出现外部实例 dirty 场景，不能无条件覆盖实例特化内容。 |
+
+补充建议：
+
+1. `--check-docs --json` 可以先不做；如果做，固定输出 `{checked, errors, fixed}` 即可，避免把 unified diff 混进 JSON。
+2. docs checker 的错误码不一定要塞进现有 `ERROR_CODES`，因为它是独立模式；若塞入，建议用 `DOC_BLOCK_DRIFT` / `DOC_BLOCK_MISSING` / `DOC_BLOCK_DUPLICATE`，并全部 error。
+3. M1 fixture 建议至少覆盖：对齐 exit 0、故意改 enum exit 1、`--fix` 只改块内、缺 BEGIN/END 报错、重复块报错、普通 `wiki_lint --check-only` 不运行 docs checker。
