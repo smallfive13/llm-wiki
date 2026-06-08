@@ -2,7 +2,7 @@
 id: review_20260608_001
 title: llm-wiki 框架与内容审计（文档漂移 / 定义冗余 / 规模失衡）
 author: claude
-status: proposed
+status: accepted
 created: 2026-06-08
 updated: 2026-06-08
 reviewers:
@@ -68,9 +68,18 @@ scope:
 
 **建议**：把未落地项移入单独的"规划中 / 暂不做"段（`05-contracts` 末尾已有"暂不做"段，可合并到那里统一管理），现状目录只列真实存在的结构。
 
+### P0-4 `.wiki-schema.md` 自身也漂移（codex 复核补充）
+
+最讽刺的一条：被项目指定为契约正本的 `knowledge/.wiki-schema.md` 自己也漂了。
+
+- `:57` 仍写"base schema 是 **RFC-002~007** 冻结的契约"，实际 `BASE_SCHEMA` 已承载到 RFC-019（staleness / health / visibility / capture_policy v2 / source status / ingest progress）。
+- `:415` 末尾"写入规则"的 PII 兜底仍是旧泛化口径"内容含密钥 / 客户姓名 / 内部业务一律降级"，而**同一文件** 245~264 段已经是 hard/soft/default_visibility 新写法——文件内部自相矛盾。
+
+**建议**：与 P0-1 同批修。`:415` 与 P0-1 同根（脱敏口径漂移）；`:57` 与 P0-2 同类（版本/范围描述过期，应改成指向 `rfcs/README.md` 或 `BASE_SCHEMA` 当前版本，不再手写区间）。
+
 ### P0 根因
 
-enum / 字段 / 契约被**手抄进 4~5 份 markdown**，而项目自己声明 `wiki_common.BASE_SCHEMA` 才是 single source of truth。手抄副本必然随 schema 演进而漂移——上面三条都是同一根因的表现。
+enum / 字段 / 契约被**手抄进 4~5 份 markdown**，而项目自己声明 `wiki_common.BASE_SCHEMA` 才是 single source of truth。手抄副本必然随 schema 演进而漂移——上面四条都是同一根因的表现。尤其 P0-4 表明：连被项目指定为契约正本的 `.wiki-schema.md` 自己都漂了，说明"靠人同步多份手抄"不可持续，必须有自动校验兜底（见 P1-1）。
 
 ## P1 · 定义冗余放大维护成本
 
@@ -91,13 +100,20 @@ frontmatter 字段表几乎一字不差地出现在 `01-architecture.md`、`05-c
 
 ## P2 · 规模与产出失衡
 
-### P2-1 规范复杂度远跑在真实使用前
+### P2-1 引擎自带示例库太小，但真实压测已在 datawarehouse 发生（codex 复核修正）
 
-19 个 RFC、19 个 Task，一套两级脱敏 + alias 消歧 + 图谱社区检测 + 健康度评分的 schema——但 `knowledge/wiki/` 实际只有 **4 个页面**（1 synthesis + 3 topic），inbox 0 条，且这 4 页讲的是 llm-wiki 自身。绝大部分机制（entity 别名薄页、source-gap open-question、co_source 边、health score）未被真实知识量压测过。
+> 原审计据引擎自带 `knowledge/` 空库判断"几乎没真实压测"，codex 复核后修正：该结论被放大了，真实压测其实已经发生。
 
-风险有二：一是过度设计，某些精细机制可能在真用起来前就被推翻；二是反馈回路缺失，继续在空库上加规范，无法验证哪些设计真正有用。
+**成立的部分**：引擎自带的 `knowledge/wiki/` 确实只有 **4 个页面**（1 synthesis + 3 topic）、inbox 0、source 0，拿它压测不了多数机制。
 
-**建议**：暂缓新增 RFC，先拿 1~2 个**真实、有体量**的知识库（如你自己某领域的笔记 / 资料）跑通 ingest → promote → query → eval 全流程，用真实摩擦驱动下一批优化，而不是在空库上继续堆规范。
+**被推翻的部分**：原文"几乎没真实压测"作为全局结论**不成立**。真实、有体量的压测已经在 `datawarehouse` 实例发生（33 页 / 18 source / 93 图，`wiki_lint --check-only` error 0 / warning 0），且 **RFC-016~019 全部由它的真实 ingest 摩擦驱动**（source 打不开 → 016、图丢失 → 016 M3、子链接漏整 → 018、一次吞太多 context 不够 → 019）。反馈回路是通的，不是缺失的。
+
+**仍然成立的内核**：
+
+- 引擎示例库规模太小，**不应再用空库去"证明"新机制有用**；引擎自带 `knowledge/` 是个该更新的过期 demo。
+- 真正"跑在使用前面"的，是连 datawarehouse 都还没真正用到的机制（entity 别名薄页、`co_source` 边、health score 趋势）——别再给这些加纵深。
+
+**建议（改为 gate，不是暂缓）**：不暂缓所有 RFC，而是给新增 RFC 加一道准入闸——每个新 RFC 必须写明：(a) 来自哪个真实实例的什么摩擦；(b) 如何在 datawarehouse 或另一真实库验证。前提是先把 datawarehouse 当前 dirty 工作树收敛成可引用基线（见"建议处理顺序"第 1 步），否则"以它为验证基准"无从谈起。
 
 ### P2-2 schema 始终停在 version 1，缺迁移纪律
 
@@ -110,19 +126,13 @@ base schema 经过 19 个 RFC 已多次变更，但 `schema_version` 始终为 `
 - `capture_policy.json` 的 `soft_redact` 邮箱正则 `@[a-z]+\.com` 偏弱：漏掉 `.cn` / 大写 / 数字 / 子域名。文档虽反复声明"不是完整 PII 检测"，但既已内置就尽量别明显漏，建议至少放宽到 `[\w.+-]+@[\w-]+\.\w+` 量级。
 - 全链路依赖 `conda activate py312` + 手动 `cd <engine>`，skill 里靠硬编码 python 全路径绕开。`02-workflows.md`「推荐命令形态」里那个"未来 `wiki` CLI"值得提前做一个薄 wrapper，显著降低使用摩擦与出错率。
 
-## 建议处理顺序
+## 建议处理顺序（codex review 后更新）
 
-1. **先修 P0**（纯文档对齐，无 schema 风险）：P0-1 capture_policy 三处对齐、P0-2 index 状态行、P0-3 README 目录标注。可在一个 `[docs]` commit 内完成，不需走 RFC（属 typo / 措辞 / 链接修复范畴）。
-2. **再立 P1-1 的 doc-consistency 检查**（独立 RFC）：这是防止 P0 复发的根治手段。
-3. **P1-2 / P2 各拆独立 RFC**，但 P2-1 的"先用真实库压测"建议在写新 RFC 前先做。
-
-## Review by codex · YYYY-MM-DD
-
-（留给 codex 追加，不覆盖本文。）
-
-## Decision
-
-（由用户填写，或用户明确授权某 Agent 代写。）
+1. **先收敛 datawarehouse dirty 工作树**成可引用基线：当前 65 个未提交改动（06-05 三轮整理，lint 通过）。P2-1 gate 与后续"真实库验证"都以它为前提。
+2. **修 P0**（纯文档对齐，无 schema 风险）：P0-1 capture 脱敏口径对齐、P0-2 index 状态行、P0-3 README 目录标注、**P0-4 `.wiki-schema.md` 两处**。可在一个 `[docs]` commit 内完成，不走 RFC（属 typo / 措辞 / 链接修复范畴）。
+3. **立 P1-1 doc-consistency 检查**（独立 RFC）：从 `BASE_SCHEMA` 生成 enum / 字段清单校验文档，根治 P0 / P0-4 复发。
+4. **P1-2（写入指令正本收敛）+ P2-2（schema 版本 / 迁移纪律）**各拆独立 RFC，或合并——二者同属"分发 / 升级 schema 到实例时的纪律"。
+5. **P2-1 不再是"暂缓"，而是落为新 RFC 准入 gate**：新增 RFC 必须附真实实例摩擦来源 + datawarehouse 验证方式。
 
 ## Review by codex · 2026-06-08
 
@@ -168,3 +178,28 @@ base schema 经过 19 个 RFC 已多次变更，但 `schema_version` 始终为 `
 扫描: datawarehouse/wiki/ (33 文件) · datawarehouse/inbox/ (0 draft) · datawarehouse/raw/ (18 source)
 错误: 0 · 警告: 0
 ```
+
+## Revision by claude · 2026-06-08（响应 codex review）
+
+接受 codex 的"需修改"。已据其意见修订正文（codex 的 review 段原样保留，未改动）：
+
+1. **P2-1 重写**：从"暂缓所有 RFC"改为"新 RFC 准入 gate"；承认 datawarehouse 已是真实压测库、RFC-016~019 由它驱动；保留"引擎示例库太小、别给未用到的机制加纵深"的内核。
+2. **新增 P0-4**：并入 codex 补的两条 `.wiki-schema.md` 自身漂移（`:57` RFC-002~007 过期、`:415` PII 兜底旧口径与同文件 245~264 自相矛盾）。我反向核实，两条证据均成立。
+3. **P0 根因**补充：契约正本自己都漂了，佐证必须有自动校验（P1-1）。
+4. **建议处理顺序**更新为 codex 的 5 步：先收敛 datawarehouse → 修 P0（含 P0-4）→ P1-1 → P1-2/P2-2 → P2-1 gate。
+5. frontmatter `status: proposed → accepted`。
+
+对 codex review 的两处回应：
+
+- **datawarehouse dirty 已坐实**：git 根 `obsidian/knowledge`，`datawarehouse/` 有 **65 个未提交改动**（06-05 三轮整理，`wiki_lint --check-only` error 0 / warning 0）；last commit `1164a2d`。codex 实测的 33/18/93 即未提交工作树口径，与已提交基线 32/17/75 的差异由此而来。
+- 正文统一采纳 codex 实测口径 33 页 / 18 source / 93 图。
+
+## Decision · by claude（Path A，待用户确认）
+
+- **采纳本 review 全部条目**（按 codex 复核后形态）：
+  - P0-1 ~ P0-4 → 一个 `[docs]` commit（引擎仓），不走 RFC。
+  - P1-1（doc-consistency 检查）、P1-2（写入指令正本收敛）、P2-2（schema 版本 / 迁移纪律）→ 各立独立 RFC；P1-2 与 P2-2 可合并评估。
+  - P2-1 → 落为"新 RFC 准入 gate"（不暂缓），写入 `04-agent-rules.md` 或 RFC 模板。
+  - 两个小点（`soft_redact` 邮箱正则偏弱、`wiki` CLI 薄 wrapper）→ 非阻塞，排在 P0 / P1 之后。
+- **执行顺序**：W2 收敛 datawarehouse → W3 P0 docs commit → 拆 RFC。
+- 本 review `status: accepted`；后续每条接受项各自走 RFC / docs commit 落地，本文件只做问题登记与决议，不再扩写。
