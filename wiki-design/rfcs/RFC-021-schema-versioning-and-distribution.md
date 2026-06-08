@@ -106,3 +106,65 @@ REVIEW-001 的 P2-2：`BASE_SCHEMA.schema_version` 经 RFC-001~020 多次变更�
 ## Decision
 
 （由用户填写，或用户明确授权某 Agent 代写。）
+
+## Review by codex · 2026-06-08
+
+结论：需修改。
+
+总体方向认可：M1 用 `min_compatible_profile_version` 把“引擎版本”和“profile 兼容下界”拆开，是比 `profile.schema_version == base.schema_version` 更可维护的模型；M2 把 `.wiki-schema.md` 定义为引擎镜像、把实例特化外移到 `.wiki-profile.json` / `.wiki/capture_policy.json` / `purpose.md` / `AGENTS.md`，也和 RFC-020 的正本收敛方向一致。当前唯一阻塞是 `--sync-schema` 覆盖前 diff 保护的机械算法没有钉死。
+
+### M1 · 版本纪律
+
+同意核心方向。
+
+- 已核对现状：`scripts/wiki_common.py:21` 仍是 `BASE_SCHEMA["schema_version"] = 1`；`validate_profile()` 当前在 `scripts/wiki_common.py:626` 用严格相等触发 `PROFILE_SCHEMA_VERSION`。
+- 范围校验 `profile.schema_version ∈ [base.min_compatible_profile_version, base.schema_version]` 成立。它允许 base 兼容新增后继续接受旧 profile，同时仍能拦住“profile 比引擎新”和“profile 跨过破坏性下界”两类风险。
+- 复用 `PROFILE_SCHEMA_VERSION` 是干净的；这是同一类 profile / base 版本不兼容问题，不需要新增 error code。
+- 实例核对：引擎内置 `knowledge/` 无 `.wiki-profile.json`；datawarehouse 无 `.wiki-profile.json`；personal 有 `.wiki-profile.json`，内容为 `schema_version: 1`、`profile: personal`、无扩展类型。当前三者 lint 都 exit 0。基线 bump 到 `schema_version: 2`、`min_compatible_profile_version: 1` 后，personal 的 v1 profile 应继续 pass，这一点应纳入 TASK-021a fixture / smoke。
+
+非阻塞建议：
+
+- TASK-021a 里把 `schema_version` 缺失、非整数、低于下界、高于 base 四种 fixture 都钉死，避免 range check 对非 int 产生 Python 比较异常或模糊错误。
+- `.wiki-schema.md` 的 Schema Profile 版本文案不在 TASK-020a 的 6 个 generated blocks 中，`--check-docs` 不会自动捕获它。TASK-021a 应单独验证 `.wiki-schema.md` 中 profile 版本兼容文案已更新，不要只依赖 `--check-docs`。
+
+### M2 · 分发安全
+
+datawarehouse 特化外移判断成立，但 sync 保护算法需修改后再执行。
+
+已核对 datawarehouse 三处特化：
+
+- `.wiki-schema.md:251` “本数仓内部库默认 soft_redact 为空”：机器事实已在 `/Users/zhangjunwu/workspace/obsidian/knowledge/datawarehouse/.wiki/capture_policy.json` 中体现为 `soft_redact.patterns: []`；`purpose.md:16` / `AGENTS.md:31` 也解释了内部共享边界与硬红线。
+- `.wiki-schema.md:262` “内部 OA 链接、Wiki 链接、联系人、邮箱、内部系统入口、截图、水印、项目/业务线名称可以入库”：已由 `purpose.md:16` 和 `AGENTS.md:31` 覆盖。
+- `.wiki-schema.md:274` 外链处理“不建 source、不跟进”：已由 `AGENTS.md:37` 覆盖。purpose.md 未逐字写外链处理，但 combined context 已覆盖，不属于唯一信息。
+
+所以方案 B “删 `.wiki-schema.md` 冗余特化，不丢信息”成立。
+
+阻塞点：`--sync-schema` 的“实例侧存在引擎版没有的额外内容”还不是可机械实现的定义。当前 `scripts/wiki_init.py:132` 是整文件覆盖；如果 TASK 只做普通 unified diff，很难区分三类情况：
+
+- 旧引擎镜像的正常陈旧内容；
+- 实例本地特化内容；
+- 因引擎模板重排 / 删除导致的普通 diff。
+
+这会导致两种不良实现：要么误判正常旧镜像为“有额外内容”而几乎总是拒绝；要么误把实例特化当普通 diff 覆盖掉。RFC 需要在正文中补一个明确算法或收窄语义。可选两条路线：
+
+- 保守路线：已有 `.wiki-schema.md` 只要与引擎模板不完全一致，默认一律拒绝并打印 diff；`--force` 才覆盖。这样简单安全，但要承认“无额外内容时照常同步”只适用于 target 缺失、完全一致或未来有可识别元数据的情况。
+- 可识别路线：先引入模板 hash / source version marker 或受管块边界，再只允许自动覆盖可证明来自旧引擎镜像的内容；其它 diff 默认拒绝。这个更自动，但实现更重。
+
+当前 RFC 写法介于两者之间，TASK-021b 会被迫猜。
+
+### Gate 自检
+
+通过。
+
+- `## 真实摩擦来源` 写到了 REVIEW-001 P2-2、RFC-020 后 datawarehouse `.wiki-schema.md` 分叉、`wiki_common.py:21/:626` 具体锚点，证据足够具体。
+- `## 验证方式` 覆盖 M1 fixture、M2 fixture、真实实例 smoke、回归，符合 RFC-020 新 gate 的预期。
+- 这次 gate 在真实 RFC 上可用；暂不需要调整模板措辞。
+
+### Apply 拆分
+
+拆分合理。
+
+- TASK-021a 做版本纪律，影响 `wiki_common` / `wiki_lint` / `.wiki-schema.md` 文档和 fixture，边界清楚。
+- TASK-021b 做 sync 保护和 datawarehouse 迁移，和外部实例操作绑定，应该单独 commit。TASK-021b 必须先检查 `/Users/zhangjunwu/workspace/obsidian/knowledge` clean，再对 datawarehouse 做独立数据仓 commit；不要混入引擎 apply commit。
+
+建议处理顺序：先修 M2 diff 保护算法，再进入 TASK-021a/021b。M1 不需要重做方向，只需在 TASK 中补足类型/缺失 fixture 与 `.wiki-schema.md` 文案验证。
