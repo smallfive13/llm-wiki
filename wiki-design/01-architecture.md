@@ -52,12 +52,13 @@ knowledge/.wiki/capture_policy.json
 
 ```text
 knowledge/maps/graph-data.json
-knowledge/.wiki/cache.json
-knowledge/.wiki/search_index/
-knowledge/.wiki/lightrag/
 knowledge/.wiki/id_index.json
 knowledge/.wiki/inbox_index.json
 knowledge/.wiki/normalized_alias_index.json
+# 规划中、尚未落地（勿当现状）：
+# knowledge/.wiki/cache.json
+# knowledge/.wiki/search_index/
+# knowledge/.wiki/lightrag/
 ```
 
 原则：

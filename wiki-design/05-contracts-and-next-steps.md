@@ -290,19 +290,22 @@ suggested_target_title: "Attention 复杂度讨论"
 
 ### 顶层格式
 
+> **以下为结构示意；权威定义以引擎 `wiki_common.BASE_SCHEMA` + `knowledge/.wiki-schema.md`「Capture Policy」段 + 实际 `knowledge/.wiki/capture_policy.json` 为准，本段只解释设计意图。**
+
 ```json
 {
   "version": 1,
   "auto_capture": false,
-  "exclude_patterns": [
-    "密钥", "token", "API[_ ]?key",
-    "客户(姓名|名单|信息)",
-    "@[a-z]+\\.com",
-    "1[3-9]\\d{9}"
-  ],
+  "default_visibility": "internal",
+  "hard_redact": {
+    "patterns": ["AKIA[0-9A-Z]{16}", "token\\s*[:=]", "password\\s*[:=]", "密钥", "私钥", "连接串", "-----BEGIN ... PRIVATE KEY-----"]
+  },
+  "soft_redact": {
+    "patterns": ["客户(姓名|名单|信息)", "@[a-z]+\\.com", "1[3-9]\\d{9}"]
+  },
   "exclude_paths": [],
   "max_inbox_files": 100,
-  "updated_at": "2026-05-26T15:00:00+08:00"
+  "updated_at": "2026-06-04T00:00:00+08:00"
 }
 ```
 
@@ -312,14 +315,17 @@ suggested_target_title: "Attention 复杂度讨论"
 | --- | --- |
 | `version` | schema 版本，当前 `1` |
 | `auto_capture` | 是否允许 Agent 直接写 `knowledge/inbox/`，**默认 `false`**（必须用户主动 opt-in） |
-| `exclude_patterns` | 正则数组，命中任一就降级为"建议 capture"模式，不自动写入 |
+| `default_visibility` | 实例默认可见级 `public`/`internal`/`private`；页面与 source 未显式写 `visibility` 时继承它（缺省回退 `private`） |
+| `hard_redact.patterns` | 硬底线正则数组（AKSK / token / password / 密钥 / 私钥 / 连接串 / private key 等），命中为 **error**，任何库都不可放宽 |
+| `soft_redact.patterns` | 软脱敏正则数组（客户信息 / 邮箱 / 手机号等），命中为 **warning**，可按库配置；`visibility: public` 时仍保留 warning |
+| `exclude_patterns` | **legacy alias**：旧单层写法，lint 仍接受并按 `soft_redact` 处理，但产生 `CAPTURE_POLICY_LEGACY` warning；新库勿用 |
 | `exclude_paths` | glob 数组，Agent 在涉及这些路径的对话中不自动 capture。**默认空数组**——决策类讨论是 capture 的高价值场景，不应被默认排除 |
 | `max_inbox_files` | inbox/ 文件超过此数时停止自动 capture，强制 promotion；默认 100 |
 | `updated_at` | ISO 8601 时间戳 |
 
 ### 重要约束（apply 时必须显式标注）
 
-> **`exclude_patterns` 中的默认正则仅是初始规则，不代表完整 PII 检测**。生产用法必须由 lint 规则、人工 review 规则和组织安全规范共同保障。Agent 不得把这套正则当作唯一 PII 兜底。
+> **`hard_redact` / `soft_redact` 中的默认正则仅是初始规则，不代表完整 PII 检测**。生产用法必须由 lint 规则、人工 review 规则和组织安全规范共同保障。Agent 不得把这套正则当作唯一 PII 兜底。
 
 ## Wiki Profile Schema
 
@@ -401,11 +407,13 @@ profile 只能新增，不能覆盖或收窄 base：
 ### PII 降级流程
 
 ```text
-对话内容 → 命中 exclude_patterns 任一正则？
-  ├── 是 → 强制降级为"建议 capture"模式（无论 auto_capture 开关）
-  └── 否 → 检查 exclude_paths
-        ├── 命中 → 强制降级为"建议 capture"
-        └── 未命中 → 按 auto_capture 开关决定写入或建议
+对话内容 → 命中 hard_redact 任一正则？
+  ├── 是 → error 级硬底线：不写正本、不 capture（任何库都不可放宽）
+  └── 否 → 命中 soft_redact / exclude_patterns(legacy) 任一？
+        ├── 是 → 强制降级为"建议 capture"模式（无论 auto_capture 开关）
+        └── 否 → 检查 exclude_paths
+              ├── 命中 → 强制降级为"建议 capture"
+              └── 未命中 → 按 auto_capture 开关决定写入或建议
 ```
 
 ## Inbox Index Schema

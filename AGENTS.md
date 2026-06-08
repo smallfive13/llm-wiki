@@ -102,7 +102,7 @@ lint 输出 error 时，应优先修复源数据；确实需要绕过时，必�
   ✏️ 已 capture：inbox/<filename> · <一句话摘要>
   ```
   禁止"无声写入"。
-- **PII 兜底**：内容包含密钥、token、客户姓名、身份证号、邮箱、电话、明确标记的内部业务信息时，**无论 auto_capture 开关**，一律降级为"建议 capture"模式，不自动写入。规则化的 PII pattern 由 lint 维护，**注意：内置正则只是初始规则，不代表完整 PII 检测**。
+- **PII 兜底**：内容包含密钥、token、客户姓名、身份证号、邮箱、电话、明确标记的内部业务信息时，**无论 auto_capture 开关**，一律降级为"建议 capture"模式，不自动写入。脱敏分两级：`hard_redact` 命中为 error（硬底线，任何库都不可放宽），`soft_redact` 命中为 warning（可按库 `knowledge/.wiki/capture_policy.json` 配置）；页面与 `source_manifest` 另有 `visibility`（`public`/`internal`/`private`，缺失时继承 `default_visibility`）。权威定义见 [.wiki-schema.md](knowledge/.wiki-schema.md) 与实际 `capture_policy.json`，旧 `exclude_patterns` 仅作 `soft_redact` 的 legacy alias。**注意：内置正则只是初始规则，不代表完整 PII 检测**。
 - **严禁绕过 inbox 直接写 `knowledge/wiki/`**。
 
 inbox 写入不算"长期沉淀"，仅是 capture 缓冲层。promotion workflow 见 [wiki-design/02-workflows.md](wiki-design/02-workflows.md) "Inbox 晋升" 段。Capture Item / Capture Policy schema 见 [wiki-design/05-contracts-and-next-steps.md](wiki-design/05-contracts-and-next-steps.md) "Capture Item Schema" / "Capture Policy Schema" 段。

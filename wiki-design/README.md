@@ -55,18 +55,15 @@ knowledge/
     graph-data.json
     graph-insights.md
 
-  dashboards/
-    review.base
-    sources.base
-    entities.base
-    questions.base
-    decisions.base
-
   .wiki/
-    cache.json
     review_queue.json
-    search_index/
-    lightrag/
+    capture_policy.json
+
+  # 规划中、尚未落地（勿当现状）：
+  # dashboards/*.base    — Obsidian Bases 仪表盘
+  # .wiki/cache.json     — 缓存
+  # .wiki/search_index/  — 检索索引
+  # .wiki/lightrag/      — 图谱 RAG
 ```
 
 ## 参考项目角色
