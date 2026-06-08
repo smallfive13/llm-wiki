@@ -31,7 +31,8 @@ Task 回答"怎么做、谁来做"，与 RFC 回答"要不要这么改"互补。
 | [task_20260604_019](TASK-019-apply-rfc-019.md) | Apply RFC-019 — ingest 批量编排（lint ingest 进度段 + 流程文档） | done | claude | codex | RFC-019 |
 | [task_20260608_020a](TASK-020a-apply-rfc-020-m1-m4.md) | Apply RFC-020 M1+M4 — doc-consistency 校验（wiki_lint --check-docs）+ soft_redact 正则 ASCII 化 | done | claude | codex | RFC-020 |
 | [task_20260608_020b](TASK-020b-apply-rfc-020-m2-m3.md) | Apply RFC-020 M2+M3 — 写入指令正本收敛（05/skill 降指针）+ 新 RFC 准入 gate | done | claude | codex | RFC-020 |
-| [task_20260608_021a](TASK-021a-apply-rfc-021-m1.md) | Apply RFC-021 M1 — schema_version 递增纪律 + profile 兼容范围校验（bump 到 2） | pending | claude | codex | RFC-021 |
+| [task_20260608_021a](TASK-021a-apply-rfc-021-m1.md) | Apply RFC-021 M1 — schema_version 递增纪律 + profile 兼容范围校验（bump 到 2） | done | claude | codex | RFC-021 |
+| [task_20260608_021b](TASK-021b-apply-rfc-021-m2.md) | Apply RFC-021 M2 — --sync-schema 覆盖前保护（last-synced hash）+ datawarehouse 迁移 | pending | claude | codex | RFC-021 |
 
 ## 状态机
 
