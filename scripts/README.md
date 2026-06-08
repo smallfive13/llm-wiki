@@ -27,6 +27,8 @@ python3 scripts/wiki_lint.py --check-only     # 只校验，不写派生层
 python3 scripts/wiki_lint.py --json           # 机器可读输出
 python3 scripts/wiki_lint.py --scan-wiki-pii  # 加扫 wiki/ PII（默认只扫 inbox）
 python3 scripts/wiki_lint.py --ingest-status  # 只读 source_manifest，输出批量 ingest 进度
+python3 scripts/wiki_lint.py --check-docs     # 只校验 BASE_SCHEMA 生成文档块
+python3 scripts/wiki_lint.py --check-docs --fix # 只修复 GENERATED 块内部
 ```
 
 退出码：
@@ -51,6 +53,8 @@ python3 scripts/wiki_lint.py --ingest-status  # 只读 source_manifest，输出�
 `source_manifest.sources[].status` 合法值：`new` / `triaged` / `ingested` / `skipped` / `failed` / `deleted` / `superseded` / `archived`。
 
 普通 lint 的 human/json 输出包含 `ingest_progress`：全量统计各 status，并把 `triaged` 条目列为待 apply 清单（human 默认显示前 20 条）。`--ingest-status` 只读取并基本校验 `raw/source_manifest.json`，不扫描 wiki 页面、不写 `.wiki/` 派生层；退出码只由 manifest 读取 / schema error 决定，`--json --ingest-status` 输出固定 JSON 结构。
+
+`--check-docs` 是独立文档一致性闸：只比对受管 `BEGIN/END GENERATED` 块与 `wiki_common.BASE_SCHEMA` 的生成结果，不运行普通 lint、不扫描 wiki 页面、不写 `.wiki/` 派生层。`--fix` 仅在 `--check-docs` 下有效，只替换已成对存在的生成块内部；缺失、重复或未闭合 marker 不会自动猜位置。
 
 后续 RFC 增强：
 
@@ -92,6 +96,9 @@ python3 scripts/wiki_lint.py --ingest-status  # 只读 source_manifest，输出�
 | `IMAGE_PATH_ESCAPE` | error | 图片引用归一化后逃出实例根 |
 | `IMAGE_HARD_REDACT` | error | 图片路径、文件名、相邻描述或 manifest 图说明命中 hard_redact |
 | `IMAGE_NO_DESCRIPTION` | warning | 图片引用缺少同一行或随后 3 行内的多模态描述 |
+| `DOC_BLOCK_DRIFT` | error | `--check-docs` 下生成块内容与 BASE_SCHEMA 不一致 |
+| `DOC_BLOCK_MISSING` | error | `--check-docs` 下生成块缺失或未闭合 |
+| `DOC_BLOCK_DUPLICATE` | error | `--check-docs` 下生成块重复或嵌套 |
 | `PROFILE_SCHEMA_VERSION` | error | `.wiki-profile.json` schema_version 与引擎不兼容 |
 | `PROFILE_PREFIX_FORMAT` | error | profile `id_prefix` 不是 2-5 位小写字母 |
 | `PROFILE_PREFIX_COLLISION` | error | profile `id_prefix` 撞 base/inbox/其它 profile prefix |

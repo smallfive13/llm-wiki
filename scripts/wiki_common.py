@@ -115,7 +115,7 @@ BASE_SCHEMA: Dict[str, Any] = {
             "soft_redact": {
                 "patterns": [
                     "客户(姓名|名单|信息)",
-                    "@[a-z]+\\.com",
+                    "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}",
                     "1[3-9]\\d{9}",
                     "\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b",
                 ]
@@ -271,6 +271,103 @@ def ingest_progress(source_manifest: Dict[str, Any], statuses: List[str]) -> Dic
         "other_count": other_count,
         "pending_apply_count": len(pending_apply),
         "pending_apply": pending_apply,
+    }
+
+
+DOC_CONSISTENCY_TARGETS = [
+    {
+        "path": "knowledge/.wiki-schema.md",
+        "blocks": [
+            "page-types",
+            "status-enum",
+            "confidence-enum",
+            "visibility-enum",
+            "source-manifest-status",
+            "capture-policy-fields",
+        ],
+    },
+]
+
+
+def generate_doc_block(name: str) -> str:
+    schema = BASE_SCHEMA
+    if name == "status-enum":
+        return "\n".join(f"- `{item}`" for item in schema["core_enums"]["status"]) + "\n"
+    if name == "confidence-enum":
+        return "\n".join(f"- `{item}`" for item in schema["core_enums"]["confidence"]) + "\n"
+    if name == "visibility-enum":
+        return "\n".join(f"- `{item}`" for item in schema["core_enums"]["visibility"]) + "\n"
+    if name == "source-manifest-status":
+        return "\n".join(f"- `{item}`" for item in schema["json_contracts"]["source_manifest"]["statuses"]) + "\n"
+    if name == "page-types":
+        lines = ["| type | id_prefix | dir |", "| --- | --- | --- |"]
+        for page_type, config in schema["page_types"].items():
+            lines.append(f"| `{page_type}` | `{config['id_prefix']}` | `{config['dir']}` |")
+        return "\n".join(lines) + "\n"
+    if name == "capture-policy-fields":
+        contract = schema["json_contracts"]["capture_policy"]
+        lines = [
+            "| field | kind | note |",
+            "| --- | --- | --- |",
+        ]
+        for field in contract["required_fields"]:
+            lines.append(f"| `{field}` | required |  |")
+        for field in contract["optional_fields"]:
+            if field in contract.get("legacy_fields", []):
+                note = "legacy alias for `soft_redact`"
+            elif field == "default_visibility":
+                note = f"default `{contract['default_visibility']}`"
+            else:
+                note = ""
+            lines.append(f"| `{field}` | optional | {note} |")
+        return "\n".join(lines) + "\n"
+    raise KeyError(f"unknown generated doc block {name!r}")
+
+
+def begin_doc_block(name: str) -> str:
+    return f"<!-- BEGIN GENERATED: {name} (wiki_lint --check-docs --fix) -->"
+
+
+def end_doc_block(name: str) -> str:
+    return f"<!-- END GENERATED: {name} -->"
+
+
+def generated_doc_block(name: str) -> str:
+    return f"{begin_doc_block(name)}\n{generate_doc_block(name)}{end_doc_block(name)}"
+
+
+def find_generated_doc_blocks(text: str, name: str) -> Dict[str, Any]:
+    begin = begin_doc_block(name)
+    end = end_doc_block(name)
+    begin_positions = [match.start() for match in re.finditer(re.escape(begin), text)]
+    end_positions = [match.start() for match in re.finditer(re.escape(end), text)]
+    errors: List[str] = []
+    if len(begin_positions) == 0 or len(end_positions) == 0:
+        errors.append("missing")
+    if len(begin_positions) > 1 or len(end_positions) > 1:
+        errors.append("duplicate")
+    if errors:
+        return {"errors": errors, "start": None, "content_start": None, "content_end": None, "end": None, "content": None}
+    start = begin_positions[0]
+    end_start = end_positions[0]
+    if end_start < start:
+        return {"errors": ["missing"], "start": None, "content_start": None, "content_end": None, "end": None, "content": None}
+    content_start = start + len(begin)
+    if text.startswith("\r\n", content_start):
+        content_start += 2
+    elif text.startswith("\n", content_start):
+        content_start += 1
+    content_end = end_start
+    content = text[content_start:content_end]
+    if begin in content or end in content:
+        return {"errors": ["duplicate"], "start": start, "content_start": content_start, "content_end": content_end, "end": end_start + len(end), "content": content}
+    return {
+        "errors": [],
+        "start": start,
+        "content_start": content_start,
+        "content_end": content_end,
+        "end": end_start + len(end),
+        "content": content,
     }
 
 

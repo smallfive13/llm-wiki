@@ -9,6 +9,7 @@ knowledge source data; only derived .wiki indexes are written when not in
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import os
 import re
@@ -27,10 +28,13 @@ except Exception as exc:  # pragma: no cover - exercised by environment
 
 from wiki_common import (
     BASE_SCHEMA,
+    DOC_CONSISTENCY_TARGETS,
     LOCAL_TZ,
     MarkdownDoc,
     PROFILE_ERROR_CODES,
     ProfileIssue,
+    find_generated_doc_blocks,
+    generate_doc_block,
     effective_id_regex,
     first_h1,
     ingest_progress,
@@ -112,6 +116,9 @@ ERROR_CODES = {
     "IMAGE_PATH_ESCAPE",
     "IMAGE_HARD_REDACT",
     "IMAGE_NO_DESCRIPTION",
+    "DOC_BLOCK_DRIFT",
+    "DOC_BLOCK_MISSING",
+    "DOC_BLOCK_DUPLICATE",
 } | PROFILE_ERROR_CODES
 
 MARKDOWN_IMAGE_RE = re.compile(r"!\[([^\]\n]*)\]\(([^)\n]+)\)")
@@ -1359,12 +1366,101 @@ def format_issue(level: str, item: Dict[str, Any]) -> str:
     return f"  [{level}] {item['code']} {loc} {field}: {item['message']}\n                 hint: {item.get('hint')}"
 
 
+def _doc_issue(code: str, file: str, block: str, message: str, hint: str, diff: str = "") -> Dict[str, Any]:
+    return {
+        "code": code,
+        "file": file,
+        "block": block,
+        "message": message,
+        "hint": hint,
+        "diff": diff,
+    }
+
+
+def _doc_diff(file: str, block: str, current: str, expected: str) -> str:
+    return "".join(
+        difflib.unified_diff(
+            current.splitlines(keepends=True),
+            expected.splitlines(keepends=True),
+            fromfile=f"{file}:{block}:current",
+            tofile=f"{file}:{block}:expected",
+        )
+    )
+
+
+def _doc_target_path(rel: str) -> Path:
+    if rel.startswith("knowledge/"):
+        return INSTANCE_ROOT / rel[len("knowledge/") :]
+    return ROOT / rel
+
+
+def check_docs(fix: bool) -> Tuple[int, Dict[str, Any], str]:
+    errors: List[Dict[str, Any]] = []
+    checked: List[Dict[str, str]] = []
+    fixed: List[Dict[str, str]] = []
+    for target in DOC_CONSISTENCY_TARGETS:
+        rel = target["path"]
+        path = _doc_target_path(rel)
+        text = path.read_text(encoding="utf-8")
+        replacements: List[Tuple[int, int, str]] = []
+        for block in target["blocks"]:
+            checked.append({"file": rel, "block": block})
+            parsed = find_generated_doc_blocks(text, block)
+            parsed_errors = parsed["errors"]
+            if "duplicate" in parsed_errors:
+                errors.append(_doc_issue("DOC_BLOCK_DUPLICATE", rel, block, "生成块重复或嵌套", "保留唯一一对 BEGIN/END marker"))
+                continue
+            if "missing" in parsed_errors:
+                errors.append(_doc_issue("DOC_BLOCK_MISSING", rel, block, "生成块缺失或未闭合", "补齐成对 BEGIN/END marker；--fix 不猜插入位置"))
+                continue
+            expected = generate_doc_block(block)
+            current = parsed["content"] or ""
+            if current != expected:
+                diff = _doc_diff(rel, block, current, expected)
+                errors.append(_doc_issue("DOC_BLOCK_DRIFT", rel, block, "生成块内容与 BASE_SCHEMA 不一致", "运行 --check-docs --fix 更新块内内容", diff))
+                if fix:
+                    replacements.append((int(parsed["content_start"]), int(parsed["content_end"]), expected))
+                    fixed.append({"file": rel, "block": block})
+        if fix and replacements:
+            new_text = text
+            for start, end, replacement in sorted(replacements, reverse=True):
+                new_text = new_text[:start] + replacement + new_text[end:]
+            path.write_text(new_text, encoding="utf-8")
+    data = {
+        "wiki_lint_version": VERSION,
+        "ran_at": now_iso(),
+        "checked": checked,
+        "fixed": fixed,
+        "errors": errors,
+    }
+    lines = [
+        f"wiki-lint v{VERSION} --check-docs",
+        "==============================",
+        f"实例: {INSTANCE_ROOT} · profile: {PROFILE_NAME}",
+        f"受管块: {len(checked)}",
+    ]
+    if fixed:
+        lines.append(f"已修复块: {len(fixed)}")
+    if errors:
+        lines.extend(["", "详细错误:"])
+        for item in errors:
+            lines.append(f"  [ERROR] {item['code']} {item['file']} {item['block']}: {item['message']}")
+            lines.append(f"                 hint: {item['hint']}")
+            if item.get("diff"):
+                lines.append(item["diff"].rstrip("\n"))
+    lines.append("")
+    lines.append(f"错误: {len(errors)}")
+    return (1 if errors else 0), data, "\n".join(lines)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="wiki-lint MVP")
     parser.add_argument("--root", help="实例根目录；缺省为 ./knowledge")
     parser.add_argument("--check-only", action="store_true")
     parser.add_argument("--json", action="store_true", dest="json_output")
     parser.add_argument("--ingest-status", action="store_true", help="只输出 source_manifest 派生的 ingest 进度，不写派生层")
+    parser.add_argument("--check-docs", action="store_true", help="只校验 BASE_SCHEMA 生成文档块，不运行普通 lint")
+    parser.add_argument("--fix", action="store_true", help="配合 --check-docs 只修复 GENERATED 块内部")
     parser.add_argument("--scan-wiki-pii", action="store_true")
     parser.add_argument("--now", type=lambda value: datetime.strptime(value, "%Y-%m-%d").date(), help=argparse.SUPPRESS)
     args = parser.parse_args()
@@ -1374,6 +1470,16 @@ def main() -> int:
         args.check_only = True
     configure(args)
     print(f"wiki-lint instance root: {INSTANCE_ROOT} · profile: {PROFILE_NAME}", file=sys.stderr)
+    if args.check_docs:
+        if args.json_output:
+            print("wiki-lint config error: --json is not supported with --check-docs", file=sys.stderr)
+            return 2
+        code, data, text = check_docs(args.fix)
+        print(text)
+        return code
+    if args.fix:
+        print("wiki-lint config error: --fix requires --check-docs", file=sys.stderr)
+        return 2
     code, data, text = run_lint(args)
     if args.json_output:
         if args.ingest_status:

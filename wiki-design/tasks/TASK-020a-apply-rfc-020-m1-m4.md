@@ -3,7 +3,7 @@ id: task_20260608_020a
 title: Apply RFC-020 M1+M4 — doc-consistency 校验（wiki_lint --check-docs）+ soft_redact 正则 ASCII 化
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-06-08
 updated: 2026-06-08
@@ -89,9 +89,76 @@ CONDA="/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python"   # 仅�
 - commit sha
 - 偏离或异常
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-06-08
 
-（执行者填写）
+Step 0 spec-review 结论：通过，无阻塞。
+
+- `BASE_SCHEMA["core_enums"]["status"]` / `["confidence"]` / `["visibility"]` 均存在，其中 visibility enum 的确切位置是 `BASE_SCHEMA["core_enums"]["visibility"]`。
+- `BASE_SCHEMA["page_types"]` 覆盖 type / id_prefix / dir；`BASE_SCHEMA["json_contracts"]["capture_policy"]` 覆盖 `hard_redact` / `soft_redact` / `default_visibility` / legacy `exclude_patterns`；`BASE_SCHEMA["json_contracts"]["source_manifest"]["statuses"]` 覆盖 manifest status enum。
+- `wiki_lint.main()` 可在 `configure(args)` 后、`run_lint(args)` 前独立分支到 `check_docs()`，不会进入普通 lint / validate / 派生层写入路径。
+
+改动文件与关键位置：
+
+- `scripts/wiki_common.py`：新增 `DOC_CONSISTENCY_TARGETS`、`generate_doc_block()`、marker helper；M4 默认 `soft_redact` 邮箱正则改为 ASCII 邮箱模式。
+- `scripts/wiki_lint.py`：新增 `--check-docs` / `--fix` 独立分支、`DOC_BLOCK_DRIFT` / `DOC_BLOCK_MISSING` / `DOC_BLOCK_DUPLICATE`、块内 diff 与 fix 逻辑；`--check-docs --json` 按 spec 暂不支持，返回 config error 2。
+- `knowledge/.wiki-schema.md`：加入 6 个 generated block：`page-types`、`status-enum`、`confidence-enum`、`visibility-enum`、`source-manifest-status`、`capture-policy-fields`；同时清理一个 RFC-015 禁止的 `../` 相对链接残留，改为无链接文字路径。
+- `knowledge/.wiki/capture_policy.json`：同步 M4 ASCII 邮箱正则。
+- `scripts/README.md`：补 `--check-docs` / `--fix` 用法、退出码边界和 3 个 DOC_BLOCK error code。
+- `tests/test_task_020a.py`：新增 9 个 fixture，覆盖确定性、drift、fix-only、missing/duplicate、普通 lint 隔离、M4 正则、6 块清单、`--check-docs --json` 暂不支持。
+
+验证输出：
+
+```text
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest -v tests.test_task_020a
+Ran 9 tests in 2.489s
+OK
+```
+
+```text
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --root knowledge --check-docs; echo "check-docs exit=$?"
+受管块: 6
+错误: 0
+check-docs exit=0
+```
+
+```text
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --root knowledge --check-only; echo "lint exit=$?"
+派生层未重建（--check-only）
+错误: 0 · 警告: 0
+lint exit=0
+```
+
+```text
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --root /Users/zhangjunwu/workspace/obsidian/knowledge/datawarehouse --scan-wiki-pii; echo "dw pii exit=$?"
+扫描: datawarehouse/wiki/ (33 文件) · datawarehouse/inbox/ (0 draft) · datawarehouse/raw/ (18 source)
+错误: 0 · 警告: 0
+dw pii exit=0
+```
+
+```text
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest tests.test_task_012 tests.test_task_013 tests.test_task_014 tests.test_task_015 tests.test_task_016a tests.test_task_016b tests.test_task_017 tests.test_task_019
+Ran 47 tests in 13.437s
+OK
+```
+
+```text
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m py_compile scripts/wiki_common.py scripts/wiki_lint.py tests/test_task_020a.py
+git diff --check
+exit 0
+```
+
+```text
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --root knowledge --check-docs --json; echo "check-docs-json exit=$?"
+wiki-lint config error: --json is not supported with --check-docs
+check-docs-json exit=2
+```
+
+偏离或异常：
+
+- `--check-docs --fix` 首次用于 bootstrap generated block 时会完成写入，但因当次存在 drift，返回 1；随后 `--check-docs` 返回 0。这符合 spec 的“有 error → 1，否则 0”。
+- datawarehouse 未做数据修改；按 spec 跑 `--scan-wiki-pii` 时普通模式重建了 ignored `.wiki/` 派生层，`git -C /Users/zhangjunwu/workspace/obsidian/knowledge status --short` 输出为空。
+
+Commit：本提交（sha 见最终报告）。
 
 ## Evaluation by claude · <date>
 

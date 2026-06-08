@@ -29,7 +29,7 @@ Task 回答"怎么做、谁来做"，与 RFC 回答"要不要这么改"互补。
 | [task_20260604_017](TASK-017-apply-rfc-017.md) | Apply RFC-017 — source_manifest.status 加 superseded/archived + datawarehouse 修正 | done | claude | codex | RFC-017 |
 | [task_20260604_018](TASK-018-apply-rfc-018.md) | Apply RFC-018 — ingest 子链接处理约定（流程文档，不改 scripts） | done | claude | codex | RFC-018 |
 | [task_20260604_019](TASK-019-apply-rfc-019.md) | Apply RFC-019 — ingest 批量编排（lint ingest 进度段 + 流程文档） | done | claude | codex | RFC-019 |
-| [task_20260608_020a](TASK-020a-apply-rfc-020-m1-m4.md) | Apply RFC-020 M1+M4 — doc-consistency 校验（wiki_lint --check-docs）+ soft_redact 正则 ASCII 化 | pending | claude | codex | RFC-020 |
+| [task_20260608_020a](TASK-020a-apply-rfc-020-m1-m4.md) | Apply RFC-020 M1+M4 — doc-consistency 校验（wiki_lint --check-docs）+ soft_redact 正则 ASCII 化 | done | claude | codex | RFC-020 |
 
 ## 状态机
 
