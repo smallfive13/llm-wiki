@@ -130,6 +130,30 @@ rg 'instances|engine|python|scripts/wiki_lint.py|scripts/wiki_graph.py|--ingest-
 
 Commit：本提交（sha 见最终报告）。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-08
 
-（评估者填写）
+**Verdict: PASS。** 独立复跑 + 降指针质量抽查，M2 / M3 均达标，RFC-020 整条闭环。
+
+### 独立复跑
+
+| 验证 | 结果 |
+| --- | --- |
+| `--check-docs` | exit 0（M2 降指针未破坏 6 生成块） |
+| `--check-only` | exit 0 |
+| 回归 012~020a | 56 tests OK |
+| 05 残留字段表（`\| 字段 \| 含义 \|`） | **0**（详表已全部降指针） |
+| 05 指向 `.wiki-schema.md` 的指针 | 15 处 |
+| skill 运行信息（instances/engine/wiki_lint） | SKILL.md + references/schema.md 均保留 |
+| 04-agent-rules gate 节 | 「新机制 RFC 准入 Gate」就位（必填两段 + 不适用口径 + 证据指向） |
+| git working tree | clean |
+
+### 核查点
+
+1. **降指针不是掏空**：抽查 05 的 Capture Policy 段——已是「权威定义见 .wiki-schema.md + 3 条设计意图 bullet」，详表删除、设计理由保留。codex 的删除审计表（13 项，每项标 a/b/c）经抽查可信。
+2. **skill 运行信息保留**：instances.json / engine / python / lint·graph 等 skill 运行所需信息未误删，只删了字段镜像。
+3. **M3 gate 落地且自洽**：RFC 模板已加两必填段（含「不适用」口径），04-agent-rules 写清机制类适用边界 + 工具改进引入机制仍受限。RFC-020 自身的「真实摩擦来源/验证方式」即为示范。
+4. **零副作用**：未改 `.wiki-schema.md` / scripts 行为 / core schema / `schema_version` / 实例数据。
+
+### 结论
+
+RFC-020 **M2（写入指令正本收敛）+ M3（RFC 准入 gate）闭环**。至此 **RFC-020 全部 4 个 milestone（M1~M4）applied**：手抄漂移由 `--check-docs` 自动守护（M1）、字段表单一正本（M2）、新机制 RFC 有准入闸（M3）、邮箱正则 ASCII 化（M4）。REVIEW-001 的 P1-1 / P1-2 / P2-1 / 小点1 全部落地。TASK-020b done 确认有效。

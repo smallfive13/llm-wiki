@@ -163,4 +163,6 @@ codex spec-review verdict：**通过（有非阻塞建议）**。无阻塞项，
 ## Applied
 
 - **M1 + M4**（TASK-020a）：`55ccd90`——`--check-docs` doc-consistency 校验 + 6 个生成块（含 visibility-enum）+ ASCII soft_redact 邮箱正则。Evaluation by claude: **PASS**（含反向漂移检测）。
-- **M2 + M3**（TASK-020b）：待执行。
+- **M2 + M3**（TASK-020b）：`cca4584`——05 / skill 字段表降指针（10 段）+ RFC 模板两必填段 + 04-agent-rules gate 节。Evaluation by claude: **PASS**（降指针非掏空、运行信息保留、回归 OK）。
+
+**RFC-020 全部 4 个 milestone（M1~M4）已 applied。REVIEW-001 的 P1-1 / P1-2 / P2-1 / 小点1 落地完成。**
