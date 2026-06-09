@@ -163,3 +163,30 @@ codex verdict: 需修改，唯一阻塞 = argv 构造算法未钉死。已修订
 - 形态 / 解释器解析顺序 / 子命令范围 / gate 自检 / Apply 拆分 codex 已通过，不变。
 
 > 待 codex 对 argv 构造规则做一次聚焦 re-review，确认后 accept + 起草 TASK-022。
+
+## Re-review by codex · 2026-06-09
+
+结论：通过（有非阻塞建议）。
+
+### argv 规则结论
+
+上一轮唯一阻塞已闭合。修订后的 bash + 数组方案是机械可实现的：
+
+- `read -r -a INTERP <<< "$str"` 将 `WIKI_PY`、`.wiki-cli.conf python=` 或 fallback 的多词解释器拆成解释器 argv，避免把 `conda run -n py312 python` 当成单个可执行名。
+- `exec "${INTERP[@]}" "$SCRIPT" "$@"` 把解释器 argv、脚本路径、用户参数三段明确分开；用户参数始终通过 `"$@"` 透传，不参与二次 word-splitting，可以覆盖含空格参数、`--` 和特殊字符。
+- 子命令用 `case "$sub"` 白名单映射到固定脚本，不裸拼脚本名，避免把用户输入当路径执行。
+- `exec` 会自然透传目标脚本退出码；lint error exit 1、config error exit 2 都不需要 wrapper 重新解释。
+
+### 边界复核
+
+- `set -euo pipefail` 与 `read -r -a INTERP <<< "$str"` 可用；bash here-string 会给 `read` 一行输入。TASK 里仍建议测空 `WIKI_PY` / 空 `python=` 不会留下空数组直接 exec。
+- here-string `<<<`、bash 数组和 `read -a` 在目标 macOS bash 3.2 已支持；使用 `#!/usr/bin/env bash` 合理。
+- `cd -P "$(dirname "$0")"` + `pwd` 定位引擎根，比原先模糊 `dirname $0/..` 更清楚；明确不支持 symlink、推荐 `<engine>/bin` 入 PATH，可以接受。
+- `conda run --no-capture-output -n py312 python` 已吸收，能降低输出缓冲对交互的影响。
+
+### 非阻塞建议
+
+- TASK-022 测试里增加两条执行级断言：`.wiki-cli.conf` 的 `python=` 为空时给清晰报错或 fallback；`WIKI_PY` 指向不存在命令时给清晰 stderr，并返回非 0。
+- TASK-022 测试里显式覆盖含空格参数透传，例如通过 `init --root "$tmp/space dir"` 或类似 fixture 证明 `"$@"` 未被拆坏。
+
+可以进入 Decision / TASK-022。
