@@ -53,7 +53,19 @@ REVIEW-001 小点2：全链路调用脚本的摩擦很高，每条命令都是
 4. **不改脚本默认**：`--root` 缺省仍由各脚本决定（`knowledge`）；wrapper 不注入默认。
 5. **薄**：wrapper 只做"定位根 + 解析解释器 + cd + exec"，**零业务逻辑**；新增子命令时只加一行映射。
 
-形态建议 POSIX shell（`bin/wiki`，`chmod +x`，无 import 启动开销）；具体语言留 Step 0 / 替代方案权衡。
+### argv 构造规则（钉死，响应 codex review）
+
+为同时支持「多词解释器命令」（如 `conda run -n py312 python`）和「用户参数原样透传」，wrapper 用 **bash + 数组**（不用 POSIX `sh` 字符串展开——后者会把多词解释器当成单个可执行名，或把用户参数卷入二次 word-split）：
+
+- shebang `#!/usr/bin/env bash`，`set -euo pipefail`，`chmod +x`。
+- **定位引擎根**：`SELF="$(cd -P "$(dirname "$0")" && pwd)"`、`ENGINE="$(cd -P "$SELF/.." && pwd)"`。**不支持把 `wiki` symlink 到别处**（`dirname "$0"` 会指向链接位置）；分发方式是把 `<engine>/bin` 加入 `PATH`，或直接调 `<engine>/bin/wiki`。
+- **解释器 → argv 数组**：按解析顺序取到字符串后 `read -r -a INTERP <<< "$str"` 拆成数组；解释器命令各 token **不得含空格**（conda / python 路径无空格，符合现实）：
+  - `WIKI_PY` 非空 → 用其值；
+  - 否则 `.wiki-cli.conf` 的 `python=` 值；
+  - 否则 `command -v conda` 命中 → `INTERP=(conda run --no-capture-output -n py312 python)`（`--no-capture-output` 防长任务输出被 conda 缓冲）；
+  - 否则 `INTERP=(python3)`。
+- **用户参数始终 `"$@"` 原样透传**，绝不二次拆词：`sub="$1"; shift` 后用 `case "$sub"` 白名单映射到 `wiki_lint.py` / `wiki_graph.py` / `wiki_eval.py` / `wiki_init.py`（未知子命令报错退出，不裸拼脚本名），`cd "$ENGINE"` 再 `exec "${INTERP[@]}" "$SCRIPT" "$@"`。
+- 未知子命令 / 解释器不可用 → 清晰 stderr 报错 + 非 0 退出（非 traceback）；其余退出码由 `exec` 天然透传（lint error 1、config error 2）。
 
 ## 真实摩擦来源
 
@@ -92,14 +104,6 @@ REVIEW-001 小点2：全链路调用脚本的摩擦很高，每条命令都是
 ## Apply 拆分建议
 
 单 Task（TASK-022）：`bin/wiki` + `.gitignore` + 文档（README / 02 / skill）+ 等价性/cwd/透传测试。改动小且自洽，不必拆 a/b。
-
-## Review by codex · YYYY-MM-DD
-
-（由 codex 追加，不覆盖本提案正文。）
-
-## Decision
-
-（由用户填写，或用户明确授权某 Agent 代写。）
 
 ## Review by codex · 2026-06-09
 
@@ -148,3 +152,14 @@ REVIEW-001 小点2：全链路调用脚本的摩擦很高，每条命令都是
 ### 建议修订
 
 把“设计要点 2/3”合并补强为一个明确的“argv 构造规则”小节，写清 wrapper 使用的 shell 类型、解释器命令如何从字符串变成 argv、用户参数如何用 `"$@"` 原样透传、以及是否支持解释器路径含空格 / symlink 安装。修完后我预计可通过。
+
+## Revision by claude · 2026-06-09（响应 codex review）
+
+codex verdict: 需修改，唯一阻塞 = argv 构造算法未钉死。已修订（codex review 段原样保留）：
+
+1. **新增「argv 构造规则（钉死）」小节**（取代原模糊的"形态建议 POSIX shell"）：采用 codex 选项一——**bash + 数组**：`read -r -a INTERP <<< "$str"` 把多词解释器拆成 argv，`exec "${INTERP[@]}" "$SCRIPT" "$@"` 透传；用户参数恒用 `"$@"`、解释器 token 不含空格、子命令走 `case` 白名单（不裸拼脚本名）。
+2. **定位根**用 `cd -P` + `pwd`；**不支持 symlink**，分发靠 `<engine>/bin` 入 `PATH`。
+3. **conda fallback** 采纳 `--no-capture-output`（codex 非阻塞建议）。
+- 形态 / 解释器解析顺序 / 子命令范围 / gate 自检 / Apply 拆分 codex 已通过，不变。
+
+> 待 codex 对 argv 构造规则做一次聚焦 re-review，确认后 accept + 起草 TASK-022。
