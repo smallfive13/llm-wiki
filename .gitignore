@@ -7,8 +7,14 @@
 # 工具脚本（wiki-lint 等，RFC-006 + TASK-006 落地）纳入版本管理。
 !scripts/
 !scripts/**
+# CLI 薄 wrapper 纳入版本管理。
+!bin/
+!bin/**
 # Python 构建缓存不跟踪（在 !scripts/** 之后再排除）
 scripts/__pycache__/
+
+# wiki CLI 每机器解释器配置，不进 Git。
+.wiki-cli.conf
 
 # 测试 fixture 纳入版本管理。
 !tests/

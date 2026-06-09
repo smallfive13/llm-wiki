@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat >&2 <<'EOF'
+usage: wiki <lint|graph|eval|init> [args...]
+
+Set WIKI_PY or .wiki-cli.conf python=... to override the Python command.
+EOF
+}
+
+SELF="$(cd -P "$(dirname "$0")" && pwd)"
+ENGINE="$(cd -P "$SELF/.." && pwd)"
+
+if [[ $# -lt 1 ]]; then
+  usage
+  exit 2
+fi
+
+sub="$1"
+shift
+
+case "$sub" in
+  lint)
+    SCRIPT="scripts/wiki_lint.py"
+    ;;
+  graph)
+    SCRIPT="scripts/wiki_graph.py"
+    ;;
+  eval)
+    SCRIPT="scripts/wiki_eval.py"
+    ;;
+  init)
+    SCRIPT="scripts/wiki_init.py"
+    ;;
+  *)
+    echo "wiki: unknown subcommand: $sub" >&2
+    usage
+    exit 2
+    ;;
+esac
+
+read_conf_python() {
+  local conf="$ENGINE/.wiki-cli.conf"
+  [[ -f "$conf" ]] || return 1
+  local line
+  while IFS= read -r line; do
+    case "$line" in
+      python=*)
+        printf '%s\n' "${line#python=}"
+        return 0
+        ;;
+    esac
+  done < "$conf"
+  return 1
+}
+
+interp_str=""
+if [[ -n "${WIKI_PY:-}" ]]; then
+  interp_str="$WIKI_PY"
+else
+  if conf_py="$(read_conf_python)"; then
+    if [[ -z "$conf_py" ]]; then
+      echo "wiki: .wiki-cli.conf python= is empty" >&2
+      exit 2
+    fi
+    interp_str="$conf_py"
+  elif command -v conda >/dev/null 2>&1; then
+    interp_str="conda run --no-capture-output -n py312 python"
+  else
+    interp_str="python3"
+  fi
+fi
+
+if [[ -z "$interp_str" ]]; then
+  echo "wiki: Python command is empty" >&2
+  exit 2
+fi
+
+read -r -a INTERP <<< "$interp_str"
+if [[ ${#INTERP[@]} -eq 0 ]]; then
+  echo "wiki: Python command is empty" >&2
+  exit 2
+fi
+
+if ! command -v "${INTERP[0]}" >/dev/null 2>&1; then
+  echo "wiki: Python command not found: ${INTERP[0]}" >&2
+  exit 127
+fi
+
+cd "$ENGINE"
+exec "${INTERP[@]}" "$SCRIPT" "$@"

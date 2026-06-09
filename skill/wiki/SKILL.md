@@ -70,20 +70,26 @@ description: 把知识按 llm-wiki 标准沉淀进个人或业务知识库（Obs
 
 ## 写完必做：校验 + 投影 + log
 
-从 `instances.json` 取 `engine`、`python`、目标库 `root`。**把它们直接拼成完整命令跑，不要塞进 shell 变量**——`python` 字段是多词命令（如 `/path/conda run -n py312 python`），在 zsh 下未加引号的变量不会 word-split，`$P scripts/...` 会报 127 command not found。
+从 `instances.json` 取 `engine`、`python`、目标库 `root`。优先使用 `<engine>/bin/wiki` 入口；它会自动 `cd` 到引擎根，并把参数原样透传给底层脚本。若 `bin/wiki` 不存在或本机环境不支持，可回退到旧方式：`cd <engine> && <python> scripts/wiki_*.py ...`。回退时**把 `python` 字段直接拼成完整命令跑，不要塞进 shell 变量**——`python` 字段是多词命令（如 `/path/conda run -n py312 python`），在 zsh 下未加引号的变量不会 word-split，`$P scripts/...` 会报 127 command not found。
+
+如需强制指定 wrapper 使用的解释器，可在命令前设置：
+
+```bash
+export WIKI_PY="<python>"
+```
 
 1. **校验**（必须 exit 0，否则修到过为止 —— 不过 lint 不算完成）：
    ```bash
-   cd <engine> && <python> scripts/wiki_lint.py --root <root> --check-only
-   # 例：cd /Users/.../llm-wiki && /Users/.../conda run -n py312 python scripts/wiki_lint.py --root /Users/.../personal --check-only
+   <engine>/bin/wiki lint --root <root> --check-only
+   # 例：/Users/.../llm-wiki/bin/wiki lint --root /Users/.../personal --check-only
    ```
 2. **投影图谱**（重建派生层 + insights）：
    ```bash
-   cd <engine> && <python> scripts/wiki_graph.py --root <root>
+   <engine>/bin/wiki graph --root <root>
    ```
 3. **更新 `<root>/log.md`**：按时间倒序追加一段，记本次写了哪些页 + lint exit + graph 节点/边数。
 
-> 必须 `cd <engine>`（引擎仓库根），否则 lint 的 repo 检测会失败。`conda run` 首次可能慢/有 stderr 噪音，以最终 `错误: 0` 和 exit 0 为准。
+> `bin/wiki` 会自动定位并 `cd <engine>`；直接调用底层脚本时仍必须手动 `cd <engine>`，否则 lint / graph 的 repo 检测会失败。`conda run` 首次可能慢/有 stderr 噪音，以最终 `错误: 0` 和 exit 0 为准。
 
 ## 报告
 

@@ -3,7 +3,7 @@ id: task_20260609_022
 title: Apply RFC-022 — bin/wiki CLI 薄 wrapper
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-06-09
 updated: 2026-06-09
@@ -75,9 +75,83 @@ export WIKI_PY="/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python"
 - commit sha
 - 偏离或异常
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-06-09
 
-（执行者填写）
+### Step 0 spec-review
+
+- `scripts/wiki_lint.py` / `scripts/wiki_graph.py` / `scripts/wiki_eval.py` / `scripts/wiki_init.py` 都支持 `python scripts/wiki_*.py [args]` 形态；`wiki_lint.py` 与 `wiki_graph.py` 的 repo-root 检查可由 wrapper 在执行前 `cd "$ENGINE"` 解决。
+- `.gitignore` 可直接加入 `.wiki-cli.conf`（每机器解释器配置，不进 Git），同时需要放行新增的 `bin/wiki`。
+- 本机 `/usr/bin/env bash` 为 `GNU bash, version 3.2.57(1)-release`，支持数组、`read -r -a` 与 here-string。
+- 未发现 spec 歧义；按原 spec 执行。
+
+### 改动文件
+
+- `bin/wiki`：新增 bash wrapper；使用 `cd -P` 定位引擎根；子命令 `case` 白名单仅允许 `lint` / `graph` / `eval` / `init`；解释器顺序为 `WIKI_PY` -> `.wiki-cli.conf python=` -> `conda run --no-capture-output -n py312 python` -> `python3`；用 `read -r -a INTERP <<< "$interp_str"` 和 `exec "${INTERP[@]}" "$SCRIPT" "$@"` 转发参数；空解释器与不存在命令给出清晰错误。
+- `.gitignore`：放行 `bin/`，忽略 `.wiki-cli.conf`。
+- `scripts/README.md`：补 `bin/wiki` 用法、解释器解析顺序、PATH / symlink 边界。
+- `wiki-design/02-workflows.md`：推荐命令形态改为 `wiki <sub>`，保留底层脚本说明。
+- `skill/wiki/SKILL.md`：skill 默认使用 `<engine>/bin/wiki`，保留硬编码 python + 直接脚本兜底。
+- `tests/test_task_022.py`：新增 wrapper 等价性、cwd、参数透传、解释器、退出码与未知子命令测试。
+
+### 验证输出
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest -v tests.test_task_022
+test_argument_with_spaces_is_forwarded ... ok
+test_empty_config_python_does_not_empty_exec ... ok
+test_exit_code_passthrough_for_lint_error_and_config_error ... ok
+test_init_sync_schema_force_is_forwarded ... ok
+test_lint_eval_and_check_docs_match_direct_stdout_and_exit ... ok
+test_lint_runs_from_arbitrary_cwd ... ok
+test_unknown_subcommand_reports_error ... ok
+test_wiki_py_missing_command_reports_clear_error ... ok
+test_wiki_py_override_is_used ... ok
+
+Ran 9 tests in 30.907s
+OK
+```
+
+```text
+$ WIKI_PY="/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python" ./bin/wiki lint --root knowledge --check-only; echo "wiki lint exit=$?"
+错误: 0 · 警告: 0
+wiki lint exit=0
+```
+
+```text
+$ WIKI_PY="/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python" ./bin/wiki eval --root knowledge | tail -3; echo "wiki eval exit=$?"
+graph_config_errors: 0
+snapshot: not written
+
+wiki eval exit=0
+```
+
+```text
+$ (cd /tmp && WIKI_PY="/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python" /Users/zhangjunwu/workspace/llm-wiki/llm-wiki/bin/wiki lint --root /Users/zhangjunwu/workspace/llm-wiki/llm-wiki/knowledge --check-only); echo "anycwd exit=$?"
+错误: 0 · 警告: 0
+anycwd exit=0
+```
+
+```text
+$ ./bin/wiki bogus > /tmp/wiki-bogus.out 2>&1; code=$?; head -2 /tmp/wiki-bogus.out; echo "bogus exit=$code"
+wiki: unknown subcommand: bogus
+usage: wiki <lint|graph|eval|init> [args...]
+bogus exit=2
+```
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest tests.test_task_020a tests.test_task_021a tests.test_task_021b
+Ran 24 tests in 65.622s
+OK
+```
+
+### commit sha
+
+- 本提交（sha 见最终报告）。
+
+### 偏离或异常
+
+- 未改任何 `scripts/wiki_*.py` 逻辑。
+- 未知子命令的首次手验若通过管道接 `head`，zsh 下会取管道最后一段退出码；已改为无管道保存输出后复验，确认 `bogus exit=2`。
 
 ## Evaluation by claude · <date>
 

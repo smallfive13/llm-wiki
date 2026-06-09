@@ -2,6 +2,38 @@
 
 仓库工具脚本。当前包含 wiki-lint / wiki-graph MVP。
 
+## wiki CLI wrapper
+
+实现：见 [`../bin/wiki`](../bin/wiki)
+设计：见 [`../wiki-design/rfcs/RFC-022-wiki-cli-wrapper.md`](../wiki-design/rfcs/RFC-022-wiki-cli-wrapper.md)
+
+`bin/wiki` 是薄 wrapper，只做引擎根定位、Python 解释器解析、子命令映射和参数透传；不包含业务逻辑，不改变 `scripts/wiki_*.py` 默认行为。它会从自身位置推出引擎根并 `cd` 过去，因此可在任意 cwd 调用。
+
+```bash
+bin/wiki lint --root knowledge --check-only
+bin/wiki graph --root knowledge
+bin/wiki eval --root knowledge --json
+bin/wiki init --root /abs/path/to/instance --sync-schema --force
+```
+
+子命令映射：
+
+| wrapper | 等价脚本 |
+| --- | --- |
+| `wiki lint [args]` | `python scripts/wiki_lint.py [args]` |
+| `wiki graph [args]` | `python scripts/wiki_graph.py [args]` |
+| `wiki eval [args]` | `python scripts/wiki_eval.py [args]` |
+| `wiki init [args]` | `python scripts/wiki_init.py [args]` |
+
+解释器解析顺序：
+
+1. 环境变量 `WIKI_PY`，例如 `export WIKI_PY="/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python"`。
+2. 引擎根 `.wiki-cli.conf` 的 `python=` 行。
+3. `conda run --no-capture-output -n py312 python`（当 `conda` 在 `PATH` 中）。
+4. `python3`。
+
+`bin/wiki` 使用 bash 数组执行：解释器命令先拆成 argv，用户参数始终用 `"$@"` 原样透传，退出码由目标脚本透传。解释器 token 不支持空格；`.wiki-cli.conf` 是每机器配置，已 gitignore。`bin/wiki` 不支持 symlink 安装，推荐把 `<engine>/bin` 加入 `PATH`，或直接调用 `<engine>/bin/wiki`。
+
 ## wiki-lint
 
 实现：见 [`wiki_lint.py`](wiki_lint.py)

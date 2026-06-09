@@ -348,19 +348,13 @@ python3 scripts/wiki_eval.py --root <实例路径> --check
 
 ## 推荐命令形态
 
-未来可以封装轻量 CLI。
+轻量 CLI 入口为引擎仓 `bin/wiki`。把 `<engine>/bin` 加入 `PATH` 后可直接用 `wiki <sub>`；未加入 PATH 时使用 `<engine>/bin/wiki <sub>`。底层 `python scripts/wiki_*.py ...` 仍可直接调用。
 
 ```bash
-wiki init
-wiki context
-wiki query "LightRAG 和 Wiki 怎么结合"
-wiki ingest path/to/source.pdf
-wiki crystallize path/to/chat.md
-wiki lint
-wiki graph refresh
-wiki eval
-wiki review
-wiki apply
+wiki init --root <实例路径>
+wiki lint --root <实例路径> --check-only
+wiki graph --root <实例路径>
+wiki eval --root <实例路径> --json
 ```
 
-在没有 CLI 前，Agent 可以直接按同样流程修改 Markdown 文件。
+`wiki` 目前只包装 `init` / `lint` / `graph` / `eval` 四个工具命令；上下文读取、query、ingest、crystallize、review/apply 仍按本文件流程由 Agent 读写 Markdown 与 JSON 正本。
