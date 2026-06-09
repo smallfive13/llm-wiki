@@ -50,6 +50,30 @@ python3 scripts/wiki_init.py --root <实例路径> [--profile NAME] [--git] [--g
 - `--git` 要求实例根位于 `--git-root` 内，写入派生层和 `.obsidian/workspace*.json` ignore 规则，并保持幂等。
 - init 末尾自动跑 `wiki_lint.py --root <实例> --check-only`；失败时实例视为未就绪。
 
+## Schema 升级 / 分发
+
+触发语义：
+
+```text
+同步实例 schema
+把外部知识库的 .wiki-schema.md 升级到当前引擎
+```
+
+流程：
+
+```bash
+conda activate py312
+python3 scripts/wiki_init.py --root <实例路径> --sync-schema
+```
+
+约束：
+
+- `BASE_SCHEMA["schema_version"]` 每次 schema 契约变更递增；`min_compatible_profile_version` 表示仍接受的最老 profile 版本。profile 低于下界要按 migration note 先迁移，高于 base 要升级引擎。
+- `.wiki-schema.md` 是引擎镜像，不写实例特化；实例差异放在 `.wiki-profile.json`、`.wiki/capture_policy.json`、`purpose.md` 或库根 `AGENTS.md`。
+- `--sync-schema` 使用 `.wiki/schema_sync.json` 的 `last_synced_engine_sha256` 做覆盖前保护：缺失则写入；已等于引擎模板则 no-op 或修复元数据；等于上次同步 hash 则安全覆盖；否则默认拒绝并打印 diff。
+- 确认实例特化已外移后，可显式加 `--force` 首次纳管或强制覆盖。`--force` 只允许和 `--sync-schema` 组合。
+- `.wiki/schema_sync.json` 是同步审计状态，应进 Git；它不是可重建派生层。
+
 多实例推荐形态：
 
 ```text

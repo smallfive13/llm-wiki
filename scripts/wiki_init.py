@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -46,6 +49,7 @@ GITIGNORE_LINES = [
     "**/.wiki/cache.json",
     "**/.wiki/search_index/",
     "**/.wiki/lightrag/",
+    "!**/.wiki/schema_sync.json",
     "**/maps/graph-data.json",
     "**/maps/knowledge-graph.md",
     "**/maps/graph-insights.md",
@@ -129,29 +133,118 @@ def write_sync_report(action: str, old_sha256: Optional[str], new_sha256: str) -
     print(f"action: {action}")
 
 
-def sync_schema(root: Path, engine: Path) -> int:
+def atomic_write_bytes(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    try:
+        tmp.write_bytes(data)
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
+def read_schema_sync(sync_path: Path) -> dict[str, Any]:
+    if not sync_path.exists():
+        return {}
+    if not sync_path.is_file():
+        return {}
+    try:
+        data = json.loads(sync_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def schema_sync_bytes(engine_sha: str) -> bytes:
+    data = {
+        "version": 1,
+        "last_synced_engine_sha256": engine_sha,
+        "updated_at": now_iso(),
+    }
+    text = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    return text.encode("utf-8")
+
+
+def write_schema_and_metadata(target: Path, sync_path: Path, schema_bytes: bytes, engine_sha: str) -> None:
+    atomic_write_bytes(target, schema_bytes)
+    atomic_write_bytes(sync_path, schema_sync_bytes(engine_sha))
+
+
+def write_schema_diff(source: Path, target: Path) -> None:
+    try:
+        source_lines = source.read_text(encoding="utf-8").splitlines(keepends=True)
+    except UnicodeDecodeError:
+        source_lines = source.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+    try:
+        target_lines = target.read_text(encoding="utf-8").splitlines(keepends=True)
+    except UnicodeDecodeError:
+        target_lines = target.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+    diff = difflib.unified_diff(
+        target_lines,
+        source_lines,
+        fromfile=str(target),
+        tofile=str(source),
+    )
+    for line in diff:
+        print(line, end="", file=sys.stderr)
+
+
+def sync_schema(root: Path, engine: Path, *, force: bool = False) -> int:
     if not root.exists() or not root.is_dir():
         print(f"config error: --sync-schema root must exist and be a directory: {root}", file=sys.stderr)
         return EXIT_CONFIG
 
     source = engine / "knowledge/.wiki-schema.md"
     target = root / ".wiki-schema.md"
+    sync_path = root / ".wiki/schema_sync.json"
     if not source.is_file():
         print(f"config error: engine schema template missing: {source}", file=sys.stderr)
         return EXIT_CONFIG
     if target.exists() and not target.is_file():
         print(f"config error: target .wiki-schema.md must be a file, found directory: {target}", file=sys.stderr)
         return EXIT_CONFIG
+    if sync_path.exists() and not sync_path.is_file():
+        print(f"config error: target schema_sync.json must be a file, found directory: {sync_path}", file=sys.stderr)
+        return EXIT_CONFIG
 
+    schema_bytes = source.read_bytes()
     new_sha = sha256_file(source)
     old_sha = sha256_file(target) if target.exists() else None
+
+    if force:
+        write_schema_and_metadata(target, sync_path, schema_bytes, new_sha)
+        write_sync_report("created" if old_sha is None else "forced", old_sha, new_sha)
+        return 0
+
+    if old_sha is None:
+        write_schema_and_metadata(target, sync_path, schema_bytes, new_sha)
+        write_sync_report("created", old_sha, new_sha)
+        return 0
+
+    sync_data = read_schema_sync(sync_path)
+    last_synced = sync_data.get("last_synced_engine_sha256")
+
     if old_sha == new_sha:
+        if last_synced != new_sha:
+            atomic_write_bytes(sync_path, schema_sync_bytes(new_sha))
+            write_sync_report("metadata_repaired", old_sha, new_sha)
+            return 0
         write_sync_report("unchanged", old_sha, new_sha)
         return 0
 
-    target.write_bytes(source.read_bytes())
-    write_sync_report("replaced" if old_sha is not None else "created", old_sha, new_sha)
-    return 0
+    if isinstance(last_synced, str) and old_sha == last_synced:
+        write_schema_and_metadata(target, sync_path, schema_bytes, new_sha)
+        write_sync_report("replaced", old_sha, new_sha)
+        return 0
+
+    write_sync_report("refused", old_sha, new_sha)
+    print(
+        "sync refused: .wiki-schema.md differs from the engine template and has no matching last-synced record; rerun with --force after moving instance-specific notes to purpose.md/AGENTS.md/capture_policy/profile.",
+        file=sys.stderr,
+    )
+    write_schema_diff(source, target)
+    return 1
 
 
 def create_root(root: Path, counters: Counters) -> bool:
@@ -466,6 +559,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--git", action="store_true", help="确保实例进入 git，并写入派生层 .gitignore")
     parser.add_argument("--git-root", help="git repo 根目录；相对路径按引擎仓库根解析")
     parser.add_argument("--sync-schema", action="store_true", help="仅同步 .wiki-schema.md 镜像文档并退出")
+    parser.add_argument("--force", action="store_true", help="仅用于 --sync-schema：跳过本地修改保护并覆盖 .wiki-schema.md")
     return parser
 
 
@@ -479,7 +573,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.profile or args.git or args.git_root:
             print("config error: --sync-schema cannot be combined with --profile/--git/--git-root", file=sys.stderr)
             return EXIT_CONFIG
-        return sync_schema(root, engine)
+        return sync_schema(root, engine, force=args.force)
+
+    if args.force:
+        print("config error: --force requires --sync-schema", file=sys.stderr)
+        return EXIT_CONFIG
 
     if args.profile and not PROFILE_RE.match(args.profile):
         counters.notes.append("config error: --profile must match ^[a-z][a-z0-9-]*$")

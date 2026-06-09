@@ -39,3 +39,6 @@ knowledge/.wiki/normalized_alias_index.json
 
 # wiki-eval 趋势快照不可重建，显式 --snapshot 时纳入版本管理。
 !knowledge/.wiki/eval_history.jsonl
+
+# schema 分发同步元数据是实例正本审计状态，进 Git。
+!knowledge/.wiki/schema_sync.json

@@ -44,7 +44,7 @@ def file_snapshot(root: Path) -> dict:
 
 
 class Task015SyncSchemaTest(unittest.TestCase):
-    def test_sync_schema_replaces_existing_file(self) -> None:
+    def test_sync_schema_refuses_existing_file_without_sync_record(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / ".wiki-schema.md"
@@ -52,12 +52,12 @@ class Task015SyncSchemaTest(unittest.TestCase):
             old_sha = sha256(target)
 
             result = run_init("--sync-schema", "--root", str(root))
-            self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+            self.assertEqual(1, result.returncode, result.stderr + result.stdout)
             report = parse_report(result.stdout)
-            self.assertEqual("replaced", report["action"])
+            self.assertEqual("refused", report["action"])
             self.assertEqual(old_sha, report["old_sha256"])
             self.assertEqual(sha256(SOURCE_SCHEMA), report["new_sha256"])
-            self.assertEqual(SOURCE_SCHEMA.read_text(encoding="utf-8"), target.read_text(encoding="utf-8"))
+            self.assertEqual("old schema\n", target.read_text(encoding="utf-8"))
 
     def test_sync_schema_creates_missing_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -82,8 +82,9 @@ class Task015SyncSchemaTest(unittest.TestCase):
             result = run_init("--sync-schema", "--root", str(root))
             self.assertEqual(0, result.returncode, result.stderr + result.stdout)
             report = parse_report(result.stdout)
-            self.assertEqual("unchanged", report["action"])
+            self.assertEqual("metadata_repaired", report["action"])
             self.assertEqual(before_mtime, target.stat().st_mtime_ns)
+            self.assertTrue((root / ".wiki/schema_sync.json").is_file())
 
     def test_sync_schema_rejects_conflicting_options(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -119,7 +120,7 @@ class Task015SyncSchemaTest(unittest.TestCase):
             self.assertEqual(2, result.returncode)
             self.assertIn("target .wiki-schema.md must be a file", result.stderr)
 
-    def test_sync_schema_only_changes_schema_file(self) -> None:
+    def test_sync_schema_only_changes_schema_and_metadata_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / ".wiki").mkdir()
@@ -130,13 +131,13 @@ class Task015SyncSchemaTest(unittest.TestCase):
             (root / ".wiki-schema.md").write_text("old\n", encoding="utf-8")
             before = file_snapshot(root)
 
-            result = run_init("--sync-schema", "--root", str(root))
+            result = run_init("--sync-schema", "--force", "--root", str(root))
             self.assertEqual(0, result.returncode, result.stderr + result.stdout)
             after = file_snapshot(root)
 
-            changed = [rel for rel in sorted(after) if before.get(rel) != after.get(rel)]
+            changed = [rel for rel in sorted(before) if before.get(rel) != after.get(rel)]
             self.assertEqual([".wiki-schema.md"], changed)
-            self.assertEqual(set(before), set(after))
+            self.assertEqual({".wiki/schema_sync.json"}, set(after) - set(before))
 
     def test_new_instance_schema_has_no_parent_links(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

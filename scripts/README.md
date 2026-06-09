@@ -266,7 +266,7 @@ python3 scripts/wiki_eval.py --root knowledge --check
 ```bash
 conda activate py312
 python3 scripts/wiki_init.py --root <实例路径> [--profile NAME] [--git] [--git-root <repo路径>]
-python3 scripts/wiki_init.py --root <实例路径> --sync-schema
+python3 scripts/wiki_init.py --root <实例路径> --sync-schema [--force]
 ```
 
 | 选项 | 含义 |
@@ -276,14 +276,25 @@ python3 scripts/wiki_init.py --root <实例路径> --sync-schema
 | `--git` | 确保 `--git-root` 是 git repo，并写入派生层与 `.obsidian/workspace*.json` ignore 规则 |
 | `--git-root <path>` | git repo 根；缺省为 `--root`，且 `--root` 必须位于其内 |
 | `--sync-schema` | 仅从引擎源头重新同步 `.wiki-schema.md` 镜像文档，然后退出 |
+| `--force` | 仅可与 `--sync-schema` 组合；跳过本地修改保护并覆盖 `.wiki-schema.md` |
 
 ### 同步 schema 镜像
 
-`--sync-schema` 是独立模式，只要求 `--root` 指向已存在的实例根。它只写 `<root>/.wiki-schema.md`，不创建骨架、不合并 `.obsidian/app.json`、不写 `.gitignore`、不跑 selfcheck，也不创建任何目录。
+`--sync-schema` 是独立模式，只要求 `--root` 指向已存在的实例根。它只写 `<root>/.wiki-schema.md` 与 `<root>/.wiki/schema_sync.json`，不创建骨架、不合并 `.obsidian/app.json`、不写 `.gitignore`、不跑 selfcheck，也不创建其它目录。
+
+覆盖前保护：
+
+- `<root>/.wiki-schema.md` 缺失：写入引擎镜像，并写 `.wiki/schema_sync.json`。
+- 目标 hash 等于当前引擎模板：不重写 schema；若 sync 元数据缺失或陈旧，会修复 `.wiki/schema_sync.json` 并报告 `action: metadata_repaired`。
+- 目标 hash 等于 `.wiki/schema_sync.json.last_synced_engine_sha256`：说明实例自上次同步后未本地改动，可安全覆盖。
+- 其它情况：默认拒绝并打印 unified diff，exit 1；确认特化已外移后再加 `--force`。
+
+`.wiki/schema_sync.json` 记录上次同步的引擎模板字节级 sha256，是实例正本审计状态，应该进 Git。
 
 互斥规则：
 
 - `--sync-schema` 不能与 `--profile`、`--git`、`--git-root` 组合；组合使用会 exit 2。
+- `--force` 不能脱离 `--sync-schema` 单独使用；否则 exit 2。
 - root 不存在、root 不是目录、或 `<root>/.wiki-schema.md` 是目录时 exit 2。
 
 稳定报告行：
@@ -291,10 +302,10 @@ python3 scripts/wiki_init.py --root <实例路径> --sync-schema
 ```text
 old_sha256: <64hex|null>
 new_sha256: <64hex>
-action: replaced|created|unchanged
+action: created|replaced|unchanged|metadata_repaired|refused|forced
 ```
 
-`action: unchanged` 表示目标内容已经等于引擎源头，脚本不会重写文件，也不会更新 mtime。
+`action` 取值包括 `created` / `replaced` / `unchanged` / `metadata_repaired` / `refused` / `forced`。`action: unchanged` 表示目标内容和 sync 元数据都已经等于引擎源头，脚本不会重写 schema，也不会更新 schema mtime。
 
 稳定报告行：
 
