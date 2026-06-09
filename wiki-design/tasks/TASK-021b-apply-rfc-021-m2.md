@@ -228,6 +228,32 @@ git -C /Users/zhangjunwu/workspace/obsidian/knowledge status --short
 - datawarehouse 迁移只改 `.wiki-schema.md` 和新增 `.wiki/schema_sync.json`；未修改 wiki 页面、source 数据、`purpose.md`、`AGENTS.md` 或 capture policy。
 - datawarehouse 仓库 `.gitignore` 未忽略 `.wiki/schema_sync.json`，新增元数据可直接纳入 Git；引擎 `.gitignore` 和 `wiki_init.GITIGNORE_LINES` 已同步显式放行。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-09
 
-（评估者填写）
+**Verdict: PASS。** 独立复跑 + 镜像一致性 + 保护算法反向验证，M2 达标，RFC-021 整条闭环。
+
+### 独立复跑
+
+| 验证 | 结果 |
+| --- | --- |
+| `unittest tests.test_task_021b` | OK（sync 保护各分支） |
+| 引擎 knowledge lint / check-docs | exit 0 / exit 0 |
+| 回归 012~021a | OK |
+| datawarehouse lint / pii / eval | exit 0 / exit 0 / **score 100** |
+| **datawarehouse `.wiki-schema.md` vs 引擎** | **diff 完全为空**——拿到引擎镜像（含 RFC-020 的 6 生成块） |
+| `.wiki/schema_sync.json` | 存在（`last_synced_engine_sha256` + updated_at + version）且**已进 Git** |
+| 特化措辞从 `.wiki-schema.md` 移除 | 0 命中（已外移） |
+| 脱敏边界仍在 `purpose.md` / `AGENTS.md` | ✓（外移无损） |
+| **保护算法反向**：已纳管 dw 再 `--sync`（无 `--force`） | `action: unchanged` exit 0（no-op 正常） |
+| 两仓 working tree | clean |
+
+### 核查点
+
+1. **datawarehouse 首次纳管成功**：`--force` 写引擎镜像 + `schema_sync.json`，`.wiki-schema.md` 与引擎**字节级一致**、6 生成块到位。老 backlog（数据仓 schema 特化 vs 引擎镜像、迟迟不敢同步）**彻底解除**。
+2. **特化无损外移**：`.wiki-schema.md` 删冗余特化，但脱敏边界在 `capture_policy.json`（`soft_redact:[]`）+ `purpose.md` + `AGENTS.md` 完整保留——删的是副本不是唯一信息。
+3. **保护算法可用**：已纳管实例再 sync 走 no-op；fixture 覆盖拒绝 / 安全覆盖 / metadata repair / `--force` 各分支。
+4. **`schema_sync.json` 进 Git**：`.gitignore` 放行（`!**/.wiki/schema_sync.json`），跨机 / agent 共享后续安全覆盖才成立。
+
+### 结论
+
+RFC-021 **M2（实例分发安全）闭环**，连同 M1 **RFC-021 全部 applied**。`--sync-schema` 从"整文件覆盖、不敢用"升级为"last-synced hash 保护、可安全自动化"；datawarehouse 首次纳入安全同步管理。TASK-021b done 确认有效。

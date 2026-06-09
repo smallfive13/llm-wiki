@@ -232,4 +232,6 @@ Apply 顺序：**TASK-021a**（M1 版本纪律）先 → 评估 → **TASK-021b*
 ## Applied
 
 - **M1**（TASK-021a）：`48f4b07`——`schema_version` 1→2 + `min_compatible_profile_version` 1 + `validate_profile()` 兼容范围校验。Evaluation by claude: **PASS**（personal v1 profile bump 后仍 exit 0；范围校验反向有效；bool 防御）。
-- **M2**（TASK-021b）：待执行（`--sync-schema` 覆盖前保护 + datawarehouse 迁移）。
+- **M2**（TASK-021b）：引擎 `36777ee` + datawarehouse 迁移 `54a791c`——`--sync-schema` last-synced hash 覆盖前保护 + `--force` + `.wiki/schema_sync.json`（进 Git）+ datawarehouse 首次纳管（`.wiki-schema.md` 与引擎字节级一致、含 6 生成块、eval 100）。Evaluation by claude: **PASS**。
+
+**RFC-021 全部 milestone（M1 + M2）已 applied。REVIEW-001 P2-2 落地，老 backlog「数据仓 schema 特化 vs 引擎镜像、迟迟不敢同步」彻底解除。**
