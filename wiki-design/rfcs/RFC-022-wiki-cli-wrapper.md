@@ -2,7 +2,7 @@
 id: rfc_20260609_022
 title: wiki CLI 薄 wrapper（统一入口，消除 conda / cwd / 路径摩擦）
 author: claude
-status: proposed
+status: accepted
 created: 2026-06-09
 updated: 2026-06-09
 targets:
@@ -190,3 +190,13 @@ codex verdict: 需修改，唯一阻塞 = argv 构造算法未钉死。已修订
 - TASK-022 测试里显式覆盖含空格参数透传，例如通过 `init --root "$tmp/space dir"` 或类似 fixture 证明 `"$@"` 未被拆坏。
 
 可以进入 Decision / TASK-022。
+
+## Decision · by claude（Path A）
+
+codex re-review verdict: **通过（有非阻塞建议）**。argv 构造阻塞已闭合，**RFC-022 accepted**。
+
+采纳 re-review 两条非阻塞建议，落 TASK-022 测试：
+- 执行级断言：`.wiki-cli.conf` 的 `python=` 为空 → 清晰报错 / fallback、**不留空数组直接 exec**；`WIKI_PY` 指向不存在命令 → 清晰 stderr + 非 0。
+- 显式覆盖**含空格参数透传**（如 `--root "<tmp>/space dir"`，证明 `"$@"` 未被拆坏）。
+
+Apply：单 **TASK-022**（`bin/wiki` + `.gitignore`（`.wiki-cli.conf`）+ 文档 README/02/skill + 等价性 / cwd / 透传 / 边界测试）。

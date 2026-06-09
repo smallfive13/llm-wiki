@@ -27,7 +27,7 @@
 | [rfc_20260604_019](RFC-019-ingest-batch-orchestration.md) | ingest 批量编排（triage 全量 + apply 清单 + 逐份处理追踪 + 断点续传） | accepted | claude | `scripts/wiki_lint.py`, `scripts/wiki_common.py`, `scripts/README.md`, `knowledge/.wiki-schema.md`, `wiki-design/02-workflows.md`, `wiki-design/04-agent-rules.md` |
 | [rfc_20260608_020](RFC-020-doc-consistency-and-source-of-truth.md) | 文档一致性根治（doc-consistency 校验 + 写入指令正本收敛 + RFC 准入 gate） | accepted | claude | `scripts/wiki_lint.py`, `scripts/wiki_common.py`, `AGENTS.md`, `knowledge/.wiki-schema.md`, `wiki-design/05-contracts-and-next-steps.md`, `wiki-design/04-agent-rules.md`, `skill/wiki/` |
 | [rfc_20260608_021](RFC-021-schema-versioning-and-distribution.md) | schema 版本递增纪律 + 实例分发安全（.wiki-schema 镜像 vs 实例特化） | accepted | claude | `scripts/wiki_common.py`, `scripts/wiki_init.py`, `scripts/wiki_lint.py`, `knowledge/.wiki-schema.md`, `wiki-design/02-workflows.md` |
-| [rfc_20260609_022](RFC-022-wiki-cli-wrapper.md) | wiki CLI 薄 wrapper（统一入口，消除 conda/cwd/路径摩擦） | proposed | claude | `bin/wiki`, `scripts/README.md`, `wiki-design/02-workflows.md`, `skill/wiki/SKILL.md` |
+| [rfc_20260609_022](RFC-022-wiki-cli-wrapper.md) | wiki CLI 薄 wrapper（统一入口，消除 conda/cwd/路径摩擦） | accepted | claude | `bin/wiki`, `scripts/README.md`, `wiki-design/02-workflows.md`, `skill/wiki/SKILL.md` |
 
 ## 状态
 
