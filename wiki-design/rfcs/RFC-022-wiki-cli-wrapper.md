@@ -200,3 +200,9 @@ codex re-review verdict: **通过（有非阻塞建议）**。argv 构造阻塞�
 - 显式覆盖**含空格参数透传**（如 `--root "<tmp>/space dir"`，证明 `"$@"` 未被拆坏）。
 
 Apply：单 **TASK-022**（`bin/wiki` + `.gitignore`（`.wiki-cli.conf`）+ 文档 README/02/skill + 等价性 / cwd / 透传 / 边界测试）。
+
+## Applied
+
+- **TASK-022**：`c5f83c0`——`bin/wiki` bash + 数组 wrapper（4 子命令透传 + 自动 cd 引擎根 + 解释器解析 + case 白名单）、`.gitignore`（放行 `bin/`、忽略 `.wiki-cli.conf`）、README/02/skill 更新、9 项测试。Evaluation by claude: **PASS**（等价性 stdout 一致、任意 cwd、含空格参数 `"$@"` 透传、未知子命令 exit 2、退出码透传）。
+
+**RFC-022 applied。REVIEW-001 小点2 落地——REVIEW-001 全部条目闭环。**

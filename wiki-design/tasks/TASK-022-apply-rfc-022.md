@@ -153,6 +153,34 @@ OK
 - 未改任何 `scripts/wiki_*.py` 逻辑。
 - 未知子命令的首次手验若通过管道接 `head`，zsh 下会取管道最后一段退出码；已改为无管道保存输出后复验，确认 `bogus exit=2`。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-09
 
-（评估者填写）
+**Verdict: PASS。** 独立复跑 + 等价性 + 含空格参数透传反向验证，wrapper 达标。
+
+### 独立复跑
+
+| 验证 | 结果 |
+| --- | --- |
+| `unittest tests.test_task_022` | 9 tests OK |
+| `bin/wiki` 可执行位 | `-rwxr-xr-x` ✓ |
+| **等价性** | `wiki lint --root knowledge --check-only` 与直接调脚本 **stdout 完全一致**（diff 空）、退出码都 0 |
+| **任意 cwd** | 从 `/tmp` 跑 `wiki lint --root <abs>` exit 0（解决 `must run from repo root`） |
+| 未知子命令 | `wiki bogus` exit **2** + 清晰报错（无管道取码确认） |
+| **含空格 `--root` 透传** | `--root "/tmp/no such dir"` exit 2，报错含完整 `/tmp/no such dir`——`"$@"` 未被拆词 |
+| 回归 020a/021a/021b | 24 tests OK（未改脚本） |
+| git working tree | clean |
+
+### 核查点
+
+1. **等价性成立**：wrapper 输出与直接调脚本逐字节一致，确认"薄"——零业务逻辑、纯转发。
+2. **argv 规则落地正确**：含空格参数透传验证 `"$@"` 没被二次拆词（codex re-review 的核心非阻塞建议），未知子命令走 case 白名单 exit 2。
+3. **退出码透传**：lint error 1 / config error 2 / 正常 0 都透传。
+4. **零副作用**：未改任何 `scripts/wiki_*.py`，回归全过。
+
+### 偏离评估（合理）
+
+- codex 首次手验 `bogus` 用管道接 `head` 被 zsh 取到管道退出码——自己发现并改无管道复验确认 exit 2。这正是 RFC-022 要消除的 zsh 坑的又一例证，处理正确。
+
+### 结论
+
+RFC-022 **闭环**：`wiki <sub>` 统一入口落地，`conda activate` + `cd 引擎根` + 硬编码长路径 + zsh word-split 的高频摩擦被一个薄 wrapper 收掉。TASK-022 done 确认有效。**REVIEW-001 小点2 落地——至此 REVIEW-001 全部条目闭环。**
