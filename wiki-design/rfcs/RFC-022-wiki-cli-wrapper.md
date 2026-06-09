@@ -100,3 +100,51 @@ REVIEW-001 小点2：全链路调用脚本的摩擦很高，每条命令都是
 ## Decision
 
 （由用户填写，或用户明确授权某 Agent 代写。）
+
+## Review by codex · 2026-06-09
+
+结论：需修改。
+
+整体方向成立：新增薄 `bin/wiki` wrapper 确实能解决 REVIEW-001 小点2 指出的高频摩擦；只暴露 `lint` / `graph` / `eval` / `init` 四个用户命令也合理，`wiki_common.py` 作为库不应暴露成子命令。gate 自检两段合格，真实摩擦来源具体，验证方式也覆盖了等价性、任意 cwd、解释器解析、透传和 skill 自洽。单 TASK-022 落地是合理拆分。
+
+### 阻塞点
+
+1. **POSIX shell + 多词 `WIKI_PY` + 参数原样透传的实现算法未钉死。**
+
+   RFC 同时要求 POSIX shell、`WIKI_PY="/Users/.../conda run -n py312 python"` 这种多词解释器命令、以及子命令参数含空格 / `--` / 特殊字符时原样透传。这里不能只写成“解析到的解释器用于 `exec`”。
+
+   需要在 RFC 正文或 TASK spec 里明确采用哪一种：
+
+   - 改成 bash/zsh wrapper，用数组保存解释器 argv 和用户 argv，然后 `exec "${interp[@]}" "$script" "$@"`。
+   - 保持 POSIX shell，但明确 `WIKI_PY` / `.wiki-cli.conf python=` 只接受简单 shell words，内部用受控 word-splitting 构造解释器 argv，并单独保证用户参数始终用 `"$@"` 透传；同时承认解释器路径本身不能含空格。
+   - 改成小 Python wrapper，用 `shlex.split()` 解析 `WIKI_PY` / config，再 `subprocess` / `os.execvp` 传 argv。
+
+   反例：如果 POSIX shell 里写 `INTERP="$WIKI_PY"; exec "$INTERP" "$SCRIPT" "$@"`，`/Users/.../conda run -n py312 python` 会被当成一个可执行文件名，直接失败；如果简单不加引号展开解释器，又容易把用户参数透传和 shell word-splitting 混在一起，复发本仓已多次记录的变量拆词问题。
+
+### 逐项意见
+
+1. **形态：部分同意。**
+
+   `bin/wiki` 薄 wrapper 是合适形态；自动 `cd` 到引擎根也能解决 `wiki_lint.py:162` 和 `wiki_graph.py:50` 的 repo-root 检查。需要在实现约束里写清路径定位：至少用带引号的 `dirname` + `pwd -P`，例如从实际 `bin/wiki` 所在目录推出 engine root。若希望支持把 `wiki` 软链到别处，还需额外处理 symlink；若不支持 symlink，应明确推荐把 `<engine>/bin` 加入 PATH。
+
+2. **解释器解析：需修改后再通过。**
+
+   解析顺序 `WIKI_PY > .wiki-cli.conf > conda run -n py312 python > python3` 合理；`conda run` 启动慢但可接受，因为 `WIKI_PY` 可覆盖。关键是解释器 argv 与用户 argv 的构造必须机械钉死，并验证退出码透传：lint error exit 1、config error exit 2、`init --sync-schema --force` 参数完整透传。
+
+   另建议默认 fallback 若使用 conda，可考虑 `conda run --no-capture-output -n py312 python`，避免长任务输出被 conda 缓冲；这不是阻塞。
+
+3. **子命令范围：同意。**
+
+   `lint` / `graph` / `eval` / `init` 覆盖当前用户入口；`wiki_common.py` 是 shared lib，不暴露正确。新增子命令时只扩映射，不把业务逻辑写进 wrapper。
+
+4. **gate 自检：通过。**
+
+   「真实摩擦来源」不是空泛描述，明确指向长 conda 命令、cwd repo-root 检查、zsh word-split、skill 硬编码。 「验证方式」也足够落到 TASK：等价性、任意 cwd、解释器覆盖、透传、退出码和 skill 自洽都应测。
+
+5. **Apply 拆分：同意。**
+
+   单 TASK-022 足够；这是一处 wrapper + 文档 + 等价性测试的小改动，不需要拆 a/b。
+
+### 建议修订
+
+把“设计要点 2/3”合并补强为一个明确的“argv 构造规则”小节，写清 wrapper 使用的 shell 类型、解释器命令如何从字符串变成 argv、用户参数如何用 `"$@"` 原样透传、以及是否支持解释器路径含空格 / symlink 安装。修完后我预计可通过。
