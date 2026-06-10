@@ -99,9 +99,29 @@ TASK-023 已把 datawarehouse 实例开放到内部 GitLab（`knowledge-cmn`，8
 
 单 **TASK-024**：M2 引擎改动 + 测试 + M1 文档（02-workflows）一个引擎 commit；`knowledge-cmn` 对齐措辞（若需）单独实例仓 commit。含红线 fixture 的 CI 测试 MR 由用户配合在 GitLab 验证。
 
-## Review by codex · YYYY-MM-DD
+## Review by codex · 2026-06-10
 
-（由 codex 追加，不覆盖本提案正文。）
+结论：通过（有非阻塞建议）。
+
+逐项复核：
+
+1. **M2 扫描盲区属实。** 我核对了 `scripts/wiki_lint.py` 当前结构：`run_lint()` 在 `wiki_docs, inbox_docs, archived_docs = scan_markdown_files()` 后调用 `scan_pii(inbox_docs, archived_docs, wiki_docs, capture_policy, args.scan_wiki_pii, issues)`，扫描对象确实只有 inbox / archive / wiki；`knowledge-cmn` 的 `.gitlab-ci.yml` 当前也只跑 `--scan-wiki-pii`，所以 `raw/dropbox/` 文本投料目前不会被 CI 红线扫描覆盖。把 dropbox 并入现有 `--scan-wiki-pii` 是干净方案，语义上等同"待入库文本红线扫描"，也避免 CI 增加第四个概念。
+
+2. **dropbox 文档结构可机械实现。** 现有 `scan_pii()` 对每个 `MarkdownDoc` 只用 `doc.path.read_text()`、`doc.rel` 和 `doc.fm.get("visibility")`；dropbox 文件不需要参与 schema/frontmatter 校验，可以用轻量 `MarkdownDoc(path, rel, fm={}, body=...)` 或新增专用文本 doc 类型接入 redact 扫描。非阻塞建议：TASK 里应钉死 UTF-8 解码策略，避免 `.csv/.json/.html` 等扩展名下混入非 UTF-8 文本导致 lint crash；更稳的口径是解码失败跳过并给 warning，或明确作为 error，但不要抛未捕获异常。
+
+3. **不需要 bump `schema_version`。** RFC-021 的版本纪律约束 core/schema/profile 契约。M2 只扩展 lint 行为和 CI 保护范围，不新增 frontmatter 字段、不改 JSON contract、不改 profile merge 语义；因此不 bump 是正确的。若后续把 dropbox 队列状态写成 schema 化文件，再另行讨论版本。
+
+4. **M1 协议方向成立。** 单 writer 模式能避开当前 `raw/source_manifest.json` 单文件并发冲突；成员只写 `raw/dropbox/**` + protected branch + maintainer approve + CI，是当前 8 人团队规模下成本最低的机制闭环。dropbox 队列语义也合理：ingest 后把原料移到 `raw/sources/<日期>-<slug>/`，manifest 的 `original_path` 应同步指向移动后的正式归档路径。现有 lint 对 source manifest 校验字段、hash、summary path 等，不强制 `original_path` 仍在 dropbox，因此与现有 hash/path 校验兼容。非阻塞建议：TASK/文档里明确"移动后重算或确认 `hash_sha256`，并把 `original_path` 更新为 `raw/sources/...`"。
+
+5. **替代方案取舍认可。** 暂不加 CI 路径检查是合理的：maintainer ingest 本身会改 `wiki/**` / manifest / log，机械路径门禁需要复杂豁免，先靠 protected branch + MR review 足够。`raw/sources/` 暂不纳入扫描也合理：它是 ingest 后归档层，存量原文全扫容易引入历史误报；先堵住新增团队入口的 dropbox 更符合本 RFC 范围。
+
+6. **gate 自检合格。** "真实摩擦来源"给出了代码位置和 `knowledge-cmn` 落地后的 CI 盲区，"验证方式"覆盖 fixture、真实库 smoke、GitLab MR 红/绿验证和回归套件，足够支撑 apply task。
+
+非阻塞建议汇总：
+
+- TASK-024 中把 dropbox 文本扩展名白名单固定下来，并增加非 UTF-8 文件 fixture。
+- human 输出建议区分 `--scan-wiki-pii` 为 `inbox + wiki + dropbox`，普通模式仍为 `inbox-only`；如果 archive 也实际扫描，文案可写成 `inbox/archive + wiki + dropbox`，避免未来审计误读。
+- `scan_pii()` 目前用 `effective_visibility(doc.fm.get("visibility"), capture_policy)`；dropbox doc 无 frontmatter 时会继承库默认 visibility，这符合预期，但 fixture 应覆盖 soft warning 在 internal/default_visibility 下的表现。
 
 ## Decision
 
