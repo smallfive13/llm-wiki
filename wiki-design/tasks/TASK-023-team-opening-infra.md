@@ -3,7 +3,7 @@ id: task_20260610_023
 title: 团队开放基建 — datawarehouse 带历史拆库上 GitLab + 引擎仓推送 + CI 门禁 + 投料约定
 author: claude
 executor: codex
-status: pending
+status: done
 type: other
 created: 2026-06-10
 updated: 2026-06-10
@@ -93,9 +93,134 @@ git -C $NEWDW ls-files .wiki/schema_sync.json
 - 待用户事项（GitLab pipeline 首跑确认、团队成员权限分配建议：实例仓 Developer、引擎仓 maintainer-only）
 - 偏离或异常
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-06-10
 
-（执行者填写）
+### Step 0 结论
+
+- 远端地址：
+  - 引擎仓：`http://git.ppdaicorp.com/international_data/llm-wiki.git`
+  - datawarehouse 实例仓：`http://git.ppdaicorp.com/international_data/knowledge-cmn.git`
+- 认证方式：HTTP Git 凭证已在本机可用；`git ls-remote` 对两个空仓均 exit 0。
+- `dw-split-preview` 已存在：`b4d39d548a365021cf7c9acfeffb9f8bcefbd33f`，尖部为 `[schema-sync] datawarehouse sync schema mirror by codex`，共 15 commits；未重新 split。
+- 原数据仓 `/Users/zhangjunwu/workspace/obsidian/knowledge` 与引擎仓均 clean；`personal/` 未触碰。
+- CI runner 未给出额外限制，按 `image: python:3.12` 写入。
+
+### 执行记录
+
+```text
+$ git push http://git.ppdaicorp.com/international_data/llm-wiki.git main
+To http://git.ppdaicorp.com/international_data/llm-wiki.git
+ * [new branch]      main -> main
+```
+
+```text
+$ git push http://git.ppdaicorp.com/international_data/knowledge-cmn.git dw-split-preview:main
+To http://git.ppdaicorp.com/international_data/knowledge-cmn.git
+ * [new branch]      dw-split-preview -> main
+```
+
+```text
+$ git clone http://git.ppdaicorp.com/international_data/knowledge-cmn.git /Users/zhangjunwu/workspace/obsidian/datawarehouse
+Cloning into '/Users/zhangjunwu/workspace/obsidian/datawarehouse'...
+```
+
+新实例仓基建改动：
+
+- 新增根 `.gitignore`：忽略 `.wiki/*_index.json`、`.wiki/cache.json`、`.wiki/search_index/`、`.wiki/lightrag/`、`maps/*` 派生层、`engine/`、Obsidian workspace/themes/appearance、`.DS_Store`；显式放行 `!.wiki/schema_sync.json`。
+- 新增 `.gitlab-ci.yml`：单 job 三道门禁，CI 内用 `CI_JOB_TOKEN` clone `llm-wiki`，依次跑 `wiki_lint --check-only`、`wiki_lint --scan-wiki-pii`、`wiki_eval --check`，全部 `--root .`。
+- 新增 `raw/dropbox/.gitkeep` 与 `raw/dropbox/README.md`。
+- `AGENTS.md` 追加团队投料与 ingest 节；`log.md` 记录团队开放基建。
+
+```text
+$ git commit -m "[team] add datawarehouse opening infrastructure"
+[main 1aa9840] [team] add datawarehouse opening infrastructure
+ 6 files changed, 103 insertions(+)
+ create mode 100644 .gitignore
+ create mode 100644 .gitlab-ci.yml
+ create mode 100644 raw/dropbox/.gitkeep
+ create mode 100644 raw/dropbox/README.md
+
+$ git push origin main
+To http://git.ppdaicorp.com/international_data/knowledge-cmn.git
+   b4d39d5..1aa9840  main -> main
+```
+
+本地切换：
+
+- `~/.claude/skills/wiki/instances.json` 的 `datawarehouse.root` 已改为 `/Users/zhangjunwu/workspace/obsidian/datawarehouse`。
+- 旧目录 `/Users/zhangjunwu/workspace/obsidian/knowledge/datawarehouse/AGENTS.md` 顶部新增废弃指引，保留审计、不再写入。
+
+```text
+$ git -C /Users/zhangjunwu/workspace/obsidian/knowledge commit -m "[datawarehouse] mark split directory read-only"
+[main 609aeed] [datawarehouse] mark split directory read-only
+ 1 file changed, 2 insertions(+)
+```
+
+### 验证输出
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python /Users/zhangjunwu/workspace/llm-wiki/llm-wiki/scripts/wiki_lint.py --root /Users/zhangjunwu/workspace/obsidian/datawarehouse --check-only; echo "lint=$?"
+扫描: datawarehouse/wiki/ (33 文件) · datawarehouse/inbox/ (0 draft) · datawarehouse/raw/ (18 source)
+错误: 0 · 警告: 0
+lint=0
+```
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python /Users/zhangjunwu/workspace/llm-wiki/llm-wiki/scripts/wiki_lint.py --root /Users/zhangjunwu/workspace/obsidian/datawarehouse --scan-wiki-pii; echo "pii=$?"
+扫描: datawarehouse/wiki/ (33 文件) · datawarehouse/inbox/ (0 draft) · datawarehouse/raw/ (18 source)
+脱敏扫描（inbox + wiki）: 0 命中
+错误: 0 · 警告: 0
+pii=0
+```
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python /Users/zhangjunwu/workspace/llm-wiki/llm-wiki/scripts/wiki_eval.py --root /Users/zhangjunwu/workspace/obsidian/datawarehouse | grep -i score
+score: 100/100
+```
+
+```text
+$ git -C /Users/zhangjunwu/workspace/obsidian/datawarehouse log --oneline | wc -l
+16
+$ git -C /Users/zhangjunwu/workspace/obsidian/datawarehouse log --oneline | tail -1
+7e953b8 init datawarehouse 数仓知识库实例
+$ git ls-remote http://git.ppdaicorp.com/international_data/knowledge-cmn.git refs/heads/main
+1aa984054cdfc498b598bd0cc1f0b739d3bc3eb8	refs/heads/main
+```
+
+```text
+$ cd /Users/zhangjunwu/workspace/llm-wiki/llm-wiki
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --root /Users/zhangjunwu/workspace/obsidian/datawarehouse >/dev/null
+$ git -C /Users/zhangjunwu/workspace/obsidian/datawarehouse status --short
+(no output)
+$ git -C /Users/zhangjunwu/workspace/obsidian/datawarehouse ls-files .wiki/schema_sync.json
+.wiki/schema_sync.json
+```
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python /Users/zhangjunwu/workspace/llm-wiki/llm-wiki/scripts/wiki_lint.py --root /Users/zhangjunwu/workspace/obsidian/knowledge/personal --check-only; echo "personal=$?"
+扫描: personal/wiki/ (11 文件) · personal/inbox/ (0 draft) · personal/raw/ (0 source)
+错误: 0 · 警告: 0
+personal=0
+```
+
+### commit sha
+
+- 引擎远端初始推送：`c52af4d8331f474519a4c723a3fd3c9dcc1cad77`
+- datawarehouse 历史分支推送基线：`b4d39d548a365021cf7c9acfeffb9f8bcefbd33f`
+- 新 datawarehouse 仓基建 commit：`1aa984054cdfc498b598bd0cc1f0b739d3bc3eb8`
+- 原 `/Users/zhangjunwu/workspace/obsidian/knowledge` 审计指引 commit：`609aeed406540a27fb271d8c607eeff69601fb9f`
+- 本 task 执行记录 commit：见最终报告。
+
+### 待用户事项
+
+- 在 GitLab 确认 `knowledge-cmn` 首条 pipeline 通过；本地无法直接读取 GitLab pipeline 状态。
+- 团队权限建议：`knowledge-cmn` 给团队成员 Developer；`llm-wiki` 引擎仓保持 maintainer-only 或更严格权限。
+
+### 偏离或异常
+
+- 未使用 SSH；本机对 GitLab HTTP 远端已有可用凭证，按用户提供的 HTTP URL 推送。
+- `.gitignore` 生效验证第一次在新仓 cwd 直接调用引擎脚本绝对路径，触发既有 repo-root 检查；已按正确方式从引擎根重跑验证并通过。
+- 本 task 未新增 CI 机械限制成员越界路径；按强约束只写入 AGENTS/dropbox 约定，由 MR review 把关。
 
 ## Evaluation by claude · <date>
 
