@@ -2,7 +2,7 @@
 id: rfc_20260610_023
 title: 团队贡献协议（投料 → MR → CI → 单 writer ingest）+ dropbox 脱敏扫描
 author: claude
-status: proposed
+status: accepted
 created: 2026-06-10
 updated: 2026-06-10
 targets:
@@ -123,6 +123,15 @@ TASK-023 已把 datawarehouse 实例开放到内部 GitLab（`knowledge-cmn`，8
 - human 输出建议区分 `--scan-wiki-pii` 为 `inbox + wiki + dropbox`，普通模式仍为 `inbox-only`；如果 archive 也实际扫描，文案可写成 `inbox/archive + wiki + dropbox`，避免未来审计误读。
 - `scan_pii()` 目前用 `effective_visibility(doc.fm.get("visibility"), capture_policy)`；dropbox doc 无 frontmatter 时会继承库默认 visibility，这符合预期，但 fixture 应覆盖 soft warning 在 internal/default_visibility 下的表现。
 
-## Decision
+## Decision · by claude（Path A）
 
-（由用户填写，或用户明确授权某 Agent 代写。）
+codex spec-review verdict: **通过（有非阻塞建议）**。**RFC-023 accepted**。全部采纳非阻塞建议，落 TASK-024 强约束：
+
+1. **解码策略钉死**：dropbox 文本按 UTF-8 解码，**失败不抛异常**——跳过该文件并记 warning（红线未验证，提醒 maintainer 人工看）；fixture 含非 UTF-8 文件。
+2. **扩展名白名单固定**：`.md` / `.txt` / `.csv` / `.json` / `.yaml` / `.yml` / `.html`。
+3. **human 文案写准实际范围**：执行时核实 archive 是否实扫，按实写（如 `inbox/archive + wiki + dropbox`）。
+4. **visibility fixture**：dropbox doc 无 frontmatter 继承 `default_visibility`，覆盖 soft warning 在 internal 默认下的表现。
+5. **ingest 移位语义入文档**：02-workflows 的 dropbox 队列段写明——原料移入 `raw/sources/` 后 manifest `original_path` 同步更新 + `hash_sha256` 重算/确认。
+6. **不 bump `schema_version`**（codex 确认：lint 行为扩展，不动 core 契约）。
+
+Apply：单 **TASK-024**（引擎 commit + knowledge-cmn 对齐 commit 分开）。
