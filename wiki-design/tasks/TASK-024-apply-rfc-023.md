@@ -182,6 +182,37 @@ $ git diff --check && git -C /Users/zhangjunwu/workspace/obsidian/datawarehouse 
 - 首次跑 `knowledge-cmn --scan-wiki-pii` 时发现 `raw/dropbox/README.md` 自身包含 hard_redact 触发词，导致 `HARD_REDACT_HIT`。已作为 Step 5 实例文档对齐修复：README 改为引用 `purpose.md` 完整红线，并补入 ingest 归档与 CI 扫描说明。
 - 新增 `DROPBOX_DECODE_FAILED` warning code。原因是现有错误码没有能准确表达"dropbox 白名单文本解码失败但 lint 不应阻断"的 warning；该改动是 lint 行为扩展，不改 core schema，不 bump `schema_version`。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-10
 
-（评估者填写）
+**Verdict: PASS。** 独立复跑 + 真实库端到端反向验证，M1 / M2 均达标，RFC-023 闭环。
+
+### 独立复跑
+
+| 验证 | 结果 |
+| --- | --- |
+| `unittest tests.test_task_024` | 7 tests OK |
+| **端到端反向验证（真实库）** | 往 `knowledge-cmn` dropbox 放 `AKIA...` 文件 → `--scan-wiki-pii` **exit 1 + `HARD_REDACT_HIT` 精确到文件行号**；删除后恢复 exit 0——**CI 盲区闭合实锤** |
+| knowledge-cmn / personal smoke | exit 0 / exit 0（warning 见下） |
+| `--check-docs` | exit 0（BASE_SCHEMA error_level 新增不破生成块） |
+| 回归 020a/021a/021b/022 | OK |
+| `02-workflows.md:171` | 「团队贡献」节就位（角色 / 投料 / GitLab 机制 / 单 writer / 队列语义含 original_path+hash / 扩权条件） |
+| 两仓 | 引擎 `0c08e3b`、knowledge-cmn `5975c59`，均 clean 且已推送 |
+
+### 核查点
+
+1. **复用单一 redact 实现**：dropbox 走轻量 doc 接入 `scan_pii()`，未复制扫描逻辑；普通 lint 完全不受 dropbox 影响（专测覆盖，含红线内容也不报）。
+2. **解码防御**：非 UTF-8 → `DROPBOX_DECODE_FAILED` warning + 跳过，不 crash（fixture 覆盖）。
+3. **文案按实际范围**：Step 0 核实 archive 实扫，落为 `inbox/archive + wiki + dropbox`——准确。
+
+### 偏离评估（合理）
+
+- **新增错误码 `DROPBOX_DECODE_FAILED`**（强约束 5 写"不新增错误码体系"）：Step 0 预先声明——解码失败是新场景、PII 系列码语义不适配，新增 warning 级专码且不 bump `schema_version`。**合理**：错误码新增不影响 profile 兼容与实例数据契约（同 RFC-020 加 `DOC_BLOCK_*` 先例），实例零迁移。
+- knowledge-cmn README 顺手把自身的 hard_redact 触发词改为概括表达——正确（避免 README 自己挡 CI）。
+
+### 额外发现（非本 task 引入）
+
+personal `knowledge-organization.md:72` 有一条 `SOFT_REDACT_HIT` warning："讨论脱敏规则的句子"（capture_policy 加客户信息正则）命中了 `客户(姓名|名单|信息)` pattern——同 datawarehouse 处理过的"规则说明误报"，且该句还在用 legacy 词 `exclude_patterns`。warning 级不挡，由 claude 评估后顺手修复 personal 措辞。
+
+### 结论
+
+RFC-023 **全部闭环**：团队贡献协议入引擎正本（02-workflows）、dropbox 红线扫描盲区闭合且 CI 零改动自动获益。团队开放链路（投料 → MR → CI → 单 writer ingest）机制与文档双就位。TASK-024 done 确认有效。**待用户**：在 GitLab 提含 AKIA fixture 的测试 MR 确认 pipeline 红→绿（端到端本地已等价验证）。

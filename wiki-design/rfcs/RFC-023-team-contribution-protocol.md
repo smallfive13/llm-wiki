@@ -135,3 +135,9 @@ codex spec-review verdict: **通过（有非阻塞建议）**。**RFC-023 accept
 6. **不 bump `schema_version`**（codex 确认：lint 行为扩展，不动 core 契约）。
 
 Apply：单 **TASK-024**（引擎 commit + knowledge-cmn 对齐 commit 分开）。
+
+## Applied
+
+- **TASK-024**：引擎 `0c08e3b` + knowledge-cmn `5975c59`——`--scan-wiki-pii` 覆盖 `raw/dropbox/**` 文本（白名单 + UTF-8 解码防御 + `DROPBOX_DECODE_FAILED` warning）、02-workflows「团队贡献」节、knowledge-cmn README 对齐。Evaluation by claude: **PASS**（含真实库端到端反向验证：dropbox 放 AKIA → exit 1 + 精确定位；CI 零改动获益）。
+
+**RFC-023 全部 applied。团队贡献链路（投料 → MR → CI → 单 writer ingest）机制与文档双就位。**
