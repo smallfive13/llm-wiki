@@ -112,6 +112,7 @@ ERROR_CODES = {
     "CAPTURE_POLICY_LEGACY",
     "SOFT_REDACT_HIT",
     "HARD_REDACT_HIT",
+    "DROPBOX_DECODE_FAILED",
     "IMAGE_DANGLING",
     "IMAGE_PATH_ESCAPE",
     "IMAGE_HARD_REDACT",
@@ -124,6 +125,7 @@ ERROR_CODES = {
 MARKDOWN_IMAGE_RE = re.compile(r"!\[([^\]\n]*)\]\(([^)\n]+)\)")
 OBSIDIAN_IMAGE_RE = re.compile(r"!\[\[([^\]\n]+)\]\]")
 NONLOCAL_IMAGE_SCHEMES = ("http://", "https://", "data:", "mailto:")
+DROPBOX_TEXT_EXTENSIONS = {".md", ".txt", ".csv", ".json", ".yaml", ".yml", ".html"}
 
 ERROR_LEVEL = dict(BASE_SCHEMA["error_level"])
 
@@ -496,6 +498,34 @@ def scan_markdown_files() -> Tuple[List[MarkdownDoc], List[MarkdownDoc], List[Ma
     return wiki_docs, inbox_docs, inbox_archived
 
 
+def collect_dropbox_text_docs(issues: Dict[str, List[Issue]]) -> List[MarkdownDoc]:
+    dropbox_root = INSTANCE_ROOT / "raw/dropbox"
+    if not dropbox_root.is_dir():
+        return []
+    docs: List[MarkdownDoc] = []
+    for path in sorted(item for item in dropbox_root.rglob("*") if item.is_file()):
+        if path.suffix.lower() not in DROPBOX_TEXT_EXTENSIONS:
+            continue
+        rel = rel_to_knowledge(path)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            add_issue(
+                issues,
+                issue(
+                    "DROPBOX_DECODE_FAILED",
+                    rel,
+                    None,
+                    None,
+                    f"dropbox 文本文件不是有效 UTF-8，已跳过脱敏扫描: {exc}",
+                    "红线未验证，请 maintainer 人工核查该投料文件",
+                ),
+            )
+            continue
+        docs.append(MarkdownDoc(path, rel, {}, text, {}, False))
+    return docs
+
+
 def build_id_index(wiki_docs: List[MarkdownDoc], issues: Dict[str, List[Issue]]) -> Dict[str, MarkdownDoc]:
     index: Dict[str, MarkdownDoc] = {}
     seen: Dict[str, MarkdownDoc] = {}
@@ -840,7 +870,15 @@ def compile_patterns(patterns: List[str], field: str, issues: Dict[str, List[Iss
     return compiled
 
 
-def scan_pii(inbox_docs: List[MarkdownDoc], archived: List[MarkdownDoc], wiki_docs: List[MarkdownDoc], capture_policy: Dict[str, Any], scan_wiki: bool, issues: Dict[str, List[Issue]]) -> int:
+def scan_pii(
+    inbox_docs: List[MarkdownDoc],
+    archived: List[MarkdownDoc],
+    wiki_docs: List[MarkdownDoc],
+    dropbox_docs: List[MarkdownDoc],
+    capture_policy: Dict[str, Any],
+    scan_wiki: bool,
+    issues: Dict[str, List[Issue]],
+) -> int:
     hard_patterns, soft_patterns = normalized_redact_patterns(capture_policy, issues)
     hard_compiled = compile_patterns(hard_patterns, "hard_redact", issues)
     soft_compiled = compile_patterns(soft_patterns, "soft_redact", issues)
@@ -869,6 +907,8 @@ def scan_pii(inbox_docs: List[MarkdownDoc], archived: List[MarkdownDoc], wiki_do
         scan_doc(doc)
     if scan_wiki:
         for doc in wiki_docs:
+            scan_doc(doc)
+        for doc in dropbox_docs:
             scan_doc(doc)
     return hits
 
@@ -1079,6 +1119,7 @@ def run_lint(args: argparse.Namespace) -> Tuple[int, Dict[str, Any], str]:
                 "wiki_pages": 0,
                 "inbox_drafts": 0,
                 "inbox_archived": 0,
+                "dropbox_texts": 0,
                 "sources": 0,
                 "review_queue_items": 0,
             },
@@ -1105,6 +1146,7 @@ def run_lint(args: argparse.Namespace) -> Tuple[int, Dict[str, Any], str]:
                 "wiki_pages": 0,
                 "inbox_drafts": 0,
                 "inbox_archived": 0,
+                "dropbox_texts": 0,
                 "sources": source_count,
                 "review_queue_items": 0,
             },
@@ -1130,7 +1172,8 @@ def run_lint(args: argparse.Namespace) -> Tuple[int, Dict[str, Any], str]:
     alias_entries = build_alias_index(wiki_docs, id_index, issues)
     inbox_index = build_inbox_index(inbox_docs, issues)
     validate_image_refs(wiki_docs, source_manifest, capture_policy, issues)
-    pii_hits = scan_pii(inbox_docs, archived_docs, wiki_docs, capture_policy, args.scan_wiki_pii, issues)
+    dropbox_docs = collect_dropbox_text_docs(issues) if args.scan_wiki_pii else []
+    pii_hits = scan_pii(inbox_docs, archived_docs, wiki_docs, dropbox_docs, capture_policy, args.scan_wiki_pii, issues)
 
     id_entries = {
         pid: {"path": doc.rel, "type": doc.fm.get("type"), "status": doc.fm.get("status")}
@@ -1151,6 +1194,7 @@ def run_lint(args: argparse.Namespace) -> Tuple[int, Dict[str, Any], str]:
         "wiki_pages": len(wiki_docs),
         "inbox_drafts": len([d for d in inbox_docs if d.fm.get("status") == "draft"]),
         "inbox_archived": len(archived_docs),
+        "dropbox_texts": len(dropbox_docs),
         "sources": len(source_manifest.get("sources", [])) if isinstance(source_manifest.get("sources", []), list) else 0,
         "review_queue_items": len(review_queue.get("items", [])) if isinstance(review_queue.get("items", []), list) else 0,
     }
@@ -1239,7 +1283,7 @@ def evaluate_instance(root: Path, *, now: Optional[date_cls] = None, scan_wiki_p
             "data": {
                 "wiki_lint_version": VERSION,
                 "ran_at": now_iso(),
-                "scanned": {"wiki_pages": 0, "inbox_drafts": 0, "inbox_archived": 0, "sources": 0, "review_queue_items": 0},
+                "scanned": {"wiki_pages": 0, "inbox_drafts": 0, "inbox_archived": 0, "dropbox_texts": 0, "sources": 0, "review_queue_items": 0},
                 "errors": [],
                 "warnings": [],
                 "derived_layers": {"id_index_entries": 0, "normalized_alias_index_entries": 0, "inbox_index_drafts": 0, "written": False},
@@ -1267,7 +1311,7 @@ def evaluate_instance(root: Path, *, now: Optional[date_cls] = None, scan_wiki_p
             "data": {
                 "wiki_lint_version": VERSION,
                 "ran_at": now_iso(),
-                "scanned": {"wiki_pages": 0, "inbox_drafts": 0, "inbox_archived": 0, "sources": 0, "review_queue_items": 0},
+                "scanned": {"wiki_pages": 0, "inbox_drafts": 0, "inbox_archived": 0, "dropbox_texts": 0, "sources": 0, "review_queue_items": 0},
                 "errors": [],
                 "warnings": [],
                 "derived_layers": {"id_index_entries": 0, "normalized_alias_index_entries": 0, "inbox_index_drafts": 0, "written": False},
@@ -1333,7 +1377,7 @@ def human_output(data: Dict[str, Any], pii_hits: int, args: argparse.Namespace) 
         f"{status(not any(e['code'] in {'SOURCE_KEY_MISMATCH','SUMMARY_PATH_MISSING'} for e in errors))}source 单主键",
         f"{status(not any(e['code'] in {'ALIAS_CONFLICT','CANONICAL_CHAIN','REDIRECT_INVALID'} for e in errors))}entity 别名（含链式跳转 / status:redirect）: {derived['normalized_alias_index_entries']} entries",
         f"{status(not any(e['code'] == 'INBOX_STATUS_PATH_MISMATCH' for e in errors))}inbox: {derived['inbox_index_drafts']} draft",
-        f"{status(not any(e['code'].startswith('PII_HIT') or e['code'] == 'HARD_REDACT_HIT' for e in errors))}脱敏扫描（{'inbox + wiki' if args.scan_wiki_pii else 'inbox-only'}）: {pii_hits} 命中",
+        f"{status(not any(e['code'].startswith('PII_HIT') or e['code'] == 'HARD_REDACT_HIT' for e in errors))}脱敏扫描（{'inbox/archive + wiki + dropbox' if args.scan_wiki_pii else 'inbox/archive'}）: {pii_hits} 命中",
         "",
     ]
     lines.extend([ingest_status_output(data), ""])

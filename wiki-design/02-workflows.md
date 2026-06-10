@@ -168,6 +168,63 @@ obsidian/knowledge/               # 一个 git repo 包多个 vault
 Triage 如果需要异步人工处理，应写入 `knowledge/.wiki/review_queue.json`，字段见
 [05-contracts-and-next-steps.md](05-contracts-and-next-steps.md)。不要让 Agent 自由发挥 review 字段名。
 
+## 团队贡献
+
+适用于开放给团队成员投料的实例库。目标是让成员能低成本提交原料，同时保持 wiki 正本、manifest 和人工背书由 maintainer 统一控制。
+
+### 角色
+
+| 角色 | 能做 | 不能做 |
+| --- | --- | --- |
+| 成员（Developer） | 改 `raw/dropbox/**`、提 MR；用 agent 只读答疑 | 改 `wiki/**`、`raw/source_manifest.json`、`.wiki/**`、上下文层（`purpose.md` / `index.md` / `overview.md` / `log.md`）；直推 `main` |
+| maintainer | 审批 MR、merge；本机按 RFC-019 ingest；设置 `review: true` 背书；管理 GitLab 权限 | 允许未审核成员直接写正本 |
+
+### 投料约定
+
+- 一份原料一个子目录：`raw/dropbox/YYYYMMDD-<标题>/`。
+- 子目录内放原料文件、链接清单、截图和一句话说明（来源链接 / 业务背景 / 想解决的问题）。
+- 硬红线在入口即适用：不投 AK/SK、password、token、私钥、密钥、连接串、可复用登录凭证、客户级 PII。实例库可在 `purpose.md` 里写清内部共享边界。
+- 成员可以让 agent 代办建分支、放文件、push、开 MR，但 agent 仍只能写 `raw/dropbox/**`。
+
+### GitLab 机制要求
+
+- `main` 必须是 protected branch：Developer 不可直推。
+- MR 必须 maintainer approve，且 CI 全绿后才能 merge。
+- 实例仓 CI 至少跑三道门禁：`wiki_lint --check-only`、`wiki_lint --scan-wiki-pii`、`wiki_eval --check`。
+- 引擎仓对成员只读或 maintainer-only 写，避免成员误改工具链。
+
+### 单 writer ingest
+
+wiki 正本只有一个 writer：maintainer 本机的 ingest 会话。这是当前规模下的设计约束，用来避免 `raw/source_manifest.json` 单文件并发冲突；成员侧并发只落在 `raw/dropbox/` 不同子目录。
+
+maintainer 节奏：
+
+```text
+git pull
+-> wiki lint --ingest-status 看 manifest 清单
+-> 按 RFC-019 triage -> apply 逐份 ingest
+-> 每份 source 完成后单独 commit
+-> git push
+```
+
+dropbox 队列语义：
+
+- `raw/dropbox/` 只保留待处理原料。
+- ingest 完成后，把原料从 `raw/dropbox/<dir>/` 移入 `raw/sources/<日期>-<slug>/` 正式归档；图片进入 `raw/sources/assets/`。
+- 移位后必须同步更新 `raw/source_manifest.json` 的 `original_path`，并重算或确认 `hash_sha256` 指向正式归档后的原始资料内容。
+- manifest 条目通过 lint 后再改为 `status: ingested`，回填 `summary_page_id` / `summary_page_path`。
+- 失败时把 manifest 条目改为 `status: failed`，在 `notes` 写清原因；dropbox 原料保留或移入失败归档由实例约定决定，但必须能从 manifest 续传。
+
+扩 maintainer 条件：
+
+- 单 maintainer 吞吐不够时，只指定 1-2 名骨干同装引擎。
+- 多 maintainer 仍采用粗串行：ingest 前 `pull`，做完立即 `push`，避免同时编辑 manifest。
+- 如果粗串行仍不够，再另开 RFC 评估 manifest 拆文件或更强队列机制，不在当前模式提前建设。
+
+### Dropbox 脱敏扫描
+
+`wiki_lint --scan-wiki-pii` 会扫描 `raw/dropbox/**` 的文本白名单文件（`.md` / `.txt` / `.csv` / `.json` / `.yaml` / `.yml` / `.html`），只跑 `hard_redact` / `soft_redact`，不做 schema/frontmatter 校验。非 UTF-8 文本会被跳过并产生 warning，表示红线未验证，需要 maintainer 人工核查。图片、PDF、Office 等二进制文件不读内容，仍由 MR review 和后续 ingest 兜底。
+
 ## 被动 capture（建议 / 自动）
 
 触发：普通对话中 Agent 识别到值得长期保留的片段（设计取舍 / 排查结论 / 明确事实 / 用户决策性发言）。机制定义见 [RFC-003](rfcs/RFC-003-inbox-capture-layer.md) Revision v2 + AGENTS.md "低摩擦 capture" 段。

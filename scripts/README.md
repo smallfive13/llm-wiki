@@ -57,7 +57,7 @@ python3 scripts/wiki_lint.py                  # 校验 + 重建派生层
 python3 scripts/wiki_lint.py --root knowledge # 指定实例根；缺省为 knowledge/
 python3 scripts/wiki_lint.py --check-only     # 只校验，不写派生层
 python3 scripts/wiki_lint.py --json           # 机器可读输出
-python3 scripts/wiki_lint.py --scan-wiki-pii  # 加扫 wiki/ PII（默认只扫 inbox）
+python3 scripts/wiki_lint.py --scan-wiki-pii  # 加扫 wiki/ 与 raw/dropbox/ 文本 PII（默认扫 inbox/archive）
 python3 scripts/wiki_lint.py --ingest-status  # 只读 source_manifest，输出批量 ingest 进度
 python3 scripts/wiki_lint.py --check-docs     # 只校验 BASE_SCHEMA 生成文档块
 python3 scripts/wiki_lint.py --check-docs --fix # 只修复 GENERATED 块内部
@@ -87,6 +87,8 @@ python3 scripts/wiki_lint.py --check-docs --fix # 只修复 GENERATED 块内部
 普通 lint 的 human/json 输出包含 `ingest_progress`：全量统计各 status，并把 `triaged` 条目列为待 apply 清单（human 默认显示前 20 条）。`--ingest-status` 只读取并基本校验 `raw/source_manifest.json`，不扫描 wiki 页面、不写 `.wiki/` 派生层；退出码只由 manifest 读取 / schema error 决定，`--json --ingest-status` 输出固定 JSON 结构。
 
 `--check-docs` 是独立文档一致性闸：只比对受管 `BEGIN/END GENERATED` 块与 `wiki_common.BASE_SCHEMA` 的生成结果，不运行普通 lint、不扫描 wiki 页面、不写 `.wiki/` 派生层。`--fix` 仅在 `--check-docs` 下有效，只替换已成对存在的生成块内部；缺失、重复或未闭合 marker 不会自动猜位置。
+
+`--scan-wiki-pii` 会把脱敏扫描范围从默认 `inbox/archive` 扩展为 `inbox/archive + wiki + raw/dropbox`。`raw/dropbox/**` 只扫描文本白名单扩展名（`.md` / `.txt` / `.csv` / `.json` / `.yaml` / `.yml` / `.html`），不做 schema / frontmatter 校验；非白名单文件跳过。白名单文本必须是 UTF-8，解码失败时跳过该文件并给 `DROPBOX_DECODE_FAILED` warning，表示红线未验证，需要 maintainer 人工核查。
 
 后续 RFC 增强：
 
@@ -124,6 +126,7 @@ python3 scripts/wiki_lint.py --check-docs --fix # 只修复 GENERATED 块内部
 | `CAPTURE_POLICY_LEGACY` | warning | capture_policy 仍使用 v1 `exclude_patterns` |
 | `SOFT_REDACT_HIT` | warning | 内容命中 soft_redact，需按库策略确认或脱敏 |
 | `HARD_REDACT_HIT` | error | 内容命中 hard_redact，必须移除密钥/凭证/连接串等硬底线敏感内容 |
+| `DROPBOX_DECODE_FAILED` | warning | `raw/dropbox/` 白名单文本无法按 UTF-8 解码，已跳过脱敏扫描，需人工核查 |
 | `IMAGE_DANGLING` | error | wiki 正文图片引用目标不存在 |
 | `IMAGE_PATH_ESCAPE` | error | 图片引用归一化后逃出实例根 |
 | `IMAGE_HARD_REDACT` | error | 图片路径、文件名、相邻描述或 manifest 图说明命中 hard_redact |

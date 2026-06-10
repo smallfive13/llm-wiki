@@ -3,7 +3,7 @@ id: task_20260610_024
 title: Apply RFC-023 — dropbox 脱敏扫描 + 团队贡献协议进 02-workflows
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-06-10
 updated: 2026-06-10
@@ -79,9 +79,108 @@ cd /Users/zhangjunwu/workspace/llm-wiki/llm-wiki
 - 待用户事项（GitLab 测试 MR 红/绿确认）
 - 偏离或异常
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-06-10
 
-（执行者填写）
+### Step 0 结论
+
+- `scan_pii()` 的 doc 使用面为 `doc.path.read_text(encoding="utf-8")`、`doc.rel`、`doc.fm.get("visibility")`；dropbox 文本可用轻量 `MarkdownDoc(path, rel, fm={}, body=text, line_map={}, has_frontmatter=False)` 接入，不需要 schema/frontmatter 校验。
+- `scan_markdown_files()` 只适合 wiki/inbox；dropbox 需要单独收集 `raw/dropbox/**` 白名单扩展名文本。
+- archive 组在普通 lint 与 `--scan-wiki-pii` 下都实扫：`scan_pii()` 无条件扫描 `inbox_docs` 和 `archived_docs`，`scan_wiki=True` 时再扫描 `wiki_docs`。因此 human 文案落为普通模式 `inbox/archive`，`--scan-wiki-pii` 模式 `inbox/archive + wiki + dropbox`。
+- `MarkdownDoc` 结构可安全实例化；dropbox `fm={}` 会通过 `effective_visibility(None, capture_policy)` 继承库默认 visibility。
+- 解码失败缺少合适既有 warning code；新增 `DROPBOX_DECODE_FAILED` 为 warning，不 bump `schema_version`，只表达 dropbox 文本未验证。
+
+### 改动文件
+
+- `scripts/wiki_lint.py`
+  - 新增 `DROPBOX_TEXT_EXTENSIONS`：`.md` / `.txt` / `.csv` / `.json` / `.yaml` / `.yml` / `.html`。
+  - 新增 `collect_dropbox_text_docs()`：只在 `--scan-wiki-pii` 下收集 `raw/dropbox/**` 白名单文本；UTF-8 解码失败时记 `DROPBOX_DECODE_FAILED` warning 并跳过。
+  - 扩展 `scan_pii()` 参数，dropbox 复用同一套 hard/soft redact 逻辑，不复制扫描实现。
+  - JSON `scanned` 增加 `dropbox_texts`，普通 lint 下为 0。
+  - human「脱敏扫描」范围文案改为实际范围。
+- `scripts/wiki_common.py`
+  - `BASE_SCHEMA.error_level` 增加 `DROPBOX_DECODE_FAILED: warning`。
+- `scripts/README.md`
+  - 更新 `--scan-wiki-pii` 范围、dropbox 白名单、UTF-8 解码失败语义和 error code 表。
+- `wiki-design/02-workflows.md`
+  - 新增「团队贡献」节：角色、投料约定、GitLab 机制、单 writer ingest、dropbox 队列语义、扩 maintainer 条件、dropbox 脱敏扫描。
+  - 明确 ingest 移位后同步更新 manifest `original_path`，并重算或确认 `hash_sha256`。
+- `tests/test_task_024.py`
+  - 新增 7 个 fixture 场景。
+- `knowledge-cmn`
+  - 对齐 `raw/dropbox/README.md`：补 ingest 后归档、CI 脱敏扫描、UTF-8 解码 warning；同时把 README 自身 hard_redact 触发词改为不触发的概括表达。
+
+### 验证输出
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest -v tests.test_task_024
+test_check_only_does_not_write_derived_layers ... ok
+test_clean_dropbox_has_no_hits ... ok
+test_dropbox_hard_redact_blocks_scan_wiki_pii ... ok
+test_dropbox_soft_redact_warns_and_inherits_default_visibility ... ok
+test_non_text_extensions_are_skipped ... ok
+test_non_utf8_text_file_warns_without_crashing ... ok
+test_plain_lint_ignores_dropbox_even_when_it_contains_hard_redact ... ok
+
+Ran 7 tests in 2.315s
+OK
+```
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --root /Users/zhangjunwu/workspace/obsidian/datawarehouse --scan-wiki-pii; echo "cmn pii=$?"
+扫描: datawarehouse/wiki/ (33 文件) · datawarehouse/inbox/ (0 draft) · datawarehouse/raw/ (18 source)
+脱敏扫描（inbox/archive + wiki + dropbox）: 0 命中
+错误: 0 · 警告: 0
+cmn pii=0
+```
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --root /Users/zhangjunwu/workspace/obsidian/knowledge/personal --scan-wiki-pii; echo "personal pii=$?"
+扫描: personal/wiki/ (11 文件) · personal/inbox/ (0 draft) · personal/raw/ (0 source)
+脱敏扫描（inbox/archive + wiki + dropbox）: 1 命中
+详细警告:
+  [WARN] SOFT_REDACT_HIT wiki/topics/knowledge-organization.md:72 -: 命中 soft_redact pattern '客户(姓名|名单|信息)'
+错误: 0 · 警告: 1
+personal pii=0
+```
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --root knowledge --check-only; echo "lint=$?"
+脱敏扫描（inbox/archive）: 0 命中
+错误: 0 · 警告: 0
+lint=0
+```
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --root knowledge --check-docs; echo "check-docs=$?"
+受管块: 6
+错误: 0
+check-docs=0
+```
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest tests.test_task_012 tests.test_task_013 tests.test_task_014 tests.test_task_015 tests.test_task_016a tests.test_task_016b tests.test_task_017 tests.test_task_019 tests.test_task_020a tests.test_task_021a tests.test_task_021b tests.test_task_022
+Ran 80 tests in 58.170s
+OK
+```
+
+```text
+$ git diff --check && git -C /Users/zhangjunwu/workspace/obsidian/datawarehouse diff --check
+(no output)
+```
+
+### commit sha
+
+- `knowledge-cmn` 对齐 commit：`5975c59dd377bd8ac78f26b1e41cdff94ffb61e7`（已 push）
+- 引擎 commit：见最终报告（待本 Execution log 提交后生成并 push）
+
+### 待用户事项
+
+- 引擎 push 后，在 `knowledge-cmn` 提一个含 hard_redact fixture 的测试 MR，确认 pipeline 红；删除 fixture 后确认 pipeline 绿。
+
+### 偏离或异常
+
+- 首次跑 `knowledge-cmn --scan-wiki-pii` 时发现 `raw/dropbox/README.md` 自身包含 hard_redact 触发词，导致 `HARD_REDACT_HIT`。已作为 Step 5 实例文档对齐修复：README 改为引用 `purpose.md` 完整红线，并补入 ingest 归档与 CI 扫描说明。
+- 新增 `DROPBOX_DECODE_FAILED` warning code。原因是现有错误码没有能准确表达"dropbox 白名单文本解码失败但 lint 不应阻断"的 warning；该改动是 lint 行为扩展，不改 core schema，不 bump `schema_version`。
 
 ## Evaluation by claude · <date>
 
