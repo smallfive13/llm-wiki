@@ -109,5 +109,6 @@ reviewers:
 | evidence 结构化 | P1 | `evidence_count` 退化为派生字段，frontmatter 改为 `evidence: [{source_id, independence}]`，区分独立来源 / 互证 / 派生 |
 | review queue SLA | P2 | 加 pending 时长告警、健康度报告，防止队列变成死信 |
 | Wiki 健康度指标 | P2 | 新增 `maps/metrics.md`（派生层），跟踪页面增长、孤立率、平均 confidence、`last_verified` 年龄 |
-| 双 Agent 并发写入约束 | P2 | 明确 single-writer 或把 `review_queue.json` / `source_manifest.json` 拆成一条一文件，降低 git 冲突 |
+| 双 Agent 并发写入约束 | P2 | 明确 single-writer 或把 `review_queue.json` / `source_manifest.json` 拆成一条一文件，降低 git 冲突（团队场景已由 RFC-023 单 writer 模式部分解决） |
+| MR 自动评审（RFC-024 候选） | P1 | 本机 agent 经 GitLab API 自动评估 knowledge-cmn 投料 MR：diff 路径合规（机械）+ 图片/PDF 多模态查凭证（补文本扫描盲区）+ 质量初判。**边界已定**：低风险自动 approve+merge（评估理由留 MR 评论），可疑留人工；触发先用 ingest 会话顺带。**启动条件：首批真实 MR 人工审过几个、有样本后再立 RFC**（用户 2026-06-10 拍板） |
 | visibility / PII 字段 | P2 | frontmatter 加 `visibility: private \| team \| public`，lint 在 public 页扫描 PII pattern |
