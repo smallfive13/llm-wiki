@@ -222,6 +222,36 @@ personal=0
 - `.gitignore` 生效验证第一次在新仓 cwd 直接调用引擎脚本绝对路径，触发既有 repo-root 检查；已按正确方式从引擎根重跑验证并通过。
 - 本 task 未新增 CI 机械限制成员越界路径；按强约束只写入 AGENTS/dropbox 约定，由 MR review 把关。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-10
 
-（评估者填写）
+**Verdict: PASS。** 独立复跑全部本地可验证项，团队开放基建达标。
+
+### 独立复跑
+
+| 验证 | 结果 |
+| --- | --- |
+| 新仓 lint / PII / eval | 0 错 0 警 / 0 命中 / **score 100**（与切换前一致，33 页 / 18 source） |
+| 历史完整 | **16 commits**（15 历史 + 1 基建），首 commit `7e953b8 init`，带历史拆库成功 |
+| `.gitignore` 生效 | lint 重建派生层后新仓 status **空**（派生层未被跟踪） |
+| `schema_sync.json` | 仍被跟踪（放行生效），`main...origin/main` 同步 |
+| 远端一致性 | 引擎远端 main == 本地（`5ea77d3`）；新仓远端 main == 本地（`1aa9840`），ls-remote 直接确认 |
+| `instances.json` | `datawarehouse.root` 已指向 `/Users/zhangjunwu/workspace/obsidian/datawarehouse` |
+| personal 不受影响 | lint exit 0，原仓 `personal/` 未触碰 |
+| 旧目录废弃指引 | 原仓 `datawarehouse/AGENTS.md` 顶部就位（`609aeed`），指向新仓与远端 |
+
+### 核查点
+
+1. **三个决策全部落地**：带历史（复用 `dw-split-preview`，未重 split）/ 只投料（`raw/dropbox/` + AGENTS 团队节 + 四类路径禁改约定）/ 引擎单独仓（`llm-wiki.git` 与 `knowledge-cmn.git` 分离，CI 用 `CI_JOB_TOKEN` 跨仓 clone）。
+2. **split 根 `.gitignore` 坑已补**：新仓自带派生层 / Obsidian 噪音 / `.DS_Store` ignore + `!.wiki/schema_sync.json` 放行 + `engine/`（CI clone 目录）。
+3. **偏离均合理**：HTTP 凭证替代 SSH（既有可用凭证）；首次验证踩 repo-root 检查后正确重跑——又一次印证 RFC-022 解决的就是这个坑（评估者本轮也踩了一次）。
+4. GitLab 侧文件上传已由用户确认。
+
+### 遗留（非阻塞）
+
+- **CI 首条 pipeline 状态待用户在 GitLab 确认**（本地无法读取）；若 runner 拉不动 `python:3.12` 镜像或 `CI_JOB_TOKEN` 无 `llm-wiki` 仓读权限（GitLab 需在引擎仓设置 CI job token allowlist），按报错调整。
+- 团队权限分配（实例仓 Developer / 引擎仓 maintainer-only）由用户在 GitLab 操作。
+- 协议定版 **RFC-023（团队贡献协议）** 待 claude 起草。
+
+### 结论
+
+datawarehouse 知识库团队开放基建完成：带完整历史上 GitLab、CI 三道门禁就位、投料区与角色约定写入库根、本地实例无损切换。TASK-023 done 确认有效。

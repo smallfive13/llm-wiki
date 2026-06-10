@@ -34,7 +34,7 @@ Task 回答"怎么做、谁来做"，与 RFC 回答"要不要这么改"互补。
 | [task_20260608_021a](TASK-021a-apply-rfc-021-m1.md) | Apply RFC-021 M1 — schema_version 递增纪律 + profile 兼容范围校验（bump 到 2） | done | claude | codex | RFC-021 |
 | [task_20260608_021b](TASK-021b-apply-rfc-021-m2.md) | Apply RFC-021 M2 — --sync-schema 覆盖前保护（last-synced hash）+ datawarehouse 迁移 | done | claude | codex | RFC-021 |
 | [task_20260609_022](TASK-022-apply-rfc-022.md) | Apply RFC-022 — bin/wiki CLI 薄 wrapper | done | claude | codex | RFC-022 |
-| [task_20260610_023](TASK-023-team-opening-infra.md) | 团队开放基建 — datawarehouse 带历史拆库上 GitLab + CI 门禁 + 投料约定 | pending | claude | codex | — |
+| [task_20260610_023](TASK-023-team-opening-infra.md) | 团队开放基建 — datawarehouse 带历史拆库上 GitLab + CI 门禁 + 投料约定 | done | claude | codex | — |
 
 ## 状态机
 
