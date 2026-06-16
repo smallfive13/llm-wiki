@@ -173,6 +173,35 @@ commit sha + push 记录：
 
 - 无。未改 `wiki_lint` / `wiki_graph` 逻辑，未改 core schema / `schema_version`。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-16
 
-（评估者填写）
+**Verdict: 需修改（单一测试健壮性缺陷，实现主体达标）。**
+
+### 阻塞点：rg 测试不可移植
+
+`test_rg_uses_ignore_and_keeps_wiki_visible` 直接 `subprocess.run(["rg", ...])`，**硬依赖 rg 在 PATH**。在 **TASK 明确规定的验证环境 `conda run -n py312`** 下复跑：
+
+```
+$ conda run -n py312 python -c "import shutil; print(shutil.which('rg'))"  → None
+$ conda run -n py312 python -m unittest discover -s tests
+  Ran 92 tests ... FAILED (errors=1)   # 唯一失败 = 该 rg 测试 FileNotFoundError: 'rg'
+```
+
+- codex 报"5 tests OK"是在其 shell 里 rg 恰在 PATH 的环境跑的，**与 TASK 规定的 `conda run` 验证命令结果矛盾**——execution log 的验证应在规定环境跑。
+- 更严重：**GitLab CI 的 `python:3.12` 镜像不装 rg**，该测试进 CI 必挂。
+
+**修法**：`@unittest.skipUnless(shutil.which("rg"), "rg 不在 PATH（如 conda run / CI 镜像）")` 跳过该用例。理由：`.ignore` 内容正确性已由 `test_new_instance_writes_ignore_*` 保证；"rg 是否遵守 .ignore"是 ripgrep 自身契约，不该由本仓测试强保证。跳过不丢覆盖。
+
+### 实现主体：达标（独立复跑）
+
+| 验证 | 结果 |
+| --- | --- |
+| 其余 4 个 025 用例 + 全量回归 | **91/92 OK**（仅 rg 那条 fail） |
+| `knowledge/.ignore` | 存在、内容 == IGNORE_LINES |
+| knowledge lint / graph / check-docs | exit 0 / 0 / 0（新增 `.ignore` 不影响） |
+| `.ignore` 机制有效 | 评估者先前手动实测 rg 命中 21→16、raw 归零（真二进制 rg 下） |
+| `ensure_lines_file` 抽取 | `.gitignore` 回归用例过、`.ignore` 幂等用例过 |
+
+### 结论
+
+`wiki_init` 写实例 `.ignore` 的实现、`ensure_lines_file` 抽取、`knowledge/.ignore`、幂等/目录冲突处理均达标。**唯一阻塞是那条 rg 测试的可移植性**——codex 补一个 `skipUnless` fix commit（append execution log）后即可 PASS。修复前不合入"全绿"语义。
