@@ -58,6 +58,16 @@ GITIGNORE_LINES = [
     "**/.obsidian/workspace-mobile.json",
 ]
 
+IGNORE_LINES = [
+    "# 检索优化（rg / fd 原生读 .ignore，对 agent 答疑透明；不影响 wiki_lint/graph 的 Python 扫描）。",
+    "# 答疑只需 wiki/ + 上下文层（purpose/index/overview/log）；原始材料、图片、派生层、图谱不参与全文检索。",
+    "# ingest 若需检索已归档原文，用 `rg --no-ignore` 或显式路径；raw/dropbox/（待处理投料）刻意保留可搜。",
+    "raw/sources/",
+    "raw/source_manifest.json",
+    "maps/",
+    ".wiki/",
+]
+
 
 @dataclass
 class Counters:
@@ -269,6 +279,7 @@ def required_file_paths(root: Path, profile: Optional[str]) -> List[Path]:
         root / "index.md",
         root / "overview.md",
         root / "log.md",
+        root / ".ignore",
         root / ".wiki-schema.md",
         root / "raw/source_manifest.json",
         root / ".wiki/review_queue.json",
@@ -335,6 +346,32 @@ def ensure_json_file(path: Path, data: Any, counters: Counters) -> bool:
     return True
 
 
+def ensure_lines_file(path: Path, lines: List[str], counters: Counters, label: str) -> bool:
+    existing_text = ""
+    if path.exists():
+        if not path.is_file():
+            counters.conflict(path, f"expected {label} file but found directory")
+            return False
+        existing_text = path.read_text(encoding="utf-8")
+        counters.skipped += 1
+    else:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        counters.created += 1
+
+    existing_lines = set(existing_text.splitlines())
+    missing = [line for line in lines if line not in existing_lines]
+    if missing:
+        prefix = "" if not existing_text or existing_text.endswith("\n") else "\n"
+        with path.open("a", encoding="utf-8") as f:
+            f.write(prefix)
+            f.write("\n".join(missing))
+            f.write("\n")
+        counters.created += len(missing)
+    else:
+        counters.skipped += len(lines)
+    return True
+
+
 def copy_schema(root: Path, engine: Path, counters: Counters) -> bool:
     target = root / ".wiki-schema.md"
     if target.exists():
@@ -391,6 +428,8 @@ def create_skeleton(root: Path, engine: Path, profile: Optional[str], counters: 
     if not copy_schema(root, engine, counters):
         return False
 
+    if not ensure_lines_file(root / ".ignore", IGNORE_LINES, counters, ".ignore"):
+        return False
     ensure_json_file(root / "raw/source_manifest.json", {"version": 1, "sources": []}, counters)
     ensure_json_file(root / ".wiki/review_queue.json", {"version": 1, "items": []}, counters)
     ensure_json_file(root / ".wiki/capture_policy.json", default_capture_policy(), counters)
@@ -507,29 +546,7 @@ def ensure_git(root: Path, raw_git_root: Optional[str], engine: Path, counters: 
 
 
 def ensure_gitignore(git_root: Path, counters: Counters) -> bool:
-    path = git_root / ".gitignore"
-    existing_text = ""
-    if path.exists():
-        if not path.is_file():
-            counters.conflict(path, "expected .gitignore file but found directory")
-            return False
-        existing_text = path.read_text(encoding="utf-8")
-        counters.skipped += 1
-    else:
-        counters.created += 1
-
-    existing_lines = set(existing_text.splitlines())
-    missing = [line for line in GITIGNORE_LINES if line not in existing_lines]
-    if missing:
-        prefix = "" if not existing_text or existing_text.endswith("\n") else "\n"
-        with path.open("a", encoding="utf-8") as f:
-            f.write(prefix)
-            f.write("\n".join(missing))
-            f.write("\n")
-        counters.created += len(missing)
-    else:
-        counters.skipped += len(GITIGNORE_LINES)
-    return True
+    return ensure_lines_file(git_root / ".gitignore", GITIGNORE_LINES, counters, ".gitignore")
 
 
 def run_selfcheck(root: Path, engine: Path, counters: Counters) -> bool:

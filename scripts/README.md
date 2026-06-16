@@ -367,6 +367,7 @@ obsidian: created|merged|unchanged
 - `.wiki/review_queue.json`
 - `.wiki/capture_policy.json`，默认 v2：`auto_capture: false`、`default_visibility: private`、`hard_redact` 内置硬底线、`soft_redact` 默认软项、`exclude_paths: []`、`max_inbox_files: 100`
 - `.obsidian/app.json`，默认创建或合并 `userIgnoreFilters: ["maps/", ".wiki/"]`
+- `.ignore`，默认让 rg/fd 跳过 `raw/sources/`、`raw/source_manifest.json`、`maps/`、`.wiki/`，保留 `raw/dropbox/` 可搜；该文件不依赖 `--git`，已有文件只补缺失标准行并保留用户自定义行
 
 ### git 与自检
 

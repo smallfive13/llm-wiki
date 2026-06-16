@@ -3,10 +3,10 @@ id: task_20260610_025
 title: Apply RFC-024 — wiki_init 固化实例 .ignore
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-06-10
-updated: 2026-06-10
+updated: 2026-06-16
 related_rfcs: [RFC-024]
 ---
 
@@ -85,9 +85,93 @@ cat knowledge/.ignore
 - commit sha + push 记录
 - 偏离或异常
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-06-16
 
-（执行者填写）
+Step 0 结论：
+
+- `ensure_gitignore()` 现有语义是：目标存在且为文件时读入现有文本并保留用户行；按 `GITIGNORE_LINES` 逐行补缺失行；目标是目录时记录 conflict 并 exit 2。该语义可抽成 `ensure_lines_file(path, lines, counters, label)` 给 `.gitignore` 和 `.ignore` 共用。
+- `create_skeleton()` 是普通 init 的骨架入口，`--sync-schema` 已在 main 中 early-return，不会触达该路径；因此 `.ignore` 放入普通 init 路径不会影响 schema sync。
+- `.ignore` 目录冲突落在 `required_file_paths()` / `collect_type_conflicts()`，并且 `ensure_lines_file()` 自身也有类型保护；不会 traceback。
+
+改动文件：
+
+- `scripts/wiki_init.py`：新增 `IGNORE_LINES`；新增通用 `ensure_lines_file()`；`ensure_gitignore()` 改用通用函数；普通 init 总是写 `.ignore`；`.ignore` 纳入 type-conflict 文件清单。
+- `knowledge/.ignore`：新增引擎自带实例标准 `.ignore`，内容与 `IGNORE_LINES` 一致。
+- `scripts/README.md`：补充 `.ignore` 是 `wiki_init` 默认产物、不依赖 `--git`、保留 `raw/dropbox/`、幂等补行。
+- `tests/test_task_025.py`：新增 fixture 覆盖新建实例、rg 命中、幂等、无 `--git`、目录冲突、`.gitignore` 回归。
+
+验证输出：
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest -v tests.test_task_025
+test_existing_ignore_preserves_user_line_and_appends_missing_standard_lines ... ok
+test_gitignore_still_appends_missing_lines_and_preserves_user_line ... ok
+test_ignore_directory_is_config_error_without_traceback ... ok
+test_new_instance_writes_ignore_without_git ... ok
+test_rg_uses_ignore_and_keeps_wiki_visible ... ok
+
+Ran 5 tests in 3.388s
+OK
+```
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_init.py --root "$TMP"
+created: 47
+skipped: 0
+conflicts: 0
+git_root: none
+selfcheck: ok
+obsidian: created
+
+$ cat "$TMP/.ignore"
+# 检索优化（rg / fd 原生读 .ignore，对 agent 答疑透明；不影响 wiki_lint/graph 的 Python 扫描）。
+# 答疑只需 wiki/ + 上下文层（purpose/index/overview/log）；原始材料、图片、派生层、图谱不参与全文检索。
+# ingest 若需检索已归档原文，用 `rg --no-ignore` 或显式路径；raw/dropbox/（待处理投料）刻意保留可搜。
+raw/sources/
+raw/source_manifest.json
+maps/
+.wiki/
+
+$ rg --files-with-matches 'needle-task-025' "$TMP"
+wiki/topics/wiki.md
+```
+
+```text
+$ cat knowledge/.ignore
+# 检索优化（rg / fd 原生读 .ignore，对 agent 答疑透明；不影响 wiki_lint/graph 的 Python 扫描）。
+# 答疑只需 wiki/ + 上下文层（purpose/index/overview/log）；原始材料、图片、派生层、图谱不参与全文检索。
+# ingest 若需检索已归档原文，用 `rg --no-ignore` 或显式路径；raw/dropbox/（待处理投料）刻意保留可搜。
+raw/sources/
+raw/source_manifest.json
+maps/
+.wiki/
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --root knowledge --check-only
+错误: 0 · 警告: 0
+lint=0
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_graph.py --root knowledge >/dev/null 2>&1
+graph=0
+```
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest tests.test_task_020a tests.test_task_021a tests.test_task_021b tests.test_task_022 tests.test_task_024
+Ran 40 tests in 39.314s
+OK
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest discover -s tests
+Ran 92 tests in 52.075s
+OK
+```
+
+commit sha + push 记录：
+
+- 本 Execution log 与代码同 commit，最终 sha 由本轮 commit 生成后在最终回复中报告。
+- push 目标：`http://git.ppdaicorp.com/international_data/llm-wiki.git main`。
+
+偏离或异常：
+
+- 无。未改 `wiki_lint` / `wiki_graph` 逻辑，未改 core schema / `schema_version`。
 
 ## Evaluation by claude · <date>
 
