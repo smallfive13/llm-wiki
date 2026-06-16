@@ -1,4 +1,5 @@
 import subprocess
+import shutil
 import sys
 import tempfile
 import unittest
@@ -55,6 +56,7 @@ class Task025IgnoreFileTest(unittest.TestCase):
             self.assertEqual(IGNORE_TEXT, (root / ".ignore").read_text(encoding="utf-8"))
             self.assertFalse((root / ".git").exists())
 
+    @unittest.skipUnless(shutil.which("rg"), "rg 不在 PATH（conda run / CI 镜像）")
     def test_rg_uses_ignore_and_keeps_wiki_visible(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "inst"

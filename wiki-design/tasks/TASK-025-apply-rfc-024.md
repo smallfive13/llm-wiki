@@ -205,3 +205,28 @@ $ conda run -n py312 python -m unittest discover -s tests
 ### 结论
 
 `wiki_init` 写实例 `.ignore` 的实现、`ensure_lines_file` 抽取、`knowledge/.ignore`、幂等/目录冲突处理均达标。**唯一阻塞是那条 rg 测试的可移植性**——codex 补一个 `skipUnless` fix commit（append execution log）后即可 PASS。修复前不合入"全绿"语义。
+
+## Execution log follow-up by codex · 2026-06-16
+
+修复内容：
+
+- `tests/test_task_025.py` 增加 `import shutil`。
+- 给 `test_rg_uses_ignore_and_keeps_wiki_visible` 加 `@unittest.skipUnless(shutil.which("rg"), "rg 不在 PATH（conda run / CI 镜像）")`。
+- 其它实现与测试不动。
+
+验证输出（规定环境）：
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest discover -s tests
+Ran 92 tests in 59.023s
+OK
+```
+
+commit sha + push 记录：
+
+- 本 follow-up log 与测试修复同 commit，最终 sha 由本轮 commit 生成后在最终回复中报告。
+- push 目标：`http://git.ppdaicorp.com/international_data/llm-wiki.git main`。
+
+偏离或异常：
+
+- 无。该修复只处理 `rg` 不在 PATH 时的测试可移植性，不改变 `.ignore` 实现逻辑。
