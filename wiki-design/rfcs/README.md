@@ -29,6 +29,7 @@
 | [rfc_20260608_021](RFC-021-schema-versioning-and-distribution.md) | schema 版本递增纪律 + 实例分发安全（.wiki-schema 镜像 vs 实例特化） | accepted | claude | `scripts/wiki_common.py`, `scripts/wiki_init.py`, `scripts/wiki_lint.py`, `knowledge/.wiki-schema.md`, `wiki-design/02-workflows.md` |
 | [rfc_20260609_022](RFC-022-wiki-cli-wrapper.md) | wiki CLI 薄 wrapper（统一入口，消除 conda/cwd/路径摩擦） | accepted | claude | `bin/wiki`, `scripts/README.md`, `wiki-design/02-workflows.md`, `skill/wiki/SKILL.md` |
 | [rfc_20260610_023](RFC-023-team-contribution-protocol.md) | 团队贡献协议（投料 → MR → CI → 单 writer ingest）+ dropbox 脱敏扫描 | accepted | claude | `scripts/wiki_lint.py`, `scripts/README.md`, `wiki-design/02-workflows.md` |
+| [rfc_20260610_024](RFC-024-wiki-init-ignore-file.md) | wiki_init 固化实例 .ignore（检索默认跳过非正本目录） | proposed | claude | `scripts/wiki_init.py`, `scripts/README.md` |
 
 ## 状态
 
@@ -110,5 +111,5 @@ reviewers:
 | review queue SLA | P2 | 加 pending 时长告警、健康度报告，防止队列变成死信 |
 | Wiki 健康度指标 | P2 | 新增 `maps/metrics.md`（派生层），跟踪页面增长、孤立率、平均 confidence、`last_verified` 年龄 |
 | 双 Agent 并发写入约束 | P2 | 明确 single-writer 或把 `review_queue.json` / `source_manifest.json` 拆成一条一文件，降低 git 冲突（团队场景已由 RFC-023 单 writer 模式部分解决） |
-| MR 自动评审（RFC-024 候选） | P1 | 本机 agent 经 GitLab API 自动评估 knowledge-cmn 投料 MR：diff 路径合规（机械）+ 图片/PDF 多模态查凭证（补文本扫描盲区）+ 质量初判。**边界已定**：低风险自动 approve+merge（评估理由留 MR 评论），可疑留人工；触发先用 ingest 会话顺带。**启动条件：首批真实 MR 人工审过几个、有样本后再立 RFC**（用户 2026-06-10 拍板） |
+| MR 自动评审 | P1 | 本机 agent 经 GitLab API 自动评估 knowledge-cmn 投料 MR：diff 路径合规（机械）+ 图片/PDF 多模态查凭证（补文本扫描盲区）+ 质量初判。**边界已定**：低风险自动 approve+merge（评估理由留 MR 评论），可疑留人工；触发先用 ingest 会话顺带。**启动条件：首批真实 MR 人工审过几个、有样本后再立 RFC**（用户 2026-06-10 拍板） |
 | visibility / PII 字段 | P2 | frontmatter 加 `visibility: private \| team \| public`，lint 在 public 页扫描 PII pattern |
