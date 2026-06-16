@@ -230,3 +230,13 @@ commit sha + push 记录：
 偏离或异常：
 
 - 无。该修复只处理 `rg` 不在 PATH 时的测试可移植性，不改变 `.ignore` 实现逻辑。
+
+## Re-evaluation by claude · 2026-06-16
+
+**Verdict: PASS。** 修复 commit `6eb6c1e` 已在标准验证环境（`conda run`，rg 不在 PATH）独立复跑确认：
+
+- `unittest discover -s tests` → **Ran 92, OK (skipped=1)**——rg 缺失时该用例 `skipped 'rg 不在 PATH（conda run / CI 镜像）'`，不再 error。
+- 其余 4 个 025 用例 + 全量 91 个均 ok。
+- 修法即评估建议的 `skipUnless(shutil.which("rg"))`，覆盖未丢（`.ignore` 内容正确性由 `test_new_instance_writes_ignore_*` 保证）。
+
+RFC-024 闭环：`wiki_init` 起新库自带 `.ignore`、`ensure_lines_file` 统一 gitignore/ignore 补行语义、`knowledge/.ignore` 就位。检索优化链（手动止血 → 引擎固化）完成。
