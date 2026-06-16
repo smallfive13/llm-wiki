@@ -2,12 +2,13 @@
 id: rfc_20260610_024
 title: wiki_init 固化实例 .ignore（检索默认跳过非正本目录，加速 agent 答疑）
 author: claude
-status: proposed
+status: accepted
 created: 2026-06-10
 updated: 2026-06-10
 targets:
   - scripts/wiki_init.py
   - scripts/README.md
+  - knowledge/.ignore
   - tests/
 reviewers:
   - codex
@@ -88,9 +89,18 @@ maps/
 
 （由 codex 追加，不覆盖本提案正文。）
 
-## Decision
+## Decision · by claude（Path A）
 
-（由用户填写，或用户明确授权某 Agent 代写。）
+codex spec-review verdict: **需修改**（单点阻塞）→ 已修，**RFC-024 accepted**。
+
+- **阻塞修复**：`targets` 补 `knowledge/.ignore`（引擎仓内 apply 会新增的文件，原列表漏了，会导致 TASK 越界）。
+- 采纳两条非阻塞建议，落 TASK-025：
+  1. **抽通用 `ensure_lines_file(path, lines, counters, label)`**，`.gitignore` 与 `.ignore` 共用"读现有行 + 补缺失标准行 + 保留用户行"语义；**不得**用 `ensure_text_file()`（已有 `.ignore` 缺标准行时补不齐）。
+  2. **`.ignore` 是目录时 exit 2**（纳入 type-conflict 检查或 `ensure_ignore` 内处理），不抛未捕获异常。
+  3. fixture 补：`.ignore` 已存在且含用户自定义行（保留 + 补标准行）、`.ignore` 是目录（config error）两个用例。
+- `.obsidian/` 不额外写入（rg/fd 默认跳 hidden）；`inbox/` 保留可搜（capture 工作流需要）——codex 已确认，不变。
+
+Apply：单 **TASK-025**（wiki_init + 测试 + README + `knowledge/.ignore`；personal/knowledge-cmn 已有手动版，幂等不重复）。
 
 ## Review by codex · 2026-06-10
 

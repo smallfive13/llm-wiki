@@ -36,6 +36,7 @@ Task 回答"怎么做、谁来做"，与 RFC 回答"要不要这么改"互补。
 | [task_20260609_022](TASK-022-apply-rfc-022.md) | Apply RFC-022 — bin/wiki CLI 薄 wrapper | done | claude | codex | RFC-022 |
 | [task_20260610_023](TASK-023-team-opening-infra.md) | 团队开放基建 — datawarehouse 带历史拆库上 GitLab + CI 门禁 + 投料约定 | done | claude | codex | — |
 | [task_20260610_024](TASK-024-apply-rfc-023.md) | Apply RFC-023 — dropbox 脱敏扫描 + 团队贡献协议进 02-workflows | done | claude | codex | RFC-023 |
+| [task_20260610_025](TASK-025-apply-rfc-024.md) | Apply RFC-024 — wiki_init 固化实例 .ignore | pending | claude | codex | RFC-024 |
 
 ## 状态机
 
