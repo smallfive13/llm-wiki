@@ -91,3 +91,23 @@ maps/
 ## Decision
 
 （由用户填写，或用户明确授权某 Agent 代写。）
+
+## Review by codex · 2026-06-10
+
+结论：需修改。
+
+我同意核心方向：把实例根 `.ignore` 固化到 `wiki_init` 是合适的机制级修复。它解决的是 agent / 人在知识库根做 `rg` 时被 `raw/sources/`、`source_manifest.json`、`maps/`、`.wiki/` 拉偏的问题；`.ignore` 与 git 正交，随实例进 Git，且不影响 `wiki_lint` / `wiki_graph` 的 Python 扫描路径。
+
+阻塞点：
+
+1. frontmatter `targets` 缺 `knowledge/.ignore`。正文“影响范围”和“Apply 拆分建议”都明确说 apply 时要给引擎自带 `knowledge` 实例补 `.ignore`，这是本仓内会被新增/修改的文件；但当前 targets 只列了 `scripts/wiki_init.py`、`scripts/README.md`、`tests/`。按 RFC 机制，accepted 后只应动 targets 列出的正本/产物，因此需要把 `knowledge/.ignore` 加进 targets，避免后续 TASK 与 RFC 边界不一致。
+
+逐项核查：
+
+- 落点与幂等：现有 `ensure_gitignore()` 的“存在则读现有行、只 append 缺失标准行、保留用户行”语义可以复用，但建议抽成通用 `ensure_lines_file(path, lines, counters, label)`，让 `.gitignore` 和 `.ignore` 共用；或者单独写 `ensure_ignore()`。不要直接用 `ensure_text_file()`，否则已有 `.ignore` 缺标准行时无法补齐。若放在 `create_skeleton()` 内，也要确保 `.ignore` 是目录时能 exit 2，而不是未捕获异常；可以把 `root / ".ignore"` 加进 type-conflict 检查，或在 `ensure_ignore()` 内处理。
+- “总是写、不依赖 --git”：合理。`--git` 控制 Git 初始化和 `.gitignore`，`.ignore` 控制 rg/fd 检索范围，应随普通 init 产生；`--sync-schema` 当前是 early-return 独立模式，不会触达 create_skeleton，这一点不冲突。
+- `.ignore` 内容边界：`raw/sources/`、`raw/source_manifest.json`、`maps/`、`.wiki/` 这组默认屏蔽合理；`raw/dropbox/` 保留可搜也正确，因为它是投料入口。暂不屏蔽 `inbox/` / `inbox/archive/` 可以接受：inbox 仍是 capture / 晋升工作流的一部分，默认搜索可见有助于处理待消化内容。`.obsidian/` 理论上也是非正本，但 rg/fd 默认不搜 hidden 目录；是否额外写入 `.ignore` 可留作非阻塞选择。
+- 零副作用：核对现有代码，`wiki_lint.py` 通过 `wiki/*.md`、`inbox/*.md`、`inbox/archive/**/*.md`、`raw/dropbox` 白名单文本等显式 glob/rglob 收集；`wiki_graph.py` 只读 `wiki/**/*.md`。它们不会读取 `.ignore`，所以该变更不会改变 lint/graph 语义。
+- gate 自检：真实摩擦来源足够具体，有 datawarehouse 命中数和手动 `.ignore` 后的效果；验证方式也覆盖了 fixture、幂等、不依赖 `--git`、lint/graph smoke，整体合格。建议 TASK 再补一个 `.ignore` 已存在且含用户自定义行的 exact fixture，以及 `.ignore` 是目录时的 config error fixture。
+
+修完 targets 后，我倾向通过。
