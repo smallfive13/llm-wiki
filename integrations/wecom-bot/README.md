@@ -25,7 +25,7 @@ export KB_ROOT=/Users/zhangjunwu/workspace/obsidian/datawarehouse   # 可省略�
 
 - **只读**：codex 跑在 `-s read-only` 沙箱，机器人入口不可能写知识库；写入仍走 dropbox MR + maintainer ingest（见知识库 `raw/dropbox/README.md`）。
 - **串行**：单 worker 排队（一次一个问题，约 30–90s）；收到即回执"查询中"。
-- **新鲜度**：答疑前 `git pull --ff-only`，按 `KB_PULL_INTERVAL`（默认 300s）节流——高频提问不会每问都付一次 pull 网络往返；pull 失败用本地现有版本（log 警告）。
+- **新鲜度**：答疑前 `git pull --ff-only`，按 `KB_PULL_INTERVAL`（默认 3000s ≈ 50min）节流——高频提问不会每问都付一次 pull 网络往返；maintainer ingest 后想立即生效可重启服务或调小该值；pull 失败用本地现有版本（log 警告）。
 - **检索加速**：知识库自带 `.ignore`，rg/fd 答疑时跳过 `raw/`（原文+图片）/`maps/`/`.wiki/`，命中只落在 wiki/ 提炼页，避免 codex 被引去啃冗长原文（`raw/dropbox/` 刻意保留可搜，供 ingest）。
 - **去重**：按 msgid 去重，重连后服务器重推不会重复答。
 - **非文本消息**：提示走 MR 投料流程（机器人不收文件）。

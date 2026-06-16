@@ -14,7 +14,7 @@
   KB_ROOT           知识库本地 clone（默认 ~/workspace/obsidian/datawarehouse）
   CODEX_BIN         codex 可执行（默认 codex）
   CODEX_TIMEOUT     单次答疑超时秒（默认 240）
-  KB_PULL_INTERVAL  git pull 节流秒（默认 300，高频提问不重复 pull）
+  KB_PULL_INTERVAL  git pull 节流秒（默认 3000，约 50 分钟刷新一次，高频提问不重复 pull）
 
 运行：
   export WECOM_BOT_ID=... WECOM_BOT_SECRET=...
@@ -77,7 +77,7 @@ class Dedup:
         return False
 
 
-PULL_MIN_INTERVAL = int(os.environ.get("KB_PULL_INTERVAL", "300"))  # 节流：N 秒内不重复 pull
+PULL_MIN_INTERVAL = int(os.environ.get("KB_PULL_INTERVAL", "3000"))  # 节流：N 秒内不重复 pull
 _last_pull = 0.0
 
 
