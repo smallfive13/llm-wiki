@@ -138,6 +138,33 @@ OK
 - datawarehouse 不做突击背书，score 从旧口径 100 降为 80，`review_coverage` 为 eligible=13 / reviewed=0 / percent=0，符合 RFC-025 预期。
 - 工作树中已有无关 `integrations/wecom-bot/__pycache__/wecom_codex_bot.cpython-312.pyc` 修改，本 task 未 stage / 未提交。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-17
 
-（评估者填写）
+**Verdict: PASS。** 标准环境独立复跑，假绿精确消除，RFC-025 闭环。
+
+### 独立复跑
+
+| 验证 | 结果 |
+| --- | --- |
+| 全量 `unittest discover` | **102 OK (skipped=1)**（skipped 是 025 的 rg 用例，按设计跳） |
+| **datawarehouse 度量** | score **100→80**、endorsement **0**、review_coverage `eligible 13 / reviewed 0 / percent 0`、未背书清单 **13 页**——假绿消除、真问题可见 |
+| 未背书清单排序 | synthesis 门户 `in 25` 居首 → 高依赖 topic 依次，符合 `in_degree desc` |
+| RFC-014 测试 | **改语义非删**：新增 all-unreviewed→0 / no-eligible→100，半数=50 保留 + review_coverage 断言 |
+| `review_coverage` JSON 字段 | 就位（codex 建议采纳，自动巡检可消费） |
+| graph-insights | 「未背书应背书页」清单 + high-unverified 保留为高优先子集 |
+| `--check-docs` | exit 0（.wiki-schema endorsement 描述更新不破生成块） |
+| schema_version | 未 bump（正确，派生度量算法变更） |
+
+### 核查点
+
+1. **eligible 边界正确**：eligible 0→100（不假惩罚）、eligible>0 全未背书→0（消除假绿）、high 是子集自然计入——fixture 四种边界全覆盖。
+2. **M3 手册落地**：`02-workflows.md` 巡检+复核三档 + 盲区警示就位。
+3. **datawarehouse 未突击背书**：score 80 是暴露真实未复核的正确结果，非 bug。
+
+### 附带遗留（非 RFC-025，评估者顺手修）
+
+发现 `integrations/wecom-bot/__pycache__/*.pyc` 被 git 跟踪——根因是 RFC-022 引入 integrations 时 `.gitignore` 用 `!integrations/**` 放行过宽，连 `__pycache__` 一并带入。已在本评估 commit 一并 `git rm --cached` + `.gitignore` re-ignore（codex 正确地未提交该 .pyc 的改动，只是它本就 tracked）。
+
+### 结论
+
+RFC-025 **M1（endorsement 复核覆盖修正）+ M2（未背书清单）+ M3（巡检/复核手册）全部闭环**。"全库未背书却 score 100"的假绿被消除，maintainer 现在能从 `review_coverage` + 未背书清单直接看到该背书哪些、先背哪页。TASK-026 done 确认有效。

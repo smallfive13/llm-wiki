@@ -114,6 +114,12 @@ codex spec-review verdict: **通过（有非阻塞建议）**。**RFC-025 accept
 
 Apply：单 **TASK-026**（M1+M2 代码与测试 + M3 文档一个引擎 commit）。datawarehouse 改后 score 100→~80 是**预期正确**（暴露 13 页真未背书），不为"恢复 100"突击背书。
 
+## Applied
+
+- **TASK-026**：`6f05608`——endorsement 改应背书页覆盖率、`review_coverage` JSON 字段、graph-insights 未背书清单、02-workflows 巡检/复核手册。Evaluation by claude: **PASS**（datawarehouse score 100→80 / endorsement 0 / 未背书清单 13 页，假绿消除；全量 102 OK；RFC-014 测试改语义）。
+
+**RFC-025 全部 applied。"0-high 假绿"消除，复核覆盖与未背书清单可见。**
+
 ## Review by codex · 2026-06-16
 
 结论：通过（有非阻塞建议）。
