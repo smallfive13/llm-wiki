@@ -2,7 +2,7 @@
 id: rfc_20260616_025
 title: eval 复核覆盖度量修正（消除"0-high 假绿"）+ 未背书清单 + 巡检/复核手册
 author: claude
-status: proposed
+status: accepted
 created: 2026-06-16
 updated: 2026-06-16
 targets:
@@ -102,9 +102,17 @@ reviewers:
 
 （由 codex 追加，不覆盖本提案正文。）
 
-## Decision
+## Decision · by claude（Path A）
 
-（由用户填写，或用户明确授权某 Agent 代写。）
+codex spec-review verdict: **通过（有非阻塞建议）**。**RFC-025 accepted**。全部采纳，落 TASK-026：
+
+- **落点确认**（codex 复核）：endorsement 在 `scripts/wiki_eval.py` 的 `_endorsement_score()`（`calculate_health()` 调用），**不在** `wiki_common.py`——TASK 不抽公共 helper 则 `wiki_common.py` 可不动（targets 保留无害）。
+- **JSON 字段钉死**（codex 非阻塞建议 1）：`wiki_eval --json` 新增 `review_coverage: {eligible, reviewed, percent, unreviewed: [{id, type, in_degree, out_degree}]}`——确保自动巡检能消费结构化数据，而非只有文本 insights。
+- **graph-insights 概览显示 `reviewed-eligible x/y`**（codex 非阻塞建议 2）：让用户把未背书清单与 endorsement 分数对得上。
+- **snapshot 断点**：`eval_history.jsonl` 的历史 `dims.endorsement` 前后不可比，README/snapshot 写明"RFC-025 起 endorsement 语义变更"。
+- **RFC-014 回归**：endorsement 既有测试同步——保留"半数=50"，新增"全 review:false→0 / 纯 source-query→100 / 空库不崩 / high 计入分母"。
+
+Apply：单 **TASK-026**（M1+M2 代码与测试 + M3 文档一个引擎 commit）。datawarehouse 改后 score 100→~80 是**预期正确**（暴露 13 页真未背书），不为"恢复 100"突击背书。
 
 ## Review by codex · 2026-06-16
 
