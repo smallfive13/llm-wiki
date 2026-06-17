@@ -228,9 +228,10 @@ graph 节点同时输出三类度数：
 
 `maps/graph-insights.md` 含「知识健康度」段，固定输出：
 
-1. trust 概览：`verified / unverified-high / stale / orphan / total`
+1. trust 概览：`verified / reviewed-eligible / unverified-high / stale / orphan / total`
 2. stale 优先列表：按 `in_degree desc, out_degree desc, id` 排序
-3. high-unverified 列表
+3. 未背书应背书页：active 且非 source/query 且 `review: false`，按 `in_degree desc, out_degree desc, id` 排序
+4. high-unverified 列表，作为高置信未背书页的高优先子集
 
 orphan/hub 长列表仍由既有 `Isolated Nodes` / `High Centrality Hubs` 段提供，健康度段不重复展开。
 
@@ -276,10 +277,23 @@ python3 scripts/wiki_eval.py --root knowledge --check
 | --- | --- |
 | `integrity` | `clamp_0_100(100 - (100*error_rate + 50*dangling_rate + 50*ambiguous_rate))` |
 | `freshness` | `active` 页中非 `STALE_PAGE` 的比例；无 active 页记 100 |
-| `endorsement` | `active`、非 source/query、`confidence: high` 页中 `review: true` 的比例；无 high 页记 100 |
+| `endorsement` | 应背书页（`active` 且非 source/query）中 `review: true` 的比例；无应背书页记 100 |
 | `connectivity` | `in_degree + out_degree > 0` 的节点比例；空图记 100 |
 
 `integrity` 的三个 rate 都以 `lint.scanned.wiki_pages` 为分母，并各自 `min(1.0, count/page_count)`。总分使用 `BASE_SCHEMA.health_weights`（默认 0.4/0.2/0.2/0.2）加权，统一 `floor(x+0.5)` 四舍五入。空库输出 `score: null`、`status: empty`、`dims: null`。
+
+`--json` 输出额外包含 `review_coverage`：
+
+```json
+{
+  "eligible": 13,
+  "reviewed": 0,
+  "percent": 0,
+  "unreviewed": [{"id": "top_20260601_example", "type": "topic", "in_degree": 3, "out_degree": 2}]
+}
+```
+
+`unreviewed` 按 `in_degree desc, out_degree desc, id` 排序。RFC-025 起 `endorsement` 从 high 页背书率改为应背书页复核覆盖率，既有 `.wiki/eval_history.jsonl` 中旧 snapshot 的 `dims.endorsement` 与新值不可直接横向比较。
 
 ### 退出码
 

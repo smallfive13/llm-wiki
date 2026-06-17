@@ -332,6 +332,45 @@ lint 一下 Wiki
 - 重复主题。
 - 同一主题下的冲突结论。
 
+## 知识巡检与复核
+
+建议每周或每次批量 ingest 后做一次巡检：
+
+```bash
+python3 scripts/wiki_lint.py --root <实例路径> --check-only
+python3 scripts/wiki_graph.py --root <实例路径>
+python3 scripts/wiki_eval.py --root <实例路径> --json
+```
+
+巡检时同时看五类信号：
+
+- lint 的 `STALE_PAGE` / `UNVERIFIED_HIGH` warning。
+- `maps/graph-insights.md` 的 stale 优先列表、未背书应背书页、high-unverified 子集。
+- `wiki_eval --json` 的 `score`、`dims.endorsement`、`review_coverage`。
+- `.wiki/review_queue.json` 中尚未处理的人工复核项。
+- 近期高频使用、被多页引用或新答案反复命中的页面。
+
+盲区：
+
+- 新库或大量新页可能没有 stale warning，不能因为 staleness 空跑就判定内容已复核。
+- 不要只看总分；`review_coverage.unreviewed` 才是复核排期的主清单。
+- `UNVERIFIED_HIGH` 只覆盖 high 页，medium / low 的 active 非 source/query 页仍可能需要背书。
+
+过时或复核结果按四态处理：
+
+- 本地小修后仍有效：编辑页面，更新 `last_verified`，必要时保留 `status: active`。
+- 整体已过时且无替代结论：`review: false`，`status: stale`。
+- 被新页面或门户取代：`review: false`，`status: archived`，填写 `superseded_by`。
+- 人工确认仍有效：设置 `review: true`，更新 `last_verified`。
+
+入库复核分三档：
+
+1. AI 可直接写 `review: false`：source 摘要、普通问答沉淀、低风险操作记录、检索入口页。
+2. 写入后必须进 review queue：权限 / 审批 / 账号 / 生产操作口径，指标定义、分层命名、安全隐私、来源冲突、新 source 推翻旧结论。
+3. 必须人工确认后才可背书：设置 `review: true`、非 source/query 页标 `confidence: high`、归档 / 合并 / 拆分 / supersede 等结构调整、标准答案口径页。
+
+不变量：`review: true` 表示“当前仍由人背书”，不是“AI 已处理过”。datawarehouse 这类真实生产实例不要为了抬高 score 突击背书，应按未背书清单逐页复核。
+
 ## 复核 / 确认
 
 触发语义：

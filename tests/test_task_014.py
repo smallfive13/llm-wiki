@@ -137,6 +137,43 @@ class Task014EvalTest(unittest.TestCase):
             self.assertEqual("endorsement", result["weakest_dim"])
             self.assertEqual(90, result["score"])
 
+    def test_endorsement_all_unreviewed_eligible_scores_zero(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            init_instance(root)
+            page(root, "wiki/topics/a.md", pid="top_20260601_a", review=False, related_ids=["top_20260601_b"])
+            page(root, "wiki/topics/b.md", pid="top_20260601_b", review=False)
+
+            result = eval_root(root)
+            self.assertEqual(0, result["dims"]["endorsement"])
+            self.assertEqual(0, result["review_coverage"]["reviewed"])
+            self.assertEqual(2, result["review_coverage"]["eligible"])
+            self.assertEqual(80, result["score"])
+
+    def test_endorsement_has_no_eligible_pages_scores_100(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            init_instance(root)
+            page(root, "wiki/sources/a.md", pid="src_20260601_a", page_type="source", review=False, related_ids=["que_20260601_q"])
+            page(root, "wiki/queries/q.md", pid="que_20260601_q", page_type="query", review=False)
+
+            result = eval_root(root)
+            self.assertEqual(100, result["dims"]["endorsement"])
+            self.assertEqual(0, result["review_coverage"]["eligible"])
+            self.assertEqual([], result["review_coverage"]["unreviewed"])
+
+    def test_endorsement_counts_high_as_eligible_subset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            init_instance(root)
+            page(root, "wiki/topics/a.md", pid="top_20260601_a", confidence="high", review=True, related_ids=["top_20260601_b"])
+            page(root, "wiki/topics/b.md", pid="top_20260601_b", confidence="medium", review=False)
+
+            result = eval_root(root)
+            self.assertEqual(50, result["dims"]["endorsement"])
+            self.assertEqual(2, result["review_coverage"]["eligible"])
+            self.assertEqual(1, result["review_coverage"]["reviewed"])
+
     def test_fixture_c_integrity_formula_counts_dangling_by_page_count(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

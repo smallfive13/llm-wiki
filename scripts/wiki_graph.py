@@ -486,6 +486,18 @@ def is_high_unverified(node: Node) -> bool:
     )
 
 
+def is_review_eligible(node: Node) -> bool:
+    return node.get("status") == "active" and node.get("type") not in {"source", "query"}
+
+
+def review_sort_key(node: Node) -> Tuple[int, int, str]:
+    return (
+        -int(node.get("in_degree", 0) or 0),
+        -int(node.get("out_degree", 0) or 0),
+        str(node.get("id", "")),
+    )
+
+
 def render_health(graph: Dict[str, Any], schema: Dict[str, Any], now_date) -> List[str]:
     nodes = graph["nodes"]
     stale = [
@@ -494,6 +506,9 @@ def render_health(graph: Dict[str, Any], schema: Dict[str, Any], now_date) -> Li
         if is_stale(node.get("type"), node.get("status"), node.get("last_verified"), now_date, schema)
     ]
     high_unverified = [node for node in nodes if is_high_unverified(node)]
+    review_eligible = [node for node in nodes if is_review_eligible(node)]
+    reviewed_eligible = [node for node in review_eligible if node.get("review") is True]
+    unreviewed_eligible = [node for node in review_eligible if node.get("review") is False]
     verified = [
         node
         for node in nodes
@@ -506,8 +521,9 @@ def render_health(graph: Dict[str, Any], schema: Dict[str, Any], now_date) -> Li
         for node in nodes
         if int(node.get("in_degree", 0)) == 0 and int(node.get("out_degree", 0)) == 0
     ]
-    stale_sorted = sorted(stale, key=lambda node: (-int(node.get("in_degree", 0)), -int(node.get("out_degree", 0)), node["id"]))
-    high_sorted = sorted(high_unverified, key=lambda node: (-int(node.get("in_degree", 0)), -int(node.get("out_degree", 0)), node["id"]))
+    stale_sorted = sorted(stale, key=review_sort_key)
+    high_sorted = sorted(high_unverified, key=review_sort_key)
+    unreviewed_sorted = sorted(unreviewed_eligible, key=review_sort_key)
 
     def stale_line(node: Node) -> str:
         age = staleness_age_days(node.get("last_verified"), now_date)
@@ -523,11 +539,15 @@ def render_health(graph: Dict[str, Any], schema: Dict[str, Any], now_date) -> Li
     return [
         "## 知识健康度",
         "",
-        f"verified {len(verified)} · unverified-high {len(high_unverified)} · stale {len(stale)} · orphan {len(orphan)} · total {len(nodes)}",
+        f"verified {len(verified)} · reviewed-eligible {len(reviewed_eligible)}/{len(review_eligible)} · unverified-high {len(high_unverified)} · stale {len(stale)} · orphan {len(orphan)} · total {len(nodes)}",
         "",
         "### Stale Priority",
         "",
         *table_or_none([stale_line(node) for node in stale_sorted]),
+        "",
+        "### 未背书应背书页",
+        "",
+        *table_or_none([unverified_line(node) for node in unreviewed_sorted]),
         "",
         "### High (Unverified)",
         "",

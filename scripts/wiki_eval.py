@@ -44,16 +44,45 @@ def _freshness_score(graph: Dict[str, Any], lint_data: Dict[str, Any]) -> float:
     return clamp_0_100(((len(active_nodes) - stale_count) / len(active_nodes)) * 100)
 
 
-def _endorsement_score(graph: Dict[str, Any]) -> float:
-    high_nodes = [
+def _eligible_review_nodes(graph: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return [
         node
         for node in _active_nodes(graph)
-        if node.get("type") not in {"source", "query"} and node.get("confidence") == "high"
+        if node.get("type") not in {"source", "query"}
     ]
-    if not high_nodes:
-        return 100.0
-    reviewed = [node for node in high_nodes if node.get("review") is True]
-    return clamp_0_100((len(reviewed) / len(high_nodes)) * 100)
+
+
+def _unreviewed_sort_key(node: Dict[str, Any]) -> tuple[int, int, str]:
+    return (
+        -int(node.get("in_degree", 0) or 0),
+        -int(node.get("out_degree", 0) or 0),
+        str(node.get("id", "")),
+    )
+
+
+def review_coverage(graph: Dict[str, Any]) -> Dict[str, Any]:
+    eligible = _eligible_review_nodes(graph)
+    reviewed = [node for node in eligible if node.get("review") is True]
+    percent = 100 if not eligible else round_half_up((len(reviewed) / len(eligible)) * 100)
+    unreviewed = [
+        {
+            "id": str(node.get("id", "")),
+            "type": str(node.get("type", "")),
+            "in_degree": int(node.get("in_degree", 0) or 0),
+            "out_degree": int(node.get("out_degree", 0) or 0),
+        }
+        for node in sorted((node for node in eligible if node.get("review") is not True), key=_unreviewed_sort_key)
+    ]
+    return {
+        "eligible": len(eligible),
+        "reviewed": len(reviewed),
+        "percent": int(clamp_0_100(percent)),
+        "unreviewed": unreviewed,
+    }
+
+
+def _endorsement_score(graph: Dict[str, Any]) -> float:
+    return float(review_coverage(graph)["percent"])
 
 
 def _connectivity_score(graph: Dict[str, Any]) -> float:
@@ -83,6 +112,7 @@ def calculate_health(lint_result: Dict[str, Any], graph_result: Dict[str, Any], 
     graph_errors = len(graph_result.get("config_errors", []))
     lint_exit_code = int(lint_result.get("exit_code", 0) or 0)
     graph_exit_code = int(graph_result.get("exit_code", 0) or 0)
+    coverage = review_coverage(graph)
     if page_count == 0 and lint_errors == 0 and graph_errors == 0 and lint_exit_code == 0 and graph_exit_code == 0:
         return {
             "score": None,
@@ -95,6 +125,7 @@ def calculate_health(lint_result: Dict[str, Any], graph_result: Dict[str, Any], 
             "graph_errors": 0,
             "lint_exit_code": lint_exit_code,
             "graph_exit_code": graph_exit_code,
+            "review_coverage": coverage,
         }
     if page_count == 0:
         return {
@@ -108,12 +139,13 @@ def calculate_health(lint_result: Dict[str, Any], graph_result: Dict[str, Any], 
             "graph_errors": graph_errors,
             "lint_exit_code": lint_exit_code,
             "graph_exit_code": graph_exit_code,
+            "review_coverage": coverage,
         }
 
     dims_float = {
         "integrity": _integrity_score(page_count, lint_data, meta),
         "freshness": _freshness_score(graph, lint_data),
-        "endorsement": _endorsement_score(graph),
+        "endorsement": float(coverage["percent"]),
         "connectivity": _connectivity_score(graph),
     }
     dims = {name: round_half_up(value) for name, value in dims_float.items()}
@@ -132,6 +164,7 @@ def calculate_health(lint_result: Dict[str, Any], graph_result: Dict[str, Any], 
         "graph_errors": graph_errors,
         "lint_exit_code": lint_exit_code,
         "graph_exit_code": graph_exit_code,
+        "review_coverage": coverage,
     }
 
 
@@ -157,7 +190,7 @@ def evaluate(root: Path, *, now=None, scan_wiki_pii: bool = False) -> Dict[str, 
 
 
 def public_json(result: Dict[str, Any]) -> Dict[str, Any]:
-    return {
+    data = {
         "score": result["score"],
         "status": result["status"],
         "dims": result["dims"],
@@ -165,6 +198,9 @@ def public_json(result: Dict[str, Any]) -> Dict[str, Any]:
         "weakest_dim": result["weakest_dim"],
         "ts": result["ts"],
     }
+    if "review_coverage" in result:
+        data["review_coverage"] = result["review_coverage"]
+    return data
 
 
 def read_last_snapshot(root: Path) -> Optional[Dict[str, Any]]:
@@ -210,7 +246,14 @@ def render_human(result: Dict[str, Any], previous: Optional[Dict[str, Any]], sna
         f"状态: {result['status']}",
     ]
     if result["status"] == "empty":
-        lines.extend(["score: null", "空库：无可评估页面"])
+        coverage = result.get("review_coverage", {})
+        lines.extend(
+            [
+                "score: null",
+                "空库：无可评估页面",
+                f"reviewed-eligible: {coverage.get('reviewed', 0)}/{coverage.get('eligible', 0)}",
+            ]
+        )
         return "\n".join(lines)
 
     delta = ""
@@ -228,6 +271,7 @@ def render_human(result: Dict[str, Any], previous: Optional[Dict[str, Any]], sna
             f"threshold: {result['threshold']}",
             f"pages: {result['pages']}",
             f"weakest_dim: {result['weakest_dim']}",
+            f"reviewed-eligible: {result.get('review_coverage', {}).get('reviewed', 0)}/{result.get('review_coverage', {}).get('eligible', 0)}",
             "",
             "维度:",
         ]

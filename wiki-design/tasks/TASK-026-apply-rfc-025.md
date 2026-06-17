@@ -3,10 +3,10 @@ id: task_20260616_026
 title: Apply RFC-025 — endorsement 复核覆盖修正 + 未背书清单 + 巡检/复核手册
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-06-16
-updated: 2026-06-16
+updated: 2026-06-17
 related_rfcs: [RFC-025]
 ---
 
@@ -72,9 +72,71 @@ DW=/Users/zhangjunwu/workspace/obsidian/datawarehouse
 - commit sha + push 记录
 - 偏离或异常
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-06-17
 
-（执行者填写）
+### Step 0 结论
+
+- `scripts/wiki_eval.py` 的落点是 `_endorsement_score()`、`calculate_health()`、`public_json()`、`render_human()`；graph 结果已带 `in_degree` / `out_degree`，可直接用于 `review_coverage.unreviewed` 排序。
+- `scripts/wiki_graph.py` 的落点是 `render_health()`；现有 `high_unverified` 渲染可以保留并作为高优先子集，新增未背书应背书页清单不需要改边构建逻辑。
+- RFC-014 既有 endorsement 测试位于 `tests/test_task_014.py`，需同步新语义断言。无 schema_version bump 需求。
+
+### 改动文件
+
+- `scripts/wiki_eval.py`：新增应背书页口径、`review_coverage` JSON 字段、普通输出 `reviewed-eligible x/y`；`endorsement` 改为 active 且非 source/query 页的 review 覆盖率，eligible=0 记 100。
+- `scripts/wiki_graph.py`：`render_health()` 新增 `reviewed-eligible x/y` 概览和「未背书应背书页」清单，排序为 `in_degree desc, out_degree desc, id`；保留 `High (Unverified)`。
+- `scripts/README.md` / `knowledge/.wiki-schema.md`：同步 endorsement 新语义、`review_coverage` 字段、snapshot 语义断点说明。
+- `wiki-design/02-workflows.md`：新增「知识巡检与复核」节，覆盖周巡检、盲区、过时处置四态、入库复核三档。
+- `tests/test_task_014.py` / `tests/test_task_026.py`：覆盖 all false -> 0、半数 -> 50、纯 source/query -> 100、空库、high 计入、JSON 排序、graph insights 清单。
+
+### 验证输出
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest -v tests.test_task_026
+test_all_unreviewed_eligible_scores_zero ... ok
+test_empty_instance_does_not_crash_and_has_coverage ... ok
+test_graph_insights_has_unreviewed_list_and_keeps_high_unverified ... ok
+test_half_reviewed_remains_fifty ... ok
+test_high_pages_are_counted_as_eligible_subset ... ok
+test_json_review_coverage_and_unreviewed_sorting ... ok
+test_no_eligible_source_query_only_scores_hundred ... ok
+Ran 7 tests in 0.421s
+OK
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest -v tests.test_task_014
+Ran 12 tests in 2.235s
+OK
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_eval.py --root /Users/zhangjunwu/workspace/obsidian/datawarehouse --json | python3 -c "..."
+score 80 endorsement 0
+review_coverage {'eligible': 13, 'percent': 0, 'reviewed': 0, 'unreviewed': [{'id': 'syn_20260603_international-data-service-tech-knowledge', 'in_degree': 25, 'out_degree': 60, 'type': 'synthesis'}, ...]}
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_graph.py --root /Users/zhangjunwu/workspace/obsidian/datawarehouse >/dev/null 2>&1 && grep -A6 '未背书' /Users/zhangjunwu/workspace/obsidian/datawarehouse/maps/graph-insights.md | head
+### 未背书应背书页
+
+- syn_20260603_international-data-service-tech-knowledge · in 25 · out 60
+- top_20260603_sql-performance-partition-pruning · in 10 · out 6
+- top_20260603_timezone-region-scheduling · in 10 · out 6
+- top_20260603_quickbi-placeholders-dynamic-analysis · in 9 · out 5
+- top_20260603_aliyun-maxcompute-practice-pitfalls · in 8 · out 4
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --root knowledge --check-docs; echo "check-docs=$?"
+错误: 0
+check-docs=0
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest discover -s tests
+Ran 102 tests in 63.193s
+OK
+```
+
+### commit / push
+
+- commit: 本提交（最终 SHA 见执行方回报）
+- push: 推送 GitLab `main`（记录见执行方回报）
+
+### 偏离或异常
+
+- datawarehouse 不做突击背书，score 从旧口径 100 降为 80，`review_coverage` 为 eligible=13 / reviewed=0 / percent=0，符合 RFC-025 预期。
+- 工作树中已有无关 `integrations/wecom-bot/__pycache__/wecom_codex_bot.cpython-312.pyc` 修改，本 task 未 stage / 未提交。
 
 ## Evaluation by claude · <date>
 
