@@ -105,3 +105,32 @@ reviewers:
 ## Decision
 
 （由用户填写，或用户明确授权某 Agent 代写。）
+
+## Review by codex · 2026-06-16
+
+结论：通过（有非阻塞建议）。
+
+我同意 RFC-025 的核心方向：现有 `endorsement = high 页背书率` 会在 0 high 页时给满分，确实造成 datawarehouse 这类“全库未背书但 score 100”的假绿。把 endorsement 改成 active 非 source/query 页的复核覆盖率，并配套未背书清单和巡检手册，是对 RFC-014 语义的必要修正。
+
+逐项核查：
+
+1. **M1 endorsement 语义修正可干净落地**  
+   现有算法落点在 `scripts/wiki_eval.py`，不是 `wiki_common.py`：`calculate_health()` 调 `_endorsement_score()`，而 `_endorsement_score()` 当前只筛 `active && type not in {source, query} && confidence == high`，无 high 页时直接 100。改成筛“应背书页”即可，边界也清楚：eligible 分母为 0 返回 100，分母 > 0 按 `review:true / eligible` 算，不会除零。RFC-014 既有 endorsement 测试需要同步：保留半数背书=50 的 fixture，同时新增/改出“全 medium 且 review:false => 0”“纯 source/query => 100”“空库不崩”“high 页仍计入分母”的用例。
+
+2. **不 bump schema_version 判断成立**  
+   这次只改派生健康度算法与 insights/render 输出，不改 frontmatter 字段、JSON 契约、core enum、profile 合并规则或 lint schema，因此不应 bump `schema_version`。唯一需要明确的是 `eval_history.jsonl` 里的历史 `dims.endorsement` 前后不可直接比较；RFC 已要求 README/snapshot 说明标注断点，这足够。TASK 落地时建议在文档中写成“RFC-025 起 endorsement 语义变更”，避免后续看趋势误读。
+
+3. **M2 未背书清单与 high-unverified 的关系清楚，可复用现有 graph 数据**  
+   `wiki_graph.py` 节点已经携带 `type/status/confidence/review/in_degree/out_degree`，`assign_degree()` 已维护有向 in/out；`render_health()` 已有 `high_unverified` 和相同排序口径。新增“未背书应背书页”可以复用同一筛选/排序框架，`high-unverified` 保留为高优先子集，不重复冲突。真实 datawarehouse 复核：当前 graph 为 44 nodes / 296 edges，active 非 source/query 应背书页 13 个、`review:true` 0 个、high 0 个；按新算法 endorsement 应为 0，且未背书清单能按 `in_degree desc, out_degree desc, id` 排出门户和高依赖 topic。
+
+4. **M3 并入 `02-workflows.md` 合理，三档分级可操作**  
+   巡检动作、盲区警示、过时处置、入库复核三档都适合放在 workflow 正本，而不是散落在 README 或实例 AGENTS。三档边界也可执行：AI 可直接入库但 `review:false`、入库后排队复核、必须人确认才能 `review:true`/`confidence:high`。这能避免把“AI 整理过”误当“有人背书”。
+
+5. **gate 自检合格**  
+   真实摩擦来源足够具体：datawarehouse 13 应背书页 0 背书、0 high 页导致现有 endorsement 100、STALE_PAGE 新库阶段空跑、review_queue 空。验证方式覆盖 M1 分母边界、M2 清单筛选排序、真实库 smoke 和 RFC-014 回归，具备可执行性。
+
+非阻塞建议：
+
+- `scripts/wiki_common.py` 在 targets 中未必需要改；当前 endorsement 代码实际在 `wiki_eval.py`。若 TASK 不抽公共 helper，可以不动 `wiki_common.py`，但 targets 保留它也不构成问题。
+- `wiki_eval --json` 新增未背书清单时，建议在 TASK spec 中钉死字段名和最小字段集合，例如 `review_coverage: {eligible, reviewed, percent, unreviewed: [{id,type,in_degree,out_degree}]}`，避免实现时只输出文本 insights 而 JSON 无法被自动巡检消费。
+- graph-insights 的“知识健康度”概览建议同时显示 `reviewed-eligible x/y`，否则用户看到未背书列表但不容易直接对上 endorsement 分数。
