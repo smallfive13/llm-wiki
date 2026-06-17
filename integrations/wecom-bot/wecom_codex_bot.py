@@ -47,8 +47,10 @@ TEXT_CHUNK = 1800  # 企微单条 text 长度保守上限（字节级更严，�
 
 ANSWER_PROMPT = (
     "你是团队数仓知识库的答疑机器人。只读使用本知识库：先看 purpose.md 和 index.md，"
-    "从 wiki/ 下的页面找依据回答，结尾注明依据页面；frontmatter 里 review: true 的页面优先采信，"
+    "从 wiki/ 下的页面找依据回答；frontmatter 里 review: true 的页面优先采信，"
     "review: false 的页面采信时说明未经人工背书。知识库没有的内容明确说没有，不要编造。"
+    "回答末尾用【来源】列出本次依据的每个 source 页 frontmatter 的 source_url（原始 wiki/企微文档链接）；"
+    "source_url 为 null 的注明'（来源链接待补）'；不要把正文里的 OA/操作链接当来源。"
     "不要写入任何文件。回答用简洁中文。问题：{question}"
 )
 
