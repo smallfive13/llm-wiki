@@ -38,6 +38,7 @@ Task 回答"怎么做、谁来做"，与 RFC 回答"要不要这么改"互补。
 | [task_20260610_024](TASK-024-apply-rfc-023.md) | Apply RFC-023 — dropbox 脱敏扫描 + 团队贡献协议进 02-workflows | done | claude | codex | RFC-023 |
 | [task_20260610_025](TASK-025-apply-rfc-024.md) | Apply RFC-024 — wiki_init 固化实例 .ignore | done | claude | codex | RFC-024 |
 | [task_20260616_026](TASK-026-apply-rfc-025.md) | Apply RFC-025 — endorsement 复核覆盖修正 + 未背书清单 + 巡检/复核手册 | done | claude | codex | RFC-025 |
+| [task_20260618_027](TASK-027-apply-rfc-026.md) | Apply RFC-026 — dropbox 脱敏扫描改二进制黑名单 | pending | claude | codex | RFC-026 |
 
 ## 状态机
 

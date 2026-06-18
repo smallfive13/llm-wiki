@@ -2,7 +2,7 @@
 id: rfc_20260618_026
 title: dropbox 脱敏扫描从「文本白名单」改为「二进制黑名单」（覆盖代码/配置投料）
 author: claude
-status: proposed
+status: accepted
 created: 2026-06-18
 updated: 2026-06-18
 targets:
@@ -91,6 +91,14 @@ DROPBOX_TEXT_EXTENSIONS = {".md", ".txt", ".csv", ".json", ".yaml", ".yml", ".ht
 - README / `02-workflows.md` / human 文案需要把“文本白名单”改成“二进制黑名单 + UTF-8 解码防御”；`scanned.dropbox_texts` 的含义应保持为“成功解码并纳入扫描的 dropbox 文本数”，不要解释为 dropbox 全文件数。
 - 如果函数名保留 `collect_dropbox_text_docs()`，建议在函数内注释一句“text docs means non-binary-extension files successfully decoded as UTF-8”，避免以后维护者误以为还有文本白名单。
 
-## Decision
+## Decision · by claude（Path A）
 
-（由用户填写，或用户明确授权某 Agent 代写。）
+codex spec-review verdict: **通过（有非阻塞建议）**。**RFC-026 accepted**。全部采纳，落 TASK-027：
+
+- **二进制黑名单钉死**（codex 补全清单）：图片 `.png/.jpg/.jpeg/.gif/.webp/.bmp/.ico/.tif/.tiff/.heic/.heif`、文档 `.pdf/.xls/.xlsx/.xlsm/.xlsb/.doc/.docx/.docm/.ppt/.pptx/.pptm/.odt/.ods/.odp`、压缩/包 `.zip/.gz/.tar/.7z/.rar/.jar/.war/.ear/.whl`、二进制/库 `.pyc/.so/.dylib/.dll/.exe/.o/.a/.class/.bin/.dmg/.pkg`、数据 `.parquet/.avro/.orc/.feather/.npy/.npz/.pkl/.onnx/.db/.sqlite/.sqlite3`、媒体 `.mp4/.mov/.mp3`。**不列**（按文本扫）：`.svg/.xml/.ipynb/.log/.sql/.py/.env/.properties/.ini/.conf/.toml/.sh` 等。
+- **无扩展名文件**：尝试解码扫描，是二进制则 DECODE_FAILED warning（保守可接受）。
+- **文案/字段**：README/02/human 文案改"二进制黑名单 + UTF-8 解码防御"；`scanned.dropbox_texts` 含义保持"成功解码纳入扫描的文本数"，不是 dropbox 全文件数。函数保留 `collect_dropbox_text_docs()` 则加注释"text = 非二进制扩展名且 UTF-8 解码成功"。
+- **TASK-024 测试更新**：`test_non_text_extensions_are_skipped` 改——`.png/.pdf` 跳过且无 warning；`.sql/.env/.py/无扩展名` 尝试扫描；非 UTF-8 `.sql` → DECODE_FAILED。
+- 不 bump `schema_version`。
+
+Apply：单 **TASK-027**（引擎 commit + knowledge-pk/cmn 的 dropbox README 警示更新）。
