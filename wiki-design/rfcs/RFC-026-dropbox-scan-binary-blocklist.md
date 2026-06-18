@@ -102,3 +102,9 @@ codex spec-review verdict: **通过（有非阻塞建议）**。**RFC-026 accept
 - 不 bump `schema_version`。
 
 Apply：单 **TASK-027**（引擎 commit + knowledge-pk/cmn 的 dropbox README 警示更新）。
+
+## Applied
+
+- **TASK-027**：引擎 `820884c`（apply 实体 `0abcc03`）+ knowledge-pk `83c7500` + knowledge-cmn `38dea95`——白名单反转为二进制黑名单、`.sql/.env/.svg` 等纳入扫描、二进制跳过、两实例 README 警示移除。Evaluation by claude: **PASS**（真实库反向验证 `.sql/.env/.svg` 命中、`.png` 跳过；全量回归 OK）。
+
+**RFC-026 applied。dropbox 代码/配置投料脱敏盲区闭合，knowledge-pk 团队开放安全前置就绪。**

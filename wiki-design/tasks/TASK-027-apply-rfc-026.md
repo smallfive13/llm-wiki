@@ -118,6 +118,31 @@ OK
 
 - 反向手验命令按预期 exit 1，`conda run` 输出了失败提示；JSON 中确认是临时 `.sql` 的 `HARD_REDACT_HIT`，验后已删除临时目录。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-18
 
-（评估者填写）
+**Verdict: PASS。** 标准环境独立复跑 + 真实库反向验证，黑名单反转达标，RFC-026 闭环。
+
+### 独立复跑
+
+| 验证 | 结果 |
+| --- | --- |
+| 全量 `unittest discover` | **OK (skipped=1)**（108 tests，skipped 是 025 的 rg 用例） |
+| 黑名单常量 | `DROPBOX_BINARY_EXTENSIONS` 就位（wiki_lint.py:128） |
+| **真实库反向验证**（pk dropbox 放 4 类文件） | `.sql`(AKIA) / `.env`(`password=`) / `.svg`(AKIA, 当文本扫) → **3 处 HARD_REDACT_HIT, exit 1**；`.png` → 跳过、**0 warning** |
+| 清理后 pk / 两实例 smoke | exit 0、工作树 clean |
+| 两实例 dropbox README 警示 | "尚未纳入"已移除（pk + cmn 各 0 命中） |
+
+### 核查点
+
+1. **盲区真堵上了**：之前 `.sql/.env` 投 dropbox 零扫描，现在 AKIA/`password=` 直接拦截到文件行号——这是 pk 团队开放的核心安全前置。
+2. **黑名单按扩展名跳二进制**：`.png` 不解码、不报、无 decode warning（噪音控制成立）；`.svg` 当文本扫（命中证明）。
+3. **复用现有机制**：dropbox doc 走 `MarkdownDoc(fm={})` 进 `scan_pii()`，不复制 redact；普通 lint 不受影响（回归过）。
+4. **TASK-024 测试按新语义更新**（`.png/.pdf` 跳过 / `.sql/.env/.py/无扩展名` 扫描），非删。
+
+### 偏离评估（合理）
+
+- 引擎最终 HEAD 是 merge commit `820884c`（apply 实体 `0abcc03`）：codex 首推 `2d02d79` 到 protected main 后不能 force-push 改日志，用普通 merge 收敛——**protected 分支下的正确处理**，内容完整、无损。
+
+### 结论
+
+RFC-026 闭环：dropbox 脱敏扫描从文本白名单反转为二进制黑名单，代码/配置/未来任意新文本类型自动纳入脱敏，二进制靠扩展名 + 解码防御双重跳过。knowledge-pk 团队开放的安全前置就绪。TASK-027 done 确认有效（引擎 `820884c` / pk `83c7500` / cmn `38dea95`）。
