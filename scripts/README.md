@@ -88,7 +88,7 @@ python3 scripts/wiki_lint.py --check-docs --fix # 只修复 GENERATED 块内部
 
 `--check-docs` 是独立文档一致性闸：只比对受管 `BEGIN/END GENERATED` 块与 `wiki_common.BASE_SCHEMA` 的生成结果，不运行普通 lint、不扫描 wiki 页面、不写 `.wiki/` 派生层。`--fix` 仅在 `--check-docs` 下有效，只替换已成对存在的生成块内部；缺失、重复或未闭合 marker 不会自动猜位置。
 
-`--scan-wiki-pii` 会把脱敏扫描范围从默认 `inbox/archive` 扩展为 `inbox/archive + wiki + raw/dropbox`。`raw/dropbox/**` 只扫描文本白名单扩展名（`.md` / `.txt` / `.csv` / `.json` / `.yaml` / `.yml` / `.html`），不做 schema / frontmatter 校验；非白名单文件跳过。白名单文本必须是 UTF-8，解码失败时跳过该文件并给 `DROPBOX_DECODE_FAILED` warning，表示红线未验证，需要 maintainer 人工核查。
+`--scan-wiki-pii` 会把脱敏扫描范围从默认 `inbox/archive` 扩展为 `inbox/archive + wiki + raw/dropbox`。`raw/dropbox/**` 使用二进制黑名单 + UTF-8 解码防御：图片、PDF、Office、压缩包、媒体、编译产物和常见二进制数据文件按扩展名跳过；其它文件（包括代码、SQL、配置、日志、SVG、notebook、无扩展名文本）一律尝试 UTF-8 解码并只跑 `hard_redact` / `soft_redact`，不做 schema / frontmatter 校验。非黑名单文件解码失败时跳过该文件并给 `DROPBOX_DECODE_FAILED` warning，表示红线未验证，需要 maintainer 人工核查。`scanned.dropbox_texts` 只统计成功解码并纳入扫描的 dropbox 文本数，不是 dropbox 全文件数。
 
 后续 RFC 增强：
 
@@ -126,7 +126,7 @@ python3 scripts/wiki_lint.py --check-docs --fix # 只修复 GENERATED 块内部
 | `CAPTURE_POLICY_LEGACY` | warning | capture_policy 仍使用 v1 `exclude_patterns` |
 | `SOFT_REDACT_HIT` | warning | 内容命中 soft_redact，需按库策略确认或脱敏 |
 | `HARD_REDACT_HIT` | error | 内容命中 hard_redact，必须移除密钥/凭证/连接串等硬底线敏感内容 |
-| `DROPBOX_DECODE_FAILED` | warning | `raw/dropbox/` 白名单文本无法按 UTF-8 解码，已跳过脱敏扫描，需人工核查 |
+| `DROPBOX_DECODE_FAILED` | warning | `raw/dropbox/` 非黑名单文件无法按 UTF-8 解码，已跳过脱敏扫描，需人工核查 |
 | `IMAGE_DANGLING` | error | wiki 正文图片引用目标不存在 |
 | `IMAGE_PATH_ESCAPE` | error | 图片引用归一化后逃出实例根 |
 | `IMAGE_HARD_REDACT` | error | 图片路径、文件名、相邻描述或 manifest 图说明命中 hard_redact |

@@ -3,7 +3,7 @@ id: task_20260618_027
 title: Apply RFC-026 — dropbox 脱敏扫描改二进制黑名单
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-06-18
 updated: 2026-06-18
@@ -66,9 +66,57 @@ cd /Users/zhangjunwu/workspace/llm-wiki/llm-wiki
 - 验证输出（fixture 各场景含 .sql/.env/.png/.svg/非UTF-8、真实库 smoke、回归、引擎 + 两实例 commit sha + push）
 - 偏离或异常
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-06-18
 
-（执行者填写）
+### Step 0 结论
+
+- `scripts/wiki_lint.py` 当前落点明确：`DROPBOX_TEXT_EXTENSIONS` 在常量区，`collect_dropbox_text_docs()` 只在 `--scan-wiki-pii` 时被调用，普通 lint 不收集 dropbox 文件。
+- `DROPBOX_DECODE_FAILED` 已是 warning，可直接复用；dropbox 文档以 `MarkdownDoc(path, rel, {}, text, {}, False)` 进入 `scan_pii()`，不需要复制 hard/soft redact 逻辑。
+- `scanned.dropbox_texts` 仍定义为成功 UTF-8 解码并纳入扫描的 dropbox 文本数，不代表 dropbox 全文件数。
+
+### 改动文件
+
+- `scripts/wiki_lint.py`：`DROPBOX_TEXT_EXTENSIONS` 改为钉死的 `DROPBOX_BINARY_EXTENSIONS`；`collect_dropbox_text_docs()` 反转为黑名单跳过、其它文件尝试 UTF-8 解码、失败发 `DROPBOX_DECODE_FAILED` warning；解码失败文案改为“非二进制黑名单文件”。
+- `scripts/README.md` / `wiki-design/02-workflows.md`：dropbox 扫描范围改述为“二进制黑名单 + UTF-8 解码防御”，并明确 `scanned.dropbox_texts` 语义。
+- `tests/test_task_024.py`：旧“非文本扩展名跳过”断言改为 `.png/.pdf` 跳过、`.sql/.env/.py/无扩展名` 扫描。
+- `tests/test_task_027.py`：新增 `.sql/.env/.py` hard/soft 命中、`.png/.pdf` 跳过、`.svg` 和无扩展名扫描、非 UTF-8 `.sql` warning、普通 lint 不受影响。
+- `/Users/zhangjunwu/workspace/obsidian/knowledge-pk/raw/dropbox/README.md` 与 `/Users/zhangjunwu/workspace/obsidian/datawarehouse/raw/dropbox/README.md`：各自更新 CI 脱敏扫描说明，单独提交。
+
+### 验证输出
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest -v tests.test_task_027 tests.test_task_024
+Ran 13 tests in 3.528s
+OK
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --scan-wiki-pii; echo "pk=$?"
+错误: 0 · 警告: 0
+pk=0
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --root /Users/zhangjunwu/workspace/obsidian/datawarehouse --scan-wiki-pii; echo "cmn=$?"
+错误: 0 · 警告: 0
+cmn=0
+
+$ # 反向手验：pk dropbox 临时 .sql 含 AKIA
+errors [('HARD_REDACT_HIT', 'raw/dropbox/20260618-codex-pii-smoke/check.sql')]
+warnings []
+dropbox_texts 4
+临时目录已删除：pk temp removed
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest discover -s tests
+Ran 108 tests in 76.897s
+OK
+```
+
+### commit / push
+
+- 引擎 commit：本提交（最终 SHA 见执行方回报；push 到 `http://git.ppdaicorp.com/international_data/llm-wiki.git`）
+- knowledge-pk commit：`83c7500`（push `main -> main` 到 `http://git.ppdaicorp.com/international_data/knowledge-pk.git`）
+- knowledge-cmn commit：`38dea95`（push `95c8f36..38dea95 main -> main` 到 `http://git.ppdaicorp.com/international_data/knowledge-cmn.git`）
+
+### 偏离或异常
+
+- 反向手验命令按预期 exit 1，`conda run` 输出了失败提示；JSON 中确认是临时 `.sql` 的 `HARD_REDACT_HIT`，验后已删除临时目录。
 
 ## Evaluation by claude · <date>
 

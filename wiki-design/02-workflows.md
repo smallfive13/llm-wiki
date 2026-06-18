@@ -223,7 +223,7 @@ dropbox 队列语义：
 
 ### Dropbox 脱敏扫描
 
-`wiki_lint --scan-wiki-pii` 会扫描 `raw/dropbox/**` 的文本白名单文件（`.md` / `.txt` / `.csv` / `.json` / `.yaml` / `.yml` / `.html`），只跑 `hard_redact` / `soft_redact`，不做 schema/frontmatter 校验。非 UTF-8 文本会被跳过并产生 warning，表示红线未验证，需要 maintainer 人工核查。图片、PDF、Office 等二进制文件不读内容，仍由 MR review 和后续 ingest 兜底。
+`wiki_lint --scan-wiki-pii` 会扫描 `raw/dropbox/**` 中除已知二进制扩展名外的所有 UTF-8 文本，只跑 `hard_redact` / `soft_redact`，不做 schema/frontmatter 校验。代码、SQL、配置、日志、SVG、notebook 和无扩展名文本都会尝试纳入扫描；图片、PDF、Office、压缩包、媒体、编译产物和常见二进制数据文件按扩展名跳过。非黑名单文件如果无法按 UTF-8 解码，会产生 `DROPBOX_DECODE_FAILED` warning，表示红线未验证，需要 maintainer 人工核查。二进制内容不读像素或文件内部结构，仍由 MR review 和后续 ingest 兜底。
 
 ## 被动 capture（建议 / 自动）
 

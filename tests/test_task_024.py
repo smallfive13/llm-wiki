@@ -112,17 +112,30 @@ class Task024DropboxPiiTest(unittest.TestCase):
             self.assertEqual(0, result.returncode, result.stderr + result.stdout)
             self.assertIn("脱敏扫描（inbox/archive + wiki + dropbox）: 0 命中", result.stdout)
 
-    def test_non_text_extensions_are_skipped(self) -> None:
+    def test_binary_extensions_are_skipped_and_code_like_files_are_scanned(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             init_instance(root, hard=["SECRET"])
             write(root / "raw/dropbox/20260610-binary/image.png", "SECRET in skipped png\n")
-            write(root / "raw/dropbox/20260610-binary/noext", "SECRET in skipped no suffix\n")
+            write(root / "raw/dropbox/20260610-binary/doc.pdf", "SECRET in skipped pdf\n")
+            write(root / "raw/dropbox/20260610-text/query.sql", "select 'SECRET';\n")
+            write(root / "raw/dropbox/20260610-text/app.env", "PASSWORD=SECRET\n")
+            write(root / "raw/dropbox/20260610-text/tool.py", "password = 'SECRET'\n")
+            write(root / "raw/dropbox/20260610-text/noext", "SECRET in no suffix\n")
 
             data = lint_json(root, "--scan-wiki-pii")
-            self.assertEqual([], data["errors"])
+            self.assertEqual(["HARD_REDACT_HIT"] * 4, [item["code"] for item in data["errors"]])
+            self.assertEqual(
+                [
+                    "raw/dropbox/20260610-text/app.env",
+                    "raw/dropbox/20260610-text/noext",
+                    "raw/dropbox/20260610-text/query.sql",
+                    "raw/dropbox/20260610-text/tool.py",
+                ],
+                sorted(item["file"] for item in data["errors"]),
+            )
             self.assertEqual([], [item for item in data["warnings"] if item["code"] in {"SOFT_REDACT_HIT", "DROPBOX_DECODE_FAILED"}])
-            self.assertEqual(0, data["scanned"]["dropbox_texts"])
+            self.assertEqual(4, data["scanned"]["dropbox_texts"])
 
     def test_non_utf8_text_file_warns_without_crashing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -125,7 +125,14 @@ ERROR_CODES = {
 MARKDOWN_IMAGE_RE = re.compile(r"!\[([^\]\n]*)\]\(([^)\n]+)\)")
 OBSIDIAN_IMAGE_RE = re.compile(r"!\[\[([^\]\n]+)\]\]")
 NONLOCAL_IMAGE_SCHEMES = ("http://", "https://", "data:", "mailto:")
-DROPBOX_TEXT_EXTENSIONS = {".md", ".txt", ".csv", ".json", ".yaml", ".yml", ".html"}
+DROPBOX_BINARY_EXTENSIONS = {
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".tif", ".tiff", ".heic", ".heif",
+    ".pdf", ".xls", ".xlsx", ".xlsm", ".xlsb", ".doc", ".docx", ".docm", ".ppt", ".pptx", ".pptm", ".odt", ".ods", ".odp",
+    ".zip", ".gz", ".tar", ".7z", ".rar", ".jar", ".war", ".ear", ".whl",
+    ".pyc", ".so", ".dylib", ".dll", ".exe", ".o", ".a", ".class", ".bin", ".dmg", ".pkg",
+    ".parquet", ".avro", ".orc", ".feather", ".npy", ".npz", ".pkl", ".onnx", ".db", ".sqlite", ".sqlite3",
+    ".mp4", ".mov", ".mp3",
+}
 
 ERROR_LEVEL = dict(BASE_SCHEMA["error_level"])
 
@@ -499,12 +506,13 @@ def scan_markdown_files() -> Tuple[List[MarkdownDoc], List[MarkdownDoc], List[Ma
 
 
 def collect_dropbox_text_docs(issues: Dict[str, List[Issue]]) -> List[MarkdownDoc]:
+    # "Text" means non-binary-extension files that successfully decode as UTF-8.
     dropbox_root = INSTANCE_ROOT / "raw/dropbox"
     if not dropbox_root.is_dir():
         return []
     docs: List[MarkdownDoc] = []
     for path in sorted(item for item in dropbox_root.rglob("*") if item.is_file()):
-        if path.suffix.lower() not in DROPBOX_TEXT_EXTENSIONS:
+        if path.suffix.lower() in DROPBOX_BINARY_EXTENSIONS:
             continue
         rel = rel_to_knowledge(path)
         try:
@@ -517,7 +525,7 @@ def collect_dropbox_text_docs(issues: Dict[str, List[Issue]]) -> List[MarkdownDo
                     rel,
                     None,
                     None,
-                    f"dropbox 文本文件不是有效 UTF-8，已跳过脱敏扫描: {exc}",
+                    f"dropbox 非二进制黑名单文件不是有效 UTF-8，已跳过脱敏扫描: {exc}",
                     "红线未验证，请 maintainer 人工核查该投料文件",
                 ),
             )
