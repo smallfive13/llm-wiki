@@ -48,10 +48,3 @@ knowledge/.wiki/normalized_alias_index.json
 
 # schema 分发同步元数据是实例正本审计状态，进 Git。
 !knowledge/.wiki/schema_sync.json
-
-# 部署集成（企微机器人桥接等），纳入版本管理。
-!integrations/
-!integrations/**
-
-# Python 缓存（integrations 放行后需 re-ignore，否则被 !integrations/** 带入）
-integrations/**/__pycache__/
