@@ -229,3 +229,9 @@ Apply：**TASK-A（M1+M2）现在落**；TASK-B（M3）/ TASK-C（M4）待门槛
 **替代方案纠正**：fun-cli 改为**放弃**（需交互式 `auth login`、非官方、契约不可文档核实，成为持续 blocker）；官方 DataWorks SDK + AK/SK 环境变量为**采用**。
 
 **M3 解冻**：deferred → **accepted**，起 **TASK-029**（codex 实跑核实官方 SDK 返回 → `dataworks_client` + `wiki_freshness`（默认只读、exit 码语义同前 Decision 门槛③）+ 代码锚点字段 + 测试）。**M4** 回源待 M3 client 就绪后起 TASK-030。
+
+## Applied（M3）
+
+- **M3 — TASK-029**：引擎 `aedcd0a`（`dataworks_client` 官方 SDK 隔离层 + `wiki_freshness` 默认只读失效检测 + `.env` gitignore + 02/README 文档）+ knowledge-pk `ffaa57c`（asset-mapping/topic/decision 加 optional 代码锚点字段）。Evaluation by claude: **PASS**——三项高敏核验全过（离线工具零 SDK 泄漏 / 凭证零泄漏只读 env / freshness 默认只读不碰 frontmatter）；Step 0 实跑核实真实契约（`GetFile.Data.File.Content`、`GetMetaTableBasicInfo.Data.LastDdlTime`，`ap-southeast-1`，SDK `20200518`）；回归 117 tests OK。
+
+**RFC-027 M3 applied。代码失效检测（机器只筛不写正本）就绪；剩 M4 答疑回源（TASK-030）。**

@@ -184,6 +184,33 @@ apply_drift=1 updates=['wiki/asset-mappings/payment-channel.md'] status_stale=Tr
 - `SearchMetaTables` 在未提供 `ClusterId` 时返回 `Invalid.Meta.ClusterId`，因此表锚点不走搜索，直接使用 `odps.<project>.<table>` 的 `TableGuid`。
 - 真实 smoke 临时脚本曾因 `sys.path` 和测试脚本错误假设 client 暴露 AK/SK 属性失败；repo 实现未暴露凭证属性，最终改为临时脚本直接从 env 构造 SDK 后通过，未打印任何密钥。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-22
 
-（评估者填写）
+**Verdict: PASS。** 独立复跑 + 三项高敏核验全过,Step 0 实跑核实了真实接口契约(非记忆硬编),RFC-027 M3 闭环。
+
+### 三项高敏核验(本 task 的成败关键)
+
+| 核验 | 方法 | 结果 |
+| --- | --- | --- |
+| **① 离线工具零 SDK 依赖** | 进程级 import `wiki_lint/graph/eval/common` 后查 `sys.modules` | **无 dataworks 模块泄漏** ✓ |
+| **② 凭证零泄漏** | client 凭证来源 + 提交 diff + gitignore | 只 `os.environ.get` 读、无硬编;`.env` 已 gitignore;提交未触碰 `.env`;report 不含 content/secret ✓ |
+| **③ freshness 默认只读** | 跑 `wiki_freshness --json` 后查 pk 工作树 | **0 改动**(不碰 frontmatter)——修复 codex 自提阻塞③ ✓ |
+
+### 其余复跑
+
+- 全量回归 `unittest discover`：**117 tests OK (skipped=2)**(skip = 真实凭证 smoke)。
+- `test_task_029`：9 tests OK——覆盖指纹稳定/drift 检测/默认只读/`--apply-stale`/三态 exit/凭证缺失 warning/离线断言。
+- `wiki_freshness --json` 与 `--check`(无锚点库)均 exit 0。
+- 锚点字段 optional 进 pk profile（asset-mapping/topic/decision），未 bump schema_version。
+
+### Step 0 实跑核实(接口事实落地)
+
+codex 用现有凭证真跑通官方 SDK(`alibabacloud_dataworks_public20200518`,`ap-southeast-1`),钉死真实字段路径:`GetFile.Data.File.Content`、`GetMetaTableBasicInfo.Data.LastDdlTime`、`GetMetaTableColumn`;指纹 `dw-code-v1` 落地。**接口契约由实跑确认,不再是之前 fun-cli 那种"没跑过的猜测"。**
+
+### 偏离评估(合理)
+
+- `SearchMetaTables` 未带 cluster 返回 `Invalid.Meta.ClusterId` → codex 改用已知 `TableGuid=odps.<project>.<table>` 口径,不依赖 SearchMetaTables。这是接口现实适配,`dataworks_ref` 的 `table:<project>.<table>` 形态仍成立,Execution log 已说明。认可。
+
+### 结论
+
+RFC-027 M3 闭环:knowledge-pk 具备**官方 SDK 直连的代码失效检测**——上游代码/表结构变 → freshness report + review_queue 建议(机器只筛、不写正本)。安全边界(离线隔离/凭证/只读)全守住。TASK-029 done 有效(引擎 `aedcd0a` / pk `ffaa57c`)。剩 M4(答疑回源)。
