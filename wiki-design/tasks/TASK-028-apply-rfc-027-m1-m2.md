@@ -161,6 +161,33 @@ tests_tail_exit=0
 - 未修改 `scripts/wiki_common.py`，未 bump `schema_version`。
 - 额外更新 `knowledge-pk/log.md` 是按该实例 `AGENTS.md` 的本地记录要求执行。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-22
 
-（评估者填写）
+**Verdict: PASS。** 独立复跑全绿，profile + 示例页 + 方法论严格符合钉死的 M1+M2 强约束，零外部接口依赖。
+
+### 独立复跑
+
+| 验证 | 结果 |
+| --- | --- |
+| 引擎离线回归 `unittest discover` | **OK (skipped=1)**——确认 fun-cli/网络依赖未混入引擎工具 |
+| pk `wiki_lint --root` | exit 0（1 页扫描，0 错 0 警） |
+| `--check-docs`（引擎 base） | exit 0（受管块 6，doc-consistency 未破） |
+| `schema_version` | 仍为 2，**未 bump** ✓ |
+| 双仓同步 | 引擎 `1463f29` / pk `8e1edcf` |
+
+### 强约束逐条核对
+
+1. **profile 钉死** ✓：`type=asset-mapping`/`id_prefix=asm`/`dir=wiki/asset-mappings`；required=`business_concept,physical_table`；optional=`physical_field,business_aliases`。**无** `lineage_upstream`、**无**代码锚点字段（M3 deferred 边界守住）。
+2. **value_mapping/caveats/血缘 → 正文** ✓：示例页 frontmatter 只有轻量检索字段；取值映射走正文表格、caveats/血缘走正文小节。
+3. **引擎 `wiki_common.py` 不改、不 bump** ✓；引擎仅动 `02-workflows.md`。
+4. **血缘权威性** ✓：示例页 + pk AGENTS 均明确"`related_ids` 为正本、方向当前页→上游、fun-cli/数据地图只作 ingest 参考不自动写库"。
+5. **draft 占位** ✓：`status:draft`+`confidence:low`，物理表/枚举标注"待真实 DataWorks 代码 ingest 补全"。
+6. **方法论落地** ✓：02 有「代码→口径知识」(7 维) + 「口径传导」节；pk AGENTS 引用 + 写 asset-mapping 写法。
+
+### 一处 ingest 时注意（非本 task 缺陷）
+
+示例占位页把"还款渠道"列为"收款渠道"的 `business_aliases`。**收款 vs 还款是两个不同业务概念**（正是用户最初提问区分的），真实 ingest 时应拆成两个独立 asset-mapping 页——示例页 caveats 已写"同名字段不同含义要拆页"，占位内容本身标注"示意待确认"，故不阻塞；记此为真实 ingest 时的注意点。
+
+### 结论
+
+RFC-027 M1+M2 闭环：knowledge-pk 具备 `asset-mapping` 结构化页型能力 + 代码梳理/传导口径方法论。TASK-028 done 确认有效（引擎 `1463f29` / pk `8e1edcf`）。真实"收款/还款渠道"页待登录 fun-cli 后按方法论 ingest 真实代码。M3+M4 仍 deferred。

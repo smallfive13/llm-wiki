@@ -205,3 +205,10 @@ codex verdict: **需修改**。用户拍板：先落 M1+M2，M3+M4 待接口核�
 5. 血缘自动查**不进** M3/M4 正本路径（见血缘权威性）；若将来用数据地图接口做血缘参考校验，需该接口契约核实 + 仅产出建议、不自动写。
 
 Apply：**TASK-A（M1+M2）现在落**；TASK-B（M3）/ TASK-C（M4）待门槛。frontmatter `targets` 中 `scripts/wiki_freshness.py`、`scripts/wiki_common.py` 属 deferred，TASK-A 不触及。
+
+## Applied（部分）
+
+- **M1+M2 — TASK-028**：引擎 `1463f29`（02-workflows「代码→口径知识」+「口径传导」节）+ knowledge-pk `8e1edcf`（`asset-mapping` profile `asm`/`wiki/asset-mappings` + draft 示例页 + AGENTS 方法论/血缘权威性）。Evaluation by claude: **PASS**（profile/示例页/方法论合规、引擎回归离线、未 bump schema_version、血缘正本=人工 related_ids 守住）。
+- **M3+M4 — deferred**：失效检测（`wiki_freshness.py`）+ 答疑回源，待门槛满足（fun-cli `--type code` 契约实跑核实 + 指纹算法钉死 + freshness 默认只读 + 回源内容规则）后补 Decision + TASK-B/C。
+
+**RFC-027 M1+M2 applied。knowledge-pk 具备 asset-mapping 能力 + 代码知识化方法论；真实口径页待登录 fun-cli 后按方法论 ingest。**
