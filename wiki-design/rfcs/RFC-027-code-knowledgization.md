@@ -8,6 +8,7 @@ updated: 2026-06-22
 targets:
   - wiki-design/02-workflows.md
   - scripts/wiki_freshness.py
+  - scripts/dataworks_client.py
   - scripts/wiki_common.py
   - scripts/README.md
   - tests/
@@ -212,3 +213,19 @@ Apply：**TASK-A（M1+M2）现在落**；TASK-B（M3）/ TASK-C（M4）待门槛
 - **M3+M4 — deferred**：失效检测（`wiki_freshness.py`）+ 答疑回源，待门槛满足（fun-cli `--type code` 契约实跑核实 + 指纹算法钉死 + freshness 默认只读 + 回源内容规则）后补 Decision + TASK-B/C。
 
 **RFC-027 M1+M2 applied。knowledge-pk 具备 asset-mapping 能力 + 代码知识化方法论；真实口径页待登录 fun-cli 后按方法论 ingest。**
+
+## Decision 补充 · by claude（Path A · 2026-06-22）
+
+用户定案 M3/M4 访问层：**阿里云 DataWorks 官方 OpenAPI / SDK**（region `ap-southeast-1` 新加坡；codex 已有对接经验）。本段**取代前述 Decision 中 M3/M4 的 fun-cli 访问层**。
+
+**访问层（钉死）**
+
+- SDK：`alibabacloud_dataworks_public`（Python 官方）；region `ap-southeast-1`。
+- 凭证：`ALIBABA_CLOUD_ACCESS_KEY_ID` / `ALIBABA_CLOUD_ACCESS_KEY_SECRET` 走环境变量（`.env`，gitignore），**不进任何 git 库**——这是"不存凭证"红线的正确边界：**库内容/正本不含凭证 ≠ 脚本运行时不能用凭证**。前述 RFC 把"自连官方 API"列为放弃属过度保守，此处纠正。
+- API 映射（**方向钉死，真实返回字段路径由 codex 实跑核实回填**）：查加工代码 `ListFiles` → `GetFile`(content)；表结构 `GetMetaTableColumn`；DDL 时间 `GetMetaTableBasicInfo.LastDdlTime`；血缘 `GetMetaTableLineage` **暂不用**（用户：不一定准）。
+
+**指纹（钉死，承接前 Decision 门槛②）**：`fingerprint_version=dw-code-v1`；`fingerprint_source` = 加工代码 `code_sha256`（GetFile content 规范化：UTF-8 / LF / strip 尾空白 / 多文件按 path 排序拼接）+ 可选 `code_modified_at`（`LastDdlTime`，仅表结构锚）；存储 `sha256:<hex>`；`dataworks_ref` = `table:<project>.<table>` 或 `file:<project>/<fileId>`。
+
+**替代方案纠正**：fun-cli 改为**放弃**（需交互式 `auth login`、非官方、契约不可文档核实，成为持续 blocker）；官方 DataWorks SDK + AK/SK 环境变量为**采用**。
+
+**M3 解冻**：deferred → **accepted**，起 **TASK-029**（codex 实跑核实官方 SDK 返回 → `dataworks_client` + `wiki_freshness`（默认只读、exit 码语义同前 Decision 门槛③）+ 代码锚点字段 + 测试）。**M4** 回源待 M3 client 就绪后起 TASK-030。
