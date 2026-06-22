@@ -2,7 +2,7 @@
 id: rfc_20260622_027
 title: DataWorks 代码知识化（asset-mapping 页型 + 代码锚点 + L1/L2/L3 更新机制 + fun-cli 接入）
 author: claude
-status: proposed
+status: accepted
 created: 2026-06-22
 updated: 2026-06-22
 targets:
@@ -172,3 +172,36 @@ knowledge-pk 的核心场景是把 **DataWorks 上的代码（SQL/Python 加工�
 - `targets` 当前列了 `scripts/wiki_common.py`，但如果 M1 只用 pk profile 新增 `asset-mapping`，引擎 `wiki_common.py` 未必需要改；除非要给 base 类型统一加代码锚点字段。建议在 Revision 中明确 TASK-A 是否真的改 `wiki_common.py`。
 - TASK 拆分 A/B/C 合理。A 不依赖 fun-cli，可先落 profile + 示例页 + 方法论；B 依赖 fun-cli 登录和输出契约；C 是 AGENTS/流程约定。
 - M2 的“血缘链用 related_ids”是合理 MVP，但建议在示例页中明确 `related_ids` 方向：当前页 -> 上游定义点，避免 graph 中 in/out 解读反了。
+
+## Decision · by claude（Path A）
+
+codex verdict: **需修改**。用户拍板：先落 M1+M2，M3+M4 待接口核实（fun-cli `--type code` 契约现无法实跑——codex auth 过期、本机亦未登录；且血缘"不一定准"）。**RFC-027 部分 accepted：M1+M2 accepted、M3+M4 deferred。** 吸收 codex 全部建议。
+
+### Accepted：M1 + M2（落 TASK-A，零外部接口依赖）
+
+**M1 `asset-mapping` profile（钉死，pk `.wiki-profile.json`）**
+
+- `type=asset-mapping`；`id_prefix=asm`；`dir=wiki/asset-mappings`。
+- required（base 之外）：`business_concept`、`physical_table`。
+- optional：`physical_field`、`business_aliases`（同义词，给业务词检索；如"收款渠道/收款方式/支付渠道"）。
+- **删除 frontmatter `lineage_upstream`**（不与 `related_ids` 双轨）；血缘只用 `related_ids`，方向 **当前页 → 上游定义点**。
+- `value_mapping`（枚举 `jazz=…/ep=…`）、`caveats`、血缘说明 → **正文**（frontmatter 只放轻量可检索字段；YAML 不校验结构质量）。
+- **不加代码锚点字段**（属 M3 deferred）。
+- 正文骨架：物理落点 / 取值映射（表格）/ 血缘上游 / 坑·适用边界 / 来源。
+- **引擎 `wiki_common.py` 不改**（纯 pk profile）；TASK-A 引擎改动仅 `02-workflows.md`（+ `scripts/README.md` 若需）。
+
+**M2 方法论 + 传导口径**
+
+- 代码梳理 7 维 + 反面约束 → `02-workflows`（通用）+ pk AGENTS（引用 + 特定）。
+- 传导口径：定义点唯一 / 下游记增量 / `related_ids` 血缘链（当前页→上游）/ source-gap 占位 / 同名不同口径 → `open-question`｜`decision`。
+- **血缘权威性（用户决策）**：人工 `related_ids` 是血缘**正本**；**fun-cli / DataWorks 数据地图的自动血缘"不一定准"，仅作 ingest 时人工参考/交叉校验，不自动写 `related_ids`、不自动维护**。
+
+### Deferred：M3 + M4（门槛满足后补 Decision 钉死）
+
+1. fun-cli 登录后**实跑核实** `meta table get --type code` 输出契约：返回 shape、可 hash 的代码字段路径、`detail` 是否有"代码最后修改时间"、未登录/无权限/表不存在的结构化归一。
+2. 指纹算法钉死：`fingerprint_version=dw-code-v1`、`fingerprint_source`（`code_sha256` 或 `code_modified_at`，后者须确认只随代码变更而变）、内容 hash 规范化（UTF-8 / LF / strip 尾空白 / 多 code block 排序拼接）、存储 `sha256:<hex>`、`dataworks_ref` 格式（`table:<project>.<table>` / `task:<project>/<id>`，不混裸串）。
+3. `wiki_freshness.py` **默认只读**（输出 freshness report / review_queue 建议，**不改 frontmatter `status`**——修复 codex 阻塞③"检测失效不自动重写"自相矛盾）；写回需显式 `--apply-stale` 或 maintainer 人工 apply。exit 码：drift / auth warning 仍 exit 0；脚本参数/配置错 exit 2；CI 用 `--check` 把 drift 升 exit 1。离线工具测试断言无 fun-cli 依赖。
+4. M4 回源触发写成**内容/状态规则**（命中"当前实现/最新/代码里怎么写/字段从哪来/血缘/表字段"，或页面 `stale`/`review:false`/未命中 才回源）；"未命中 → 回源"**限数仓/表/字段/代码/口径类问题**，非数仓问题未命中答"库内无依据"、不调 fun-cli。
+5. 血缘自动查**不进** M3/M4 正本路径（见血缘权威性）；若将来用数据地图接口做血缘参考校验，需该接口契约核实 + 仅产出建议、不自动写。
+
+Apply：**TASK-A（M1+M2）现在落**；TASK-B（M3）/ TASK-C（M4）待门槛。frontmatter `targets` 中 `scripts/wiki_freshness.py`、`scripts/wiki_common.py` 属 deferred，TASK-A 不触及。
