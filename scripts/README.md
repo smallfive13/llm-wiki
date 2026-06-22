@@ -404,3 +404,50 @@ obsidian: created|merged|unchanged
 ```
 
 初始化末尾会从引擎仓库根执行 `wiki_lint.py --root <实例> --check-only`。脚本可从任意 cwd 调用；自检 subprocess 会显式使用引擎仓库作为 cwd。
+
+## wiki-freshness
+
+实现：见 [`wiki_freshness.py`](wiki_freshness.py)
+访问层：见 [`dataworks_client.py`](dataworks_client.py)
+
+`wiki_freshness.py` 是在线巡检工具，用 DataWorks 官方 SDK 检查 wiki 页面里的上游代码 / 表结构锚点是否漂移。它与离线工具隔离：`wiki_lint.py`、`wiki_graph.py`、`wiki_eval.py` 不 import DataWorks SDK，也不需要网络或凭证。
+
+### 凭证
+
+只从环境变量读取：
+
+```bash
+export ALIBABA_CLOUD_ACCESS_KEY_ID=...
+export ALIBABA_CLOUD_ACCESS_KEY_SECRET=...
+```
+
+不要把 AK/SK 写入仓库、`.env`、Execution log 或报告输出；本仓 `.gitignore` 显式忽略 `.env`。
+
+### 锚点字段
+
+实例 profile 可把以下字段声明为某些页型的 optional 字段：
+
+- `dataworks_ref`：`file:<project>/<fileId>` 或 `table:<project>.<table>`
+- `code_fingerprint`：`sha256:<hex>`，只用于 file ref
+- `last_synced`：最近人工确认时间，表锚点用于和 `LastDdlTime` 比较
+
+指纹算法固定为 `dw-code-v1`：`GetFile` 返回的 `Data.File.Content` 先按 UTF-8 / LF / 行尾空白 strip / 整体 strip 规范化；多文件时按 path 排序后拼接，再取 sha256，保存为 `sha256:<hex>`。
+
+表结构锚点使用 `GetMetaTableBasicInfo.Data.LastDdlTime` 与 `last_synced` 比较；列清单来自 `GetMetaTableColumn.Data.ColumnList`，用于报告和后续人工判断。
+
+### 用法
+
+```bash
+python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge
+python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge --json
+python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge --check
+python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge --apply-stale
+```
+
+默认只读，只输出 report 和 review_queue 建议，不改任何页面。`--apply-stale` 才会把 drift 页写成 `status: stale`，不改 `code_fingerprint`、`last_synced` 或其它字段。
+
+退出码：
+
+- `0`：运行完成；有 drift / auth warning 也返回 0
+- `1`：`--check` 下发现 drift
+- `2`：参数或实例路径配置错误

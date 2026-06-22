@@ -16,6 +16,9 @@ scripts/__pycache__/
 # wiki CLI 每机器解释器配置，不进 Git。
 .wiki-cli.conf
 
+# 本地凭证文件不进 Git；DataWorks SDK 凭证只允许从环境变量读取。
+.env
+
 # 测试 fixture 纳入版本管理。
 !tests/
 !tests/**

@@ -261,6 +261,16 @@ dropbox 队列语义：
 
 wiki 中的血缘关系以人工维护的 `related_ids` 为准。fun-cli、数据地图或其它外部血缘工具只能作为 ingest 参考：它们可能漏掉临时表、视图包装、脚本内动态 SQL、手工调度依赖或跨系统口径，不保证完整准确。工具输出不得自动写入 wiki；maintainer 必须核对后再转成页面关系。
 
+### DataWorks freshness 锚点
+
+profile 可为 `asset-mapping`、`topic`、`decision` 增加可选锚点字段：
+
+- `dataworks_ref`：`file:<project>/<fileId>` 或 `table:<project>.<table>`。
+- `code_fingerprint`：DataWorks `GetFile` 代码内容按 `dw-code-v1` 规范化后的 `sha256:<hex>`；只用于 file ref。
+- `last_synced`：最近人工确认上游代码 / 表结构的时间，表锚点用它与 `GetMetaTableBasicInfo.Data.LastDdlTime` 比较。
+
+`scripts/wiki_freshness.py` 是单独的在线巡检入口，默认只读：扫描锚点、调用 DataWorks SDK、输出 report 和 review_queue 建议，不修改 frontmatter。只有显式 `--apply-stale` 才把 drift 页改成 `status: stale`；`--check` 在发现 drift 时 exit 1，可作为 CI gate。`wiki_lint.py` / `wiki_graph.py` / `wiki_eval.py` 保持离线，不 import DataWorks SDK。
+
 ## 被动 capture（建议 / 自动）
 
 触发：普通对话中 Agent 识别到值得长期保留的片段（设计取舍 / 排查结论 / 明确事实 / 用户决策性发言）。机制定义见 [RFC-003](rfcs/RFC-003-inbox-capture-layer.md) Revision v2 + AGENTS.md "低摩擦 capture" 段。

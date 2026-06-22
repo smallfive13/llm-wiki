@@ -3,7 +3,7 @@ id: task_20260622_029
 title: Apply RFC-027 M3 — DataWorks 直连失效检测（dataworks_client + wiki_freshness + 代码锚点）
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-06-22
 updated: 2026-06-22
@@ -67,9 +67,122 @@ $PY scripts/wiki_freshness.py --root /Users/zhangjunwu/workspace/obsidian/knowle
 - 验证输出（test_029、回归、freshness 只读/--check/--apply-stale、真实 smoke、commit sha + push）
 - 偏离或异常（尤其与 Decision 指纹/算法的任何出入，先说明再处理）
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-06-22
 
-（执行者填写）
+### Step 0 实跑核实结论
+
+使用 `/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python`，凭证仅从 `ALIBABA_CLOUD_ACCESS_KEY_ID` / `ALIBABA_CLOUD_ACCESS_KEY_SECRET` 读取，未打印 AK/SK。
+
+- SDK 包：当前 py312 环境可用的是官方包 `alibabacloud-dataworks-public20200518`，Python import 名为 `alibabacloud_dataworks_public20200518`。
+- region / endpoint：`ap-southeast-1` / `dataworks.ap-southeast-1.aliyuncs.com`。
+- `ListFiles(project_id=96107, need_content=False)` 成功；首个 file shape keys 脱敏记录为 `AbsoluteFolderPath, AutoParsing, BizId, BusinessId, CommitStatus, ConnectionName, Content, CreateTime, CreateUser, CurrentVersion, FileDescription, FileFolderId, FileId, FileName, FileType, IsMaxCompute, LastEditTime, LastEditUser, NodeId, Owner, ParentId, UseType`。
+- `GetFile` 成功；代码内容字段路径确认是 `Data.File.Content`，本次 smoke 内容长度非 0；指纹输出只记录 `sha256` 前缀与长度 71。
+- `SearchMetaTables` 未带 cluster 时返回 `Invalid.Meta.ClusterId`；本 task 表锚点改用已知 `TableGuid = odps.<project>.<table>` 口径，不依赖 SearchMetaTables。
+- `GetMetaTableBasicInfo(table_guid=odps.pk_data.dwb_risk_user_limit_dtl)` 成功；DDL 字段确认是 `Data.LastDdlTime`。
+- `GetMetaTableColumn(table_guid=...)` 成功；列字段 shape keys 为 `Caption, ColumnGuid, ColumnName, ColumnType, Comment, IsForeignKey, IsPartitionColumn, IsPrimaryKey, Position`。
+
+真实 SDK smoke 输出：
+
+```text
+{
+  "get_file": {
+    "content_path": "Data.File.Content",
+    "fingerprint_len": 71,
+    "fingerprint_prefix": "sha256"
+  },
+  "get_meta_table_basic_info": {
+    "last_ddl_field": "Data.LastDdlTime",
+    "last_ddl_present": true
+  },
+  "get_meta_table_column": {
+    "column_count_sample": 28,
+    "first_column_keys": [
+      "Caption",
+      "ColumnGuid",
+      "ColumnName",
+      "ColumnType",
+      "Comment",
+      "IsForeignKey",
+      "IsPartitionColumn",
+      "IsPrimaryKey",
+      "Position"
+    ]
+  },
+  "region": "ap-southeast-1",
+  "sdk_package": "alibabacloud_dataworks_public20200518"
+}
+```
+
+### 改动文件
+
+- `scripts/dataworks_client.py`：新增 DataWorks SDK 隔离访问层；凭证只读 env；实现 `file:<project>/<fileId>` / `table:<project>.<table>` ref 解析、`dw-code-v1` 指纹、`GetFile.Data.File.Content`、`GetMetaTableBasicInfo.Data.LastDdlTime` 和列信息读取。
+- `scripts/wiki_freshness.py`：新增在线 freshness 检测；默认只读；`--check` 遇 drift exit 1；`--apply-stale` 才写 `status: stale`。
+- `tests/test_task_029.py`：覆盖指纹稳定、drift 检测、默认只读、`--apply-stale`、三态 exit、凭证缺失 warning、离线工具不 import SDK / dataworks client。
+- `.gitignore`：加入 `.env`，防止本地凭证文件入库。
+- `scripts/README.md`、`wiki-design/02-workflows.md`：补 DataWorks freshness 锚点字段、用法、离线边界和 exit 码。
+- `/Users/zhangjunwu/workspace/obsidian/knowledge-pk/.wiki-profile.json`：为 `asset-mapping`、`topic`、`decision` 增加 optional `dataworks_ref` / `code_fingerprint` / `last_synced`。
+
+### 验证输出
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest -v tests.test_task_029
+Ran 9 tests in 0.589s
+OK (skipped=1)
+```
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest discover -s tests
+Ran 117 tests in 67.470s
+OK (skipped=1)
+```
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_freshness.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --json
+"scanned": {"anchors": 0, "wiki_pages": 1}
+"drift_count": 0
+"warnings": []
+fresh=0
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_freshness.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --check
+wiki_pages: 1 · anchors: 0 · drift: 0
+check=0
+```
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --check-only
+错误: 0 · 警告: 0
+pk_lint=0
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --check-docs
+受管块: 6
+错误: 0
+check_docs=0
+```
+
+临时真实表锚点 fixture：
+
+```text
+readonly_exit=0
+readonly_drift=1 updates=0 item_status=drift
+
+wiki_pages: 1 · anchors: 1 · drift: 1
+- drift: wiki/asset-mappings/payment-channel.md · table:pk_data.dwb_risk_user_limit_dtl · LastDdlTime newer than last_synced
+check_exit=1
+
+apply_exit=0
+apply_drift=1 updates=['wiki/asset-mappings/payment-channel.md'] status_stale=True
+```
+
+### Commit / push
+
+- knowledge-pk profile commit：`ffaa57c599811f3db4a87570dfc9d5dd6127cf3f`，已 push `http://git.ppdaicorp.com/international_data/knowledge-pk.git main`。
+- 引擎 commit：本 task 提交（最终 sha 见执行回报）。
+
+### 偏离或异常
+
+- DataWorks 官方 SDK 的安装包名是 `alibabacloud-dataworks-public20200518`，Python import 名为 `alibabacloud_dataworks_public20200518`；实现按当前官方包实际 import 名落地。
+- `SearchMetaTables` 在未提供 `ClusterId` 时返回 `Invalid.Meta.ClusterId`，因此表锚点不走搜索，直接使用 `odps.<project>.<table>` 的 `TableGuid`。
+- 真实 smoke 临时脚本曾因 `sys.path` 和测试脚本错误假设 client 暴露 AK/SK 属性失败；repo 实现未暴露凭证属性，最终改为临时脚本直接从 env 构造 SDK 后通过，未打印任何密钥。
 
 ## Evaluation by claude · <date>
 
