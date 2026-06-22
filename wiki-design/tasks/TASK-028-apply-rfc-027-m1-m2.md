@@ -3,7 +3,7 @@ id: task_20260622_028
 title: Apply RFC-027 M1+M2 — asset-mapping profile + 代码梳理/传导口径方法论
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-06-22
 updated: 2026-06-22
@@ -75,9 +75,91 @@ rg -l "收款渠道|business_concept" "$PK/wiki/asset-mappings" || true
 - 验证输出（pk lint/graph/eval、检索命中、--check-docs、回归、引擎 + pk commit sha + push）
 - 偏离或异常
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-06-22
 
-（执行者填写）
+### Step 0 结论
+
+- `knowledge-pk` 原本没有 `.wiki-profile.json`，可以按 RFC-008 通过 `extra_page_types` 增量增加页型。
+- base schema 当前前缀为 `cmp/dec/ent/oq/que/src/syn/top`，inbox 为 `inb`；`asm` 不冲突。`wiki/asset-mappings` 也不冲突现有 base 目录。
+- `asset-mapping` 的 required/optional 字段均为新增 profile 字段：`business_concept`、`physical_table`、`physical_field`、`business_aliases`，不触碰 core frontmatter。
+- `wiki-design/02-workflows.md` 的团队贡献 / dropbox ingest 段之后是合适落点，可承接代码 ingest 方法论并和后续 capture 流程分开。
+- 不需要改 `scripts/wiki_common.py`，不 bump `schema_version`，不接 fun-cli / 数据地图接口。
+
+### 改动文件
+
+引擎仓：
+
+- `wiki-design/02-workflows.md`：新增「代码 → 口径知识」节，覆盖 7 维梳理、反面约束、`asset-mapping` 用途、口径传导和血缘权威性。
+
+knowledge-pk 仓：
+
+- `.wiki-profile.json`：新增 `asset-mapping` profile，`id_prefix=asm`，目录 `wiki/asset-mappings`。
+- `wiki/asset-mappings/payment-channel.md`：新增 draft/low 示例占位页，物理表、字段和枚举均标明待真实 DataWorks 代码 ingest 后补。
+- `AGENTS.md`：补充 `asset-mapping` 写法、代码 ingest 定位、血缘权威性和当前 dropbox 黑名单扫描口径。
+- `log.md`：按本库 AGENTS 记录本次 profile / 示例页更新与验证结果。
+
+### 验证输出
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --check-only
+wiki-lint instance root: /Users/zhangjunwu/workspace/obsidian/knowledge-pk · profile: knowledge-pk
+扫描: knowledge-pk/wiki/ (1 文件) · knowledge-pk/inbox/ (0 draft) · knowledge-pk/raw/ (0 source)
+错误: 0 · 警告: 0
+pk_lint_exit=0
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_graph.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk
+wiki-graph: 1 nodes, 0 edges, 1 communities
+pk_graph_exit=0
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_eval.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --json
+{
+  "dims": {
+    "connectivity": 0,
+    "endorsement": 100,
+    "freshness": 100,
+    "integrity": 100
+  },
+  "pages": 1,
+  "review_coverage": {
+    "eligible": 0,
+    "percent": 100,
+    "reviewed": 0,
+    "unreviewed": []
+  },
+  "score": 80,
+  "status": "ok",
+  "weakest_dim": "connectivity"
+}
+pk_eval_exit=0
+
+$ rg -n "收款渠道|business_concept|asset-mapping" /Users/zhangjunwu/workspace/obsidian/knowledge-pk/wiki/asset-mappings /Users/zhangjunwu/workspace/obsidian/knowledge-pk/.wiki-profile.json
+/Users/zhangjunwu/workspace/obsidian/knowledge-pk/.wiki-profile.json:7:      "type": "asset-mapping",
+/Users/zhangjunwu/workspace/obsidian/knowledge-pk/.wiki-profile.json:12:        "business_concept",
+/Users/zhangjunwu/workspace/obsidian/knowledge-pk/wiki/asset-mappings/payment-channel.md:3:type: asset-mapping
+/Users/zhangjunwu/workspace/obsidian/knowledge-pk/wiki/asset-mappings/payment-channel.md:17:business_concept: 收款渠道
+/Users/zhangjunwu/workspace/obsidian/knowledge-pk/wiki/asset-mappings/payment-channel.md:24:# 收款渠道字段映射（示例占位）
+pk_rg_exit=0
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --check-docs
+受管块: 6
+错误: 0
+check_docs_exit=0
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest discover -s tests 2>&1 | tail -2
+OK
+tests_tail_exit=0
+```
+
+### Commit / push
+
+- knowledge-pk commit: `8e1edcfd5e804273a39cfbe039d3c9aaab56d482`，已 push 到 `http://git.ppdaicorp.com/international_data/knowledge-pk.git main`。
+- 引擎 commit: 本提交，最终 SHA 见执行回报；将 push 到 `http://git.ppdaicorp.com/international_data/llm-wiki.git main`。
+
+### 偏离或异常
+
+- 无 fun-cli / 数据地图调用。
+- 未修改 `scripts/wiki_common.py`，未 bump `schema_version`。
+- 额外更新 `knowledge-pk/log.md` 是按该实例 `AGENTS.md` 的本地记录要求执行。
 
 ## Evaluation by claude · <date>
 

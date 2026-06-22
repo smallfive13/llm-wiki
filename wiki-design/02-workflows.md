@@ -225,6 +225,42 @@ dropbox 队列语义：
 
 `wiki_lint --scan-wiki-pii` 会扫描 `raw/dropbox/**` 中除已知二进制扩展名外的所有 UTF-8 文本，只跑 `hard_redact` / `soft_redact`，不做 schema/frontmatter 校验。代码、SQL、配置、日志、SVG、notebook 和无扩展名文本都会尝试纳入扫描；图片、PDF、Office、压缩包、媒体、编译产物和常见二进制数据文件按扩展名跳过。非黑名单文件如果无法按 UTF-8 解码，会产生 `DROPBOX_DECODE_FAILED` warning，表示红线未验证，需要 maintainer 人工核查。二进制内容不读像素或文件内部结构，仍由 MR review 和后续 ingest 兜底。
 
+## 代码 → 口径知识
+
+代码 ingest 的目标不是把代码搬进 wiki，而是把代码背后的业务口径、数据落点和维护经验转成可问答的知识。原始代码仍作为 evidence 留在 `raw/sources/**` 或外部系统，wiki 正本只写摘要、判断和可检索索引。
+
+优先沉淀 7 类信息：
+
+1. 口径与定义：指标、业务对象、状态枚举、过滤条件、时间口径。
+2. 血缘数据流：输入表、输出表、关键中间层，以及这些对象之间的方向。
+3. 关键逻辑：影响结果的 CASE、JOIN、去重、优先级和异常处理，用业务语言描述，不逐行翻译。
+4. 设计决策：为什么这样取数、为什么保留或排除某类数据、历史折中。
+5. 调度运行特性：任务依赖、刷新频率、产出 SLA、失败后的人工判断入口。
+6. 踩坑：历史误用、字段名相似但口径不同、上下游不一致。
+7. 适用边界：哪些场景能用、哪些场景必须回源或重新确认。
+
+不要沉淀：
+
+- 完整代码、可复用凭证、连接串、客户级明细样本。
+- 逐行代码解释，除非该行就是业务口径的唯一证据。
+- 一次性排查 SQL 或临时脚本，除非已经成为长期流程或稳定规则。
+
+### 业务词到物理字段映射
+
+实例可以通过 RFC-008 profile 增加 `asset-mapping` 页型，用来回答"业务词到底落在哪张表/哪个字段"。frontmatter 只放轻量检索字段，例如 `business_concept`、`physical_table`、`physical_field`、`business_aliases`；取值映射、适用条件、caveats 和示例查询写在正文，避免把高变化内容塞进契约字段。
+
+`asset-mapping` 页必须保持 draft/low，直到真实代码或正式文档 ingest 完成并可追溯到 source。示例页只能写占位和示意值，不能伪装成已背书知识。
+
+### 口径传导
+
+同一业务定义只保留一个权威说明点。下游 topic、query、asset-mapping 只增量说明使用方式，并通过 `related_ids` 指回上游定义点；方向统一为"当前页 → 上游定义/来源页"。如果上游定义还没有入库，先建 `open-question` 的 source-gap，正文写"已知信息 + 待确认"，不要把待确认内容写成事实。
+
+同名但口径不同的字段或指标必须显式拆页，或先建 `decision` / `open-question` 澄清命名冲突。禁止因为字段名相同就自动合并。
+
+### 血缘权威性
+
+wiki 中的血缘关系以人工维护的 `related_ids` 为准。fun-cli、数据地图或其它外部血缘工具只能作为 ingest 参考：它们可能漏掉临时表、视图包装、脚本内动态 SQL、手工调度依赖或跨系统口径，不保证完整准确。工具输出不得自动写入 wiki；maintainer 必须核对后再转成页面关系。
+
 ## 被动 capture（建议 / 自动）
 
 触发：普通对话中 Agent 识别到值得长期保留的片段（设计取舍 / 排查结论 / 明确事实 / 用户决策性发言）。机制定义见 [RFC-003](rfcs/RFC-003-inbox-capture-layer.md) Revision v2 + AGENTS.md "低摩擦 capture" 段。
