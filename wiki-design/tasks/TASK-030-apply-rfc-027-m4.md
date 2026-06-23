@@ -103,6 +103,34 @@ OK (skipped=1)
 
 - 无。按任务要求纯文档落地，未修改 `scripts/**`，未新增访问层，未触碰凭证逻辑。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-23
 
-（评估者填写）
+**Verdict: PASS。** 纯文档落地,决策树措辞严格符合钉死规则,RFC-027 M4 闭环 → **整个 RFC-027 闭环**。
+
+### 复跑
+
+| 验证 | 结果 |
+| --- | --- |
+| `--check-docs` | exit 0（受管块 6，doc-consistency 未破） |
+| pk `wiki_lint --root` | exit 0 |
+| 全量回归 | 117 tests OK (skipped=1) |
+| 未改 scripts | 本提交触及 `scripts/` 文件数 = **0** ✓ |
+| 双仓同步 | 引擎 `cd6b175` / pk `4c8ba3f` |
+
+### 决策树逐条核对（与 codex 自身 review 给的触发规则一致）
+
+1. **用库不回源** ✓：`review:true` + 非 stale + 问语义/定义/口径含义。
+2. **回源合并答** ✓：命中 stale，或 `review:false` 且关键，或问"当前实现/最新/线上怎么算/代码里怎么写/字段从哪来/哪张表/口径细节"——触发词清单完整。
+3. **未命中** ✓：仅数仓/表/字段/代码/口径类回源 + source-gap；非数仓未命中答"库内无依据"、不调 SDK。
+- **不靠识别来源** ✓：明写"不看请求来自企微、CLI 还是其它入口"。
+- **回源复用 M3** ✓：只用 `dataworks_client.py`（`ap-southeast-1`，凭证 env），不新增旁路、AK/SK 不入库/日志/回答。
+- **L3 人控** ✓：差异只标 maintainer 复核,不自动改正本、不自动 `review:true`。
+- **出处标注** ✓：source_url + 实时事实标"未经人工背书" + 不把实时事实伪装成已 review 知识。
+
+### Bonus
+
+codex 在 Step 0 发现并修正 pk AGENTS 节 5 的 "freshness deferred" 旧表述（M3 落地后已不准）→ 改为"允许 optional 代码锚点字段,用于巡检和答疑回源"。主动消除文档漂移,认可。
+
+### 结论
+
+RFC-027 M4 applied。TASK-030 done 有效（引擎 `cd6b175` / pk `4c8ba3f`）。**RFC-027 四个 milestone 全部 applied,代码知识化整套闭环。**

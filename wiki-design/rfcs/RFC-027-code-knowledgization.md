@@ -235,3 +235,9 @@ Apply：**TASK-A（M1+M2）现在落**；TASK-B（M3）/ TASK-C（M4）待门槛
 - **M3 — TASK-029**：引擎 `aedcd0a`（`dataworks_client` 官方 SDK 隔离层 + `wiki_freshness` 默认只读失效检测 + `.env` gitignore + 02/README 文档）+ knowledge-pk `ffaa57c`（asset-mapping/topic/decision 加 optional 代码锚点字段）。Evaluation by claude: **PASS**——三项高敏核验全过（离线工具零 SDK 泄漏 / 凭证零泄漏只读 env / freshness 默认只读不碰 frontmatter）；Step 0 实跑核实真实契约（`GetFile.Data.File.Content`、`GetMetaTableBasicInfo.Data.LastDdlTime`，`ap-southeast-1`，SDK `20200518`）；回归 117 tests OK。
 
 **RFC-027 M3 applied。代码失效检测（机器只筛不写正本）就绪；剩 M4 答疑回源（TASK-030）。**
+
+## Applied（M4 + 整体闭环）
+
+- **M4 — TASK-030**：引擎 `cd6b175`（02-workflows「答疑回源」决策树 + 触发规则 + L3 人控 + 出处标注）+ knowledge-pk `4c8ba3f`（AGENTS 节 7 pk 回源策略 + 节 5 freshness 状态修正）。Evaluation by claude: **PASS**（决策树三档措辞符合钉死规则、不靠识别来源、回源复用 M3 dataworks_client、L3 人控不自动写正本；--check-docs 0、未改 scripts、回归 117 OK）。
+
+**RFC-027 全部 applied（M1 asset-mapping 页型 + M2 代码梳理/传导口径方法论 + M3 官方 SDK 失效检测 + M4 答疑回源）。DataWorks 代码知识化整套闭环：业务概念↔表字段可结构化沉淀、代码变更可机器检测待复核、答疑可触发式回源查当前代码。访问层 = 阿里云 DataWorks 官方 SDK（凭证 env 不入库）。RFC-027 status → applied。**
