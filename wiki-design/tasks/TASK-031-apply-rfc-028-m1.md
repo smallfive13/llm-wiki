@@ -171,6 +171,38 @@ $ rg --files | rg 'dataworks_index'
 - 初版索引将 `pk_data.<fileId>_out` 作为 `table`，复核后改为优先真实输出表；合成占位仍保留在 `outputs[]`。
 - 真实 smoke 使用 `--max-pages 1` 控制网络调用时长，生成 82 条生产 NORMAL/Repeatable 节点索引；后续全量刷新可去掉该限制。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-23
 
-（评估者填写）
+**Verdict: PASS。** 独立复跑 + 兼容性头等约束 + 索引安全核验全过,生产过滤按钉死规则落地,RFC-028 M1 闭环。
+
+### 兼容性（头等约束，独立复验）
+
+| 核验 | 结果 |
+| --- | --- |
+| 核心工具进程级零新依赖 | import `wiki_lint/graph/eval` 后 `sys.modules` 无 `dataworks/wiki_index/alibabacloud/sqlglot` → **泄漏: 无** ✓ |
+| 现有库行为不变 | datawarehouse / personal / knowledge-pk `wiki_lint` 全 exit 0 ✓ |
+| 全量回归 | **123 tests OK (skipped=2)** ✓ |
+
+### 索引安全 + 结构
+
+| 核验 | 结果 |
+| --- | --- |
+| 顶层字段 | `index_version/items/project_id/project_identifier/snapshot_date/source_window` ✓ |
+| **无 volatile** | 无 `generated_at`,用 `snapshot_date` ✓（防 diff 噪音） |
+| 零代码原文/凭证 | grep `select/insert/create table/AKIA/password/ACCESS_KEY` 零命中 ✓ |
+| 进 git + 不进检索 | `.wiki/dataworks_index.json` git tracked + `.ignore` 屏蔽 `.wiki/` ✓ |
+| item 字段 | path/table/layer/layer_source/fingerprint(dw-code-v1)/last_synced/outputs/node_id ✓ |
+
+### 生产过滤（钉死规则落地）
+
+`dataworks_client.py:332-334` 严格实现 `SchedulerType=="NORMAL" && Repeatability is True`,否则排除（PAUSE 落此分支）；源为 `ListNodes(project_env="PROD")`。真实 smoke 拉到 82 items（DWD:3 · ODS:26 · unknown:53），分层 best-effort + layer_source 生效。
+
+### Step 0 的关键发现（接口现实，认可）
+
+codex 实跑纠正了两处我 Decision 里没料到的链路（接口事实,非偏离）：
+1. **`GetNode.FileId` 在 PROD 等于 NodeId,直接 `GetFile` 会 File not found**——正确链路是 `ListFiles(node_id=<PROD NodeId>)` 反查设计态 FileId 再 GetFile。这种只有实跑才暴露的链路,正是 Step 0 强制实跑的价值。
+2. 输出表用 `ListNodeIO(io_type='output')`,索引保留全部 outputs,`table` 优先取真实表（非 `<fileId>_out` 占位）。
+
+### 结论
+
+RFC-028 M1 闭环：knowledge-pk 有了 DataWorks 全量代码索引基线（82 生产文件 + 分层 + 指纹）,代码原文不进库、凭证零泄漏、现有库零影响。TASK-031 done 有效（引擎 `7e4164b` / pk `433d6aa`）。为 M2(变更增量)/M4(血缘) 打好基线。

@@ -149,3 +149,9 @@ codex verdict: **需修改**——3 阻塞点均为"接口/算法未钉死",code
 - 非 DataWorks 库（personal / datawarehouse / knowledge-cmn）smoke + 全量回归行为不变。
 
 Apply：先 **TASK-031（M1 全量索引）**,后 TASK-B(M2)/TASK-D(M4)；TASK-C(M3 分层方法论纯文档)可随时。每 task 必带兼容性断言。
+
+## Applied（M1）
+
+- **M1 — TASK-031**：引擎 `7e4164b`（`dataworks_client.list_prod_nodes` 生产过滤 + `wiki_index.py` 建索引）+ knowledge-pk `433d6aa`（`.wiki/dataworks_index.json` 受管共享基线 82 生产文件 + 分层 + 指纹）。Evaluation by claude: **PASS**——兼容性头等约束守住（核心工具进程级零新依赖、现有库零影响、回归 123 OK）；索引无 volatile、零代码/凭证、进 git + .ignore 屏蔽；生产过滤按 `ListNodes(PROD)+SchedulerType==NORMAL&&Repeatability` 钉死。Step 0 实跑纠正 `GetNode.FileId→ListFiles(node_id)反查设计态FileId` 链路。
+
+**RFC-028 M1 applied。DataWorks 全量代码索引基线就绪;剩 M2(变更增量)/M3(分层方法论)/M4(sqlglot 血缘)。**
