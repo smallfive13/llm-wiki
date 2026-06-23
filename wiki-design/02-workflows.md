@@ -271,6 +271,26 @@ profile 可为 `asset-mapping`、`topic`、`decision` 增加可选锚点字段�
 
 `scripts/wiki_freshness.py` 是单独的在线巡检入口，默认只读：扫描锚点、调用 DataWorks SDK、输出 report 和 review_queue 建议，不修改 frontmatter。只有显式 `--apply-stale` 才把 drift 页改成 `status: stale`；`--check` 在发现 drift 时 exit 1，可作为 CI gate。`wiki_lint.py` / `wiki_graph.py` / `wiki_eval.py` 保持离线，不 import DataWorks SDK。
 
+### 答疑回源
+
+Agent 用知识库答疑时默认先信库，不把 DataWorks 当作每问必查的实时后端。是否回源只看内容和页面状态，不看请求来自企微、CLI 还是其它入口。
+
+决策树：
+
+1. 用库不回源：命中页面 `review: true`、状态不是 `stale`，且用户问的是业务语义、定义或口径含义时，直接基于库回答。
+2. 回源合并答：命中页面 `status: stale`，或 `review: false` 且问题关键，或用户明确问"当前实现"、"最新"、"线上怎么算"、"代码里怎么写"、"字段从哪来"、"哪张表"、"口径细节"这类需要当前精确事实的问题时，用 `scripts/dataworks_client.py` 查询 DataWorks 当前代码 / 表结构，再和库内结论合并回答。
+3. 未命中：只有数仓、表、字段、代码、口径类问题才回源，并登记 `source-gap`；非数仓类问题未命中时，回答"库内无依据"，不调用 SDK。
+
+回源只复用 M3 的 DataWorks 访问层：`dataworks_client.py`，region `ap-southeast-1`，凭证只从环境变量读取。不要新增旁路访问层，不要把 AK/SK、token、连接串写入库、日志或回答。
+
+L3 人控：如果回源发现 DataWorks 当前实现与库内口径不一致，只能把差异标为 maintainer 复核项（例如 review queue 或 source-gap），不得自动改正本、不得直接设置 `review: true`。
+
+回答出处：
+
+- 依据库内页面时，回答末尾仍列 source 页的 `source_url`。
+- 回源补充的当前代码 / 表结构事实必须标注"实时取自 DataWorks，未经人工背书"。
+- 如果同一答案同时包含背书库内结论和实时回源事实，应分清两者，不把实时事实伪装成已 review 的长期知识。
+
 ## 被动 capture（建议 / 自动）
 
 触发：普通对话中 Agent 识别到值得长期保留的片段（设计取舍 / 排查结论 / 明确事实 / 用户决策性发言）。机制定义见 [RFC-003](rfcs/RFC-003-inbox-capture-layer.md) Revision v2 + AGENTS.md "低摩擦 capture" 段。

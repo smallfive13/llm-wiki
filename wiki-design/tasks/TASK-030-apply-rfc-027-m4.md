@@ -3,7 +3,7 @@ id: task_20260622_030
 title: Apply RFC-027 M4 — 答疑回源策略（默认信库 + 触发式回源 DataWorks）
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-06-22
 updated: 2026-06-22
@@ -59,9 +59,49 @@ $PY -m unittest discover -s tests 2>&1 | tail -2   # 纯文档，回归不应受
 - 验证输出（--check-docs、pk lint、回归、引擎 + pk commit sha + push）
 - 偏离或异常
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-06-23
 
-（执行者填写）
+### Step 0 结论
+
+- `wiki-design/02-workflows.md` 已有"代码 → 口径知识"章节，且 M3 已在其中落了"DataWorks freshness 锚点"。本 task 的通用"答疑回源"约定放在该段之后最合适，能承接代码锚点、巡检和回源，不与 capture / ingest 段混在一起。
+- `knowledge-pk/AGENTS.md` 第 7 节已有"答疑（读库回答问题时）"，包含优先读 `wiki/`、`review:true` 优先采信、回答末尾列 `source_url` 等约定。本 task 的 pk 特定回源策略落在第 7 节，避免重复引擎通用流程。
+- `knowledge-pk/AGENTS.md` 第 5 节仍写"代码锚点、版本指纹、自动回源 freshness deferred"，已与 TASK-029 后的 profile 状态不一致；本次一并改为"允许 optional 代码锚点字段，只用于巡检和答疑回源"。
+
+### 改动文件
+
+- `wiki-design/02-workflows.md`：新增 `### 答疑回源`，写入三档决策树、内容/状态触发规则、DataWorks 回源范围、L3 人控和出处标注。
+- `/Users/zhangjunwu/workspace/obsidian/knowledge-pk/AGENTS.md`：第 5 节更新代码锚点状态；第 7 节追加 pk 答疑回源决策树、`ap-southeast-1` / env 凭证约定、maintainer 复核边界和"实时取自 DataWorks，未经人工背书"标注要求。
+
+### 验证输出
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --check-docs
+受管块: 6
+错误: 0
+docs=0
+```
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk
+扫描: knowledge-pk/wiki/ (1 文件) · knowledge-pk/inbox/ (0 draft) · knowledge-pk/raw/ (0 source)
+错误: 0 · 警告: 0
+pk_lint=0
+```
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest discover -s tests
+Ran 117 tests in 71.916s
+OK (skipped=1)
+```
+
+### Commit / push
+
+- knowledge-pk commit：`4c8ba3f30477b11af8ba41573b81894977155d2a`，已 push `http://git.ppdaicorp.com/international_data/knowledge-pk.git main`。
+- 引擎 commit：本 task 提交（最终 sha 见执行回报），push `http://git.ppdaicorp.com/international_data/llm-wiki.git main`。
+
+### 偏离或异常
+
+- 无。按任务要求纯文档落地，未修改 `scripts/**`，未新增访问层，未触碰凭证逻辑。
 
 ## Evaluation by claude · <date>
 
