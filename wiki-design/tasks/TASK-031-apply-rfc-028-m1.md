@@ -3,7 +3,7 @@ id: task_20260623_031
 title: Apply RFC-028 M1 — DataWorks 全量代码索引（受管共享基线 + 分层 + 指纹）
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-06-23
 updated: 2026-06-23
@@ -64,9 +64,112 @@ $PY -m unittest discover -s tests 2>&1 | tail -2
 - 验证输出（进程级断言、现有库 smoke、test_031、回归、真实 smoke、引擎 + pk commit sha）
 - 偏离或异常（尤其与 Decision 接口/算法的出入，先说明）
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-06-23
 
-（执行者填写）
+### Step 0 实跑核实结论
+
+使用 `/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python`，凭证仅从 `ALIBABA_CLOUD_ACCESS_KEY_ID` / `ALIBABA_CLOUD_ACCESS_KEY_SECRET` 读取，未打印 AK/SK。
+
+- `ListNodes(project_id=96107, project_env='PROD')` 成功；返回 `Data.Nodes`，`Data.TotalCount=1372`。样本字段包含 `BaselineId, BusinessId, Connection, CreateTime, CronExpress, DeployDate, Description, DqcDescription, FileId, FileType, FileVersion, ModifyTime, NodeId, NodeName, OwnerId, ParamValues, Priority, ProgramType, ProjectId, RepeatInterval, RepeatMode, Repeatability, ResGroupIdentifier, ResGroupName, SchedulerType`。
+- 样本 `SchedulerType` 为 `NORMAL`，`Repeatability` 为 `true`。历史样本存在 `PAUSE`；本 task 按 Decision 保留 `Repeatability == true && SchedulerType == NORMAL`，排除 `PAUSE`。
+- `GetNode(node_id=<PROD NodeId>, project_env='PROD')` 成功，字段与 `ListNodes` 基本一致，补充确认 `FileVersion / ProgramType / ModifyTime` 可用于索引。
+- `GetNode.FileId` 在 PROD 环境样本中等于 `NodeId`，直接 `GetFile(file_id=NodeId)` 会返回 `File not found`。正确链路是 `ListFiles(project_id=96107, node_id=<PROD NodeId>)` 反查设计态 `FileId`，再 `GetFile(project_id=96107, file_id=<design FileId>)` 获取 `Data.File.Content` 计算指纹。
+- `ListNodeIO(node_id=<PROD NodeId>, project_env='PROD', io_type='output')` 成功；返回 `Data[]`，样本输出包括合成占位 `pk_data.<fileId>_out` 和真实输出表 `pk_data.<table>`。索引写 `outputs[]` 全量保留，`table` 优先取非 `<fileId>_out` 的真实表。
+- pk 仓 `.gitignore` 当前 ignore `.wiki/id_index.json` 等派生层，并已放行 `.wiki/schema_sync.json`；本 task 将 `.wiki/dataworks_index.json` 定为受管共享基线，加入 `.gitignore` 例外。pk `.ignore` 已屏蔽 `.wiki/`，因此索引进 Git 但不进 `rg` 默认检索。
+
+### 改动文件
+
+- `scripts/dataworks_client.py`：新增 `DataWorksNode` 与 `list_prod_nodes()` 等只读方法；生产过滤源为 `ListNodes(PROD)`，`ListFiles(node_id)` 反查设计态 `FileId`，`ListNodeIO(output)` 取输出表，`GetFile` 计算 `dw-code-v1` 指纹。
+- `scripts/wiki_index.py`：新增隔离 CLI。默认 dry-run；`--write` 才写 `.wiki/dataworks_index.json`；索引稳定排序，`index_version=1`，无 `generated_at`，不含代码原文。
+- `tests/test_task_031.py`：覆盖 NORMAL/PAUSE 生产过滤、分层 best-effort、unknown/layer_source、稳定索引、dry-run、凭证 warning、核心工具进程级 import 隔离。
+- `scripts/README.md`：新增 `wiki-index` 用法和受管共享基线说明。
+- `/Users/zhangjunwu/workspace/obsidian/knowledge-pk/.gitignore`：放行 `.wiki/dataworks_index.json`。
+- `/Users/zhangjunwu/workspace/obsidian/knowledge-pk/.wiki/dataworks_index.json`：真实 smoke 写入 pk_data 索引。
+
+### 验证输出
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -c "... import wiki_lint,wiki_graph,wiki_eval ..."
+泄漏: 无
+```
+
+```text
+$ for R in datawarehouse knowledge-pk personal; do ... scripts/wiki_lint.py --root "$R"; done
+/Users/zhangjunwu/workspace/obsidian/datawarehouse lint=0
+错误: 0 · 警告: 0
+/Users/zhangjunwu/workspace/obsidian/knowledge-pk lint=0
+错误: 0 · 警告: 0
+/Users/zhangjunwu/workspace/obsidian/knowledge/personal lint=0
+错误: 0 · 警告: 0
+```
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest -v tests.test_task_031
+Ran 6 tests in 0.077s
+OK
+```
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --check-docs
+受管块: 6
+错误: 0
+docs=0
+```
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest discover -s tests
+Ran 123 tests in 65.772s
+OK (skipped=1)
+```
+
+真实建索引 smoke：
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_index.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --project-id 96107 --project-identifier pk_data --max-pages 1
+action: dry-run
+items: 82
+layers: DWD:3 · ODS:26 · unknown:53
+contains_code_payload: False
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_index.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --project-id 96107 --project-identifier pk_data --max-pages 1 --write
+action: write
+items: 82
+layers: DWD:3 · ODS:78 · unknown:1
+contains_code_payload: False
+```
+
+索引内容检查：
+
+```text
+items 82
+index_version 1
+snapshot_date 2026-06-23
+has_generated_at False
+contains_code_keywords False
+layers ['DWD', 'ODS', 'unknown']
+first_table pk_data.dwd_rhino_qc_case_content
+```
+
+检索 / Git 边界：
+
+```text
+$ git check-ignore -v .wiki/dataworks_index.json
+.gitignore:16:!.wiki/dataworks_index.json .wiki/dataworks_index.json
+
+$ rg --files | rg 'dataworks_index'
+(no output)
+```
+
+### Commit / push
+
+- knowledge-pk commit：`433d6aac35d475ca89dc4ca6e8e80fbf50e57cb5`，已 push `http://git.ppdaicorp.com/international_data/knowledge-pk.git main`。
+- 引擎 commit：本 task 提交（最终 sha 见执行回报），push `http://git.ppdaicorp.com/international_data/llm-wiki.git main`。
+
+### 偏离或异常
+
+- Step 0 发现 `GetNode.FileId` 不能直接用于 `GetFile`；按实跑结果改为 `ListFiles(node_id=<PROD NodeId>)` 反查设计态 `FileId`，再取代码指纹。
+- 初版索引将 `pk_data.<fileId>_out` 作为 `table`，复核后改为优先真实输出表；合成占位仍保留在 `outputs[]`。
+- 真实 smoke 使用 `--max-pages 1` 控制网络调用时长，生成 82 条生产 NORMAL/Repeatable 节点索引；后续全量刷新可去掉该限制。
 
 ## Evaluation by claude · <date>
 

@@ -451,3 +451,29 @@ python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge --apply-stale
 - `0`：运行完成；有 drift / auth warning 也返回 0
 - `1`：`--check` 下发现 drift
 - `2`：参数或实例路径配置错误
+
+## wiki-index
+
+实现：见 [`wiki_index.py`](wiki_index.py)
+访问层：见 [`dataworks_client.py`](dataworks_client.py)
+
+`wiki_index.py` 是 DataWorks 专属的在线索引工具，用官方 SDK 拉生产调度节点并生成实例内的受管共享基线。它与离线工具隔离：`wiki_lint.py`、`wiki_graph.py`、`wiki_eval.py` 不 import `wiki_index.py`、`dataworks_client.py` 或 DataWorks SDK。
+
+生产过滤规则：
+
+- 清单源是 `ListNodes(project_env="PROD")`。
+- 只保留 `Repeatability == true` 且 `SchedulerType == "NORMAL"` 的节点。
+- `SchedulerType == "PAUSE"` 不进入主索引。
+- `ListFiles(node_id=<prod node id>)` 用来反查设计态 `FileId`；`CommitStatus` 只作为辅助字段，不作为生产过滤依据。
+
+索引默认写到实例根 `.wiki/dataworks_index.json`。这是受管共享基线，应进 Git，但 `.ignore` 默认屏蔽 `.wiki/`，所以不会进入全文检索。索引不包含代码原文、凭证或客户级样本；只保留路径、输出表、分层、指纹和同步信息。JSON 稳定排序，固定 `index_version`，没有每次运行都会变化的 `generated_at`。
+
+用法：
+
+```bash
+python3 scripts/wiki_index.py --root /abs/path/to/knowledge-pk --project-id 96107 --project-identifier pk_data
+python3 scripts/wiki_index.py --root /abs/path/to/knowledge-pk --project-id 96107 --project-identifier pk_data --json
+python3 scripts/wiki_index.py --root /abs/path/to/knowledge-pk --project-id 96107 --project-identifier pk_data --write
+```
+
+默认是 dry-run，只打印将写入的摘要；只有显式 `--write` 才更新 `.wiki/dataworks_index.json`。

@@ -68,6 +68,25 @@ class DataWorksTableInfo:
     columns: List[dict[str, Any]]
 
 
+@dataclass(frozen=True)
+class DataWorksNode:
+    node_id: int
+    node_name: str
+    project_id: int
+    file_id: Optional[int]
+    file_name: Optional[str]
+    file_path: Optional[str]
+    file_version: Optional[int]
+    program_type: Optional[str]
+    scheduler_type: Optional[str]
+    repeatability: bool
+    outputs: List[str]
+    tables: List[str]
+    fingerprint: Optional[str]
+    last_synced: Optional[str]
+    paused: bool = False
+
+
 FILE_REF_RE = re.compile(r"^file:([^/]+)/(\d+)$")
 TABLE_REF_RE = re.compile(r"^table:([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)$")
 
@@ -112,6 +131,28 @@ def epoch_ms_to_iso(value: Any) -> Optional[str]:
     if not isinstance(value, int):
         return None
     return datetime.fromtimestamp(value / 1000, tz=LOCAL_TZ).replace(microsecond=0).isoformat()
+
+
+def _int_or_none(value: Any) -> Optional[int]:
+    return value if isinstance(value, int) else None
+
+
+def _string_or_none(value: Any) -> Optional[str]:
+    return value if isinstance(value, str) and value else None
+
+
+def _table_names_from_outputs(outputs: List[str]) -> List[str]:
+    tables: List[str] = []
+    seen = set()
+    for item in outputs:
+        text = str(item or "").strip()
+        if not text or "." not in text:
+            continue
+        if text in seen:
+            continue
+        seen.add(text)
+        tables.append(text)
+    return tables
 
 
 def _sdk_modules() -> tuple[Any, Any, Any]:
@@ -203,3 +244,125 @@ class DataWorksClient:
 
     def get_file_fingerprint(self, raw_ref: str) -> str:
         return self.get_file_code(raw_ref).fingerprint
+
+    def list_nodes_prod_raw(self, project_id: int, *, page_size: int = 100, max_pages: Optional[int] = None) -> List[dict[str, Any]]:
+        nodes: List[dict[str, Any]] = []
+        page_number = 1
+        while True:
+            try:
+                body = obj_to_map(
+                    self._client.list_nodes(
+                        self._models.ListNodesRequest(
+                            project_id=project_id,
+                            project_env="PROD",
+                            page_size=page_size,
+                            page_number=page_number,
+                        )
+                    ).body
+                )
+            except Exception as exc:
+                raise _safe_error(exc) from exc
+            data = (body or {}).get("Data") or {}
+            page_nodes = data.get("Nodes") or []
+            if not isinstance(page_nodes, list) or not page_nodes:
+                break
+            nodes.extend(item for item in page_nodes if isinstance(item, dict))
+            total = data.get("TotalCount")
+            if max_pages is not None and page_number >= max_pages:
+                break
+            if not isinstance(total, int) or len(nodes) >= total:
+                break
+            page_number += 1
+        return nodes
+
+    def get_node_prod(self, node_id: int) -> dict[str, Any]:
+        try:
+            body = obj_to_map(self._client.get_node(self._models.GetNodeRequest(node_id=node_id, project_env="PROD")).body)
+        except Exception as exc:
+            raise _safe_error(exc) from exc
+        data = (body or {}).get("Data") or {}
+        return data if isinstance(data, dict) else {}
+
+    def list_node_outputs(self, node_id: int) -> List[str]:
+        try:
+            body = obj_to_map(
+                self._client.list_node_io(
+                    self._models.ListNodeIORequest(node_id=node_id, project_env="PROD", io_type="output")
+                ).body
+            )
+        except Exception as exc:
+            raise _safe_error(exc) from exc
+        data = (body or {}).get("Data") or []
+        outputs: List[str] = []
+        if isinstance(data, list):
+            for item in data:
+                if isinstance(item, dict):
+                    value = item.get("Data") or item.get("TableName")
+                    if isinstance(value, str) and value.strip():
+                        outputs.append(value.strip())
+        return outputs
+
+    def find_design_file_for_node(self, project_id: int, node_id: int) -> Optional[dict[str, Any]]:
+        try:
+            body = obj_to_map(
+                self._client.list_files(
+                    self._models.ListFilesRequest(
+                        project_id=project_id,
+                        node_id=node_id,
+                        page_size=1,
+                        page_number=1,
+                        need_content=False,
+                        need_absolute_folder_path=True,
+                    )
+                ).body
+            )
+        except Exception as exc:
+            raise _safe_error(exc) from exc
+        files = ((body or {}).get("Data") or {}).get("Files") or []
+        if isinstance(files, list) and files and isinstance(files[0], dict):
+            return files[0]
+        return None
+
+    def get_design_file_code(self, project_id: int, file_id: int) -> DataWorksFileCode:
+        return self.get_file_code(f"file:{project_id}/{file_id}")
+
+    def list_prod_nodes(self, project_id: int, *, page_size: int = 100, max_pages: Optional[int] = None) -> List[DataWorksNode]:
+        result: List[DataWorksNode] = []
+        for item in self.list_nodes_prod_raw(project_id, page_size=page_size, max_pages=max_pages):
+            scheduler_type = item.get("SchedulerType")
+            repeatability = item.get("Repeatability") is True
+            if scheduler_type != "NORMAL" or not repeatability:
+                continue
+            node_id = item.get("NodeId")
+            if not isinstance(node_id, int):
+                continue
+            node = self.get_node_prod(node_id)
+            design_file = self.find_design_file_for_node(project_id, node_id)
+            design_file_id = _int_or_none((design_file or {}).get("FileId"))
+            file_name = _string_or_none((design_file or {}).get("FileName")) or _string_or_none(node.get("NodeName"))
+            folder = _string_or_none((design_file or {}).get("AbsoluteFolderPath"))
+            file_path = "/".join(part for part in [folder, file_name] if part)
+            outputs = self.list_node_outputs(node_id)
+            fingerprint: Optional[str] = None
+            if design_file_id is not None:
+                fingerprint = self.get_design_file_code(project_id, design_file_id).fingerprint
+            result.append(
+                DataWorksNode(
+                    node_id=node_id,
+                    node_name=str(node.get("NodeName") or item.get("NodeName") or node_id),
+                    project_id=project_id,
+                    file_id=design_file_id,
+                    file_name=file_name,
+                    file_path=file_path or None,
+                    file_version=_int_or_none(node.get("FileVersion")),
+                    program_type=_string_or_none(node.get("ProgramType")),
+                    scheduler_type=_string_or_none(node.get("SchedulerType")) or _string_or_none(scheduler_type),
+                    repeatability=repeatability,
+                    outputs=outputs,
+                    tables=_table_names_from_outputs(outputs),
+                    fingerprint=fingerprint,
+                    last_synced=epoch_ms_to_iso(node.get("ModifyTime")) or epoch_ms_to_iso(item.get("ModifyTime")),
+                )
+            )
+        result.sort(key=lambda node: (node.node_name, node.node_id))
+        return result
