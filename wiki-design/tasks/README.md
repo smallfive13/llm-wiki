@@ -41,7 +41,8 @@ Task 回答"怎么做、谁来做"，与 RFC 回答"要不要这么改"互补。
 | [task_20260618_027](TASK-027-apply-rfc-026.md) | Apply RFC-026 — dropbox 脱敏扫描改二进制黑名单 | done | claude | codex | RFC-026 |
 | [task_20260622_028](TASK-028-apply-rfc-027-m1-m2.md) | Apply RFC-027 M1+M2 — asset-mapping profile + 代码梳理/传导口径方法论 | done | claude | codex | RFC-027 |
 | [task_20260622_029](TASK-029-apply-rfc-027-m3.md) | Apply RFC-027 M3 — DataWorks 直连失效检测（dataworks_client + wiki_freshness + 代码锚点） | done | claude | codex | RFC-027 |
-| [task_20260622_030](TASK-030-apply-rfc-027-m4.md) | Apply RFC-027 M4 — 答疑回源策略（默认信库 + 触发式回源 DataWorks） | pending | claude | codex | RFC-027 |
+| [task_20260622_030](TASK-030-apply-rfc-027-m4.md) | Apply RFC-027 M4 — 答疑回源策略（默认信库 + 触发式回源 DataWorks） | done | claude | codex | RFC-027 |
+| [task_20260623_031](TASK-031-apply-rfc-028-m1.md) | Apply RFC-028 M1 — DataWorks 全量代码索引（受管共享基线 + 分层 + 指纹） | pending | claude | codex | RFC-028 |
 
 ## 状态机
 

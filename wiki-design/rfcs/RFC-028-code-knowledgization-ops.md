@@ -2,7 +2,7 @@
 id: rfc_20260623_028
 title: 代码知识化工程化（全量索引 + 变更增量 + 分层建页 + sqlglot 血缘解析）
 author: claude
-status: proposed
+status: accepted
 created: 2026-06-23
 updated: 2026-06-23
 targets:
@@ -107,3 +107,45 @@ asset-mapping 锚**定义层（通常 DWD）**为权威,正文标注下游 DWS/A
 - **TASK-C（M3 分层方法论）**：纯文档（02 + pk AGENTS）。
 - **TASK-D（M4 sqlglot 血缘）**：血缘解析 + 建议产出（不写正本）+ 隔离依赖。
 - 顺序 A → B → D（D 依赖 A 的代码拉取）；C 文档可随时落。每个 task 必带兼容性验证（现有库回归 + 离线断言）。
+
+## Decision · by claude（Path A · 2026-06-23）
+
+codex verdict: **需修改**——3 阻塞点均为"接口/算法未钉死",codex 已**实跑 SDK 核实**给出正确接口。**全部采纳实跑结果钉死,RFC-028 accepted。**
+
+### M1 生产过滤（钉死，采纳实跑）
+
+- **生产清单源 = `ListNodes(project_env='PROD')`**（不是 `ListFiles.CommitStatus`——后者只代表已提交,非生产在用）。
+- 保留 `Repeatability==true` 且 `SchedulerType=='NORMAL'` 的周期节点；`SchedulerType=='PAUSE'` 排除主清单（可标 paused）。
+- `CommitStatus` 仅作关联设计态文件的辅助字段,非主判据。
+- node → FileId / 输出表 的关联由 executor 用 SDK 实跑核实回填（`GetNode` 字段）。
+- 分层 **best-effort**：允许 `layer: unknown`,记 `layer_source: name_prefix|output_table|unknown`,非标准命名不误判。
+- `tmp_` 等命名**不因名字排除生产**（可能仍是生产调度节点）,只在建页优先级降权（M3）。
+
+### M2 变更增量（钉死，采纳实跑）
+
+- 变更语义 = **成功部署到生产的文件变更**（非"所有编辑过的文件"）。
+- `ListDeployments(status=成功, 时间窗)` + `GetDeployment` → 过滤 `Deployment.ToEnvironment==2`(PROD) → 取 `DeployedItems[*].FileId/FileVersion` → **只对这些 FileId** `GetFile` 算指纹。
+- `ListFiles` 无时间过滤参数,**不用**；`GetMetaTableChangeLog`（表/分区变更如 ADD_PARTITION）**不用于**代码变更清单。
+- "未发布的编辑变更"另开能力,不进本 RFC。
+- 增量**默认 dry-run**：只报告将更新的 index + 受影响页；写 index / stale 状态需显式 flag。
+
+### M4 sqlglot 血缘（钉死，采纳实跑）
+
+- 依赖 `sqlglot` + 方言策略：优先 `sqlglot-maxcompute`（非官方插件,注册 `maxcompute` dialect）；executor 在 TASK-D **实测插件可用性/质量**,不可用则 fallback `hive`/generic best-effort,并在 task 钉死默认方言。
+- parse 失败 = **warning**,不影响 lint/graph/eval。
+- 血缘**只产建议,不写正本**（人背书,接血缘权威性）。
+- TASK-D 真实 MaxCompute SQL fixture 必含至少一组：`insert overwrite table ... partition(...)`、`${bizdate}` 参数、ODPS 函数、CTE、动态分区。
+
+### 索引落点（钉死，改称"受管共享基线"）
+
+- `dataworks_index.json` = **受管共享基线**（不再称"派生层",避免与 `.wiki/*` 规则冲突）,**进 git**（团队/CI 共享,类比 `schema_sync.json`）。
+- 不含代码原文 / 凭证 / 客户级样本；`.ignore` 屏蔽,不进检索。
+- 稳定排序 + 固定 `index_version`；**避免 volatile `generated_at`**（用 `snapshot_date` 或仅内容变化时更新,防 diff 噪音）。
+- 字段：`index_version` / `project_id` + `project_identifier` / `source_window` / `items[]`（path / table / layer / layer_source / fingerprint / last_synced）。
+
+### 兼容性（钉死，可执行断言）
+
+- **进程级断言**：清空 `sys.modules` 后 import `wiki_lint`/`wiki_graph`/`wiki_eval`,断言未加载 `dataworks_client` / `wiki_index` / `sqlglot` / `alibabacloud_*`。
+- 非 DataWorks 库（personal / datawarehouse / knowledge-cmn）smoke + 全量回归行为不变。
+
+Apply：先 **TASK-031（M1 全量索引）**,后 TASK-B(M2)/TASK-D(M4)；TASK-C(M3 分层方法论纯文档)可随时。每 task 必带兼容性断言。

@@ -33,7 +33,7 @@
 | [rfc_20260616_025](RFC-025-review-coverage-and-audit.md) | eval 复核覆盖度量修正（消除 0-high 假绿）+ 未背书清单 + 巡检/复核手册 | accepted | claude |
 | [rfc_20260618_026](RFC-026-dropbox-scan-binary-blocklist.md) | dropbox 脱敏扫描改二进制黑名单（覆盖代码/配置投料） | accepted | claude | `scripts/wiki_lint.py`, `scripts/README.md`, `wiki-design/02-workflows.md` | `scripts/wiki_eval.py`, `scripts/wiki_common.py`, `scripts/wiki_graph.py`, `knowledge/.wiki-schema.md`, `wiki-design/02-workflows.md` |
 | [rfc_20260622_027](RFC-027-code-knowledgization.md) | DataWorks 代码知识化（M1+M2 accepted：asset-mapping 页型 + 代码梳理/传导口径；M3+M4 deferred：失效检测/回源待接口核实） | accepted | claude |
-| [rfc_20260623_028](RFC-028-code-knowledgization-ops.md) | 代码知识化工程化（全量索引 + 变更增量 + 分层建页 + sqlglot 血缘解析；不影响现有库入库/查询） | proposed | claude | `scripts/dataworks_client.py`, `scripts/wiki_freshness.py`, `scripts/wiki_index.py`, `wiki-design/02-workflows.md`, `scripts/README.md`, `tests/` | `wiki-design/02-workflows.md`, `scripts/wiki_freshness.py`, `scripts/wiki_common.py`, `scripts/README.md`, `tests/` |
+| [rfc_20260623_028](RFC-028-code-knowledgization-ops.md) | 代码知识化工程化（全量索引 + 变更增量 + 分层建页 + sqlglot 血缘解析；不影响现有库入库/查询） | accepted | claude | `scripts/dataworks_client.py`, `scripts/wiki_freshness.py`, `scripts/wiki_index.py`, `wiki-design/02-workflows.md`, `scripts/README.md`, `tests/` | `wiki-design/02-workflows.md`, `scripts/wiki_freshness.py`, `scripts/wiki_common.py`, `scripts/README.md`, `tests/` |
 
 ## 状态
 
