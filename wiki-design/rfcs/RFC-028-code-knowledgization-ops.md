@@ -155,3 +155,33 @@ Apply：先 **TASK-031（M1 全量索引）**,后 TASK-B(M2)/TASK-D(M4)；TASK-C
 - **M1 — TASK-031**：引擎 `7e4164b`（`dataworks_client.list_prod_nodes` 生产过滤 + `wiki_index.py` 建索引）+ knowledge-pk `433d6aa`（`.wiki/dataworks_index.json` 受管共享基线 82 生产文件 + 分层 + 指纹）。Evaluation by claude: **PASS**——兼容性头等约束守住（核心工具进程级零新依赖、现有库零影响、回归 123 OK）；索引无 volatile、零代码/凭证、进 git + .ignore 屏蔽；生产过滤按 `ListNodes(PROD)+SchedulerType==NORMAL&&Repeatability` 钉死。Step 0 实跑纠正 `GetNode.FileId→ListFiles(node_id)反查设计态FileId` 链路。
 
 **RFC-028 M1 applied。DataWorks 全量代码索引基线就绪;剩 M2(变更增量)/M3(分层方法论)/M4(sqlglot 血缘)。**
+
+## Decision 增补 · by claude（Path A · 2026-06-24）
+
+背景:TASK-031 的索引是 smoke（82 文件，`--max-pages 1`），pk_data 生产节点实测 **~1372**——**M1 全量初始化尚未完成**。且实战暴露高频场景:**拿线上业务表反查"离线哪张表可用"**,应优先引导到 DWD/DWB 加工层而非 ODS 贴源。本段补全 M1 全量口径 + 新增反查能力 + M3 路由策略。
+
+### M1 全量初始化（钉死）
+
+- 翻页拉全 `ListNodes(PROD)` 全部生产节点（~1372），去掉 `--max-pages` 截断；处理分批/限流/耗时（建议支持断点续传或分批写）。
+- 索引每 item 增抓**双向血缘**:`inputs[]`（`ListNodeIO io_type=input` 上游表）+ `outputs[]`（已有）。
+- **ODS↔线上源表映射**:ODS 节点的 `inputs` 即线上库表,记录线上表 → ODS 对应（命名/IO 抽取）。
+- **完善分层推断**:layer 认全 `ods/dwd/dwb/dws/ads`（之前只认 ods/dwd,53 unknown 多为漏认）;仍 best-effort + `layer_source` + 允许 `unknown`。
+- `index_version` bump（结构新增 inputs/ods 映射）。兼容性/安全约束同 TASK-031（凭证 env、代码原文不进库、离线隔离、索引进 git）。
+
+### 反查能力（新增，钉死）
+
+- `wiki_index` 增**反查子命令**:给**表名**（线上表或任意表）→ 输出贴源 ODS（溯源）+ 沿正向血缘的下游候选（DWD/DWB/DWS/ADS）,每候选带 `layer` + **层定位说明** + `review` 状态 + 是否有对应知识页。
+- **全候选纳入 + 分层说明**（不只推明细层）:每层标定位/适用场景——ODS=贴源未清洗·溯源用·不建议直接取数;DWD/DWB=明细加工·**推荐**;DWS=汇总·按维度聚合时用;ADS=应用·面向报表口径已固定。推荐倾向明细层但不藏其他层。
+- **无下游兜底**:线上表只到 ODS、无下游加工层 → 推 ODS + 明确警示"仅贴源未清洗慎用"。
+- **血缘 caveat**:输出标注"基于调度血缘,可能漏动态 SQL/临时表引用"。
+- 反查默认读本地索引（不必每次连 DataWorks）;离线/凭证约束同上。
+
+### M3 路由策略（增补，写进 02 + pk AGENTS）
+
+- 答疑遇"线上表/某表 离线用哪张"→ 调反查能力 → 按上述形态回答（全候选 + 分层说明 + 推荐明细层 + 兜底 + caveat）。
+- ODS 仅作溯源入口、不作直接取数推荐;知识页提供口径,索引/反查提供物理对应。
+
+### Apply
+
+- **TASK-032（M1 全量初始化 + 反查能力）**:全量拉能力 + 双向血缘 + ODS↔线上源表 + 完善分层 + 反查子命令 + 测试。**完整 1372 全量初始化作为运营动作由 maintainer 执行**（task 提供命令 + 限量验证翻页/反查）。
+- M3 路由策略并入 TASK-C（分层方法论）或随 TASK-032 文档。
