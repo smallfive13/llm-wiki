@@ -72,6 +72,11 @@ class FakeClient:
             return ["pk_data.dwd_payment_order_daily", "pk_data.10_out"]
         return []
 
+    def list_node_inputs(self, node_id):
+        if node_id == 10:
+            return ["pk_data.ods_payment_order_daily"]
+        return []
+
     def get_design_file_code(self, project_id, file_id):
         self.file_calls.append((project_id, file_id))
         return type("FileCode", (), {"fingerprint": f"sha256:{file_id:064x}"})()
@@ -87,6 +92,7 @@ class Task031IndexTest(unittest.TestCase):
         self.assertEqual([10], [node.node_id for node in nodes])
         self.assertEqual([(96107, 1010)], client.file_calls)
         self.assertEqual(["pk_data.dwd_payment_order_daily", "pk_data.10_out"], nodes[0].tables)
+        self.assertEqual(["pk_data.ods_payment_order_daily"], nodes[0].inputs)
 
     def test_layer_inference_and_unknown_are_best_effort(self) -> None:
         self.assertEqual(("DWD", "name_prefix"), wiki_index.infer_layer("dwd_order", []))
@@ -96,7 +102,7 @@ class Task031IndexTest(unittest.TestCase):
 
     def test_stable_index_has_no_code_payload_or_generated_at(self) -> None:
         index = wiki_index.build_index(FakeClient(), project_id=96107, project_identifier="pk_data", snapshot_date="2026-06-23")
-        self.assertEqual(1, index["index_version"])
+        self.assertEqual(2, index["index_version"])
         self.assertEqual("2026-06-23", index["snapshot_date"])
         self.assertNotIn("generated_at", index)
         self.assertFalse(wiki_index.contains_code_payload(index))
@@ -104,6 +110,7 @@ class Task031IndexTest(unittest.TestCase):
         self.assertEqual("DWD", item["layer"])
         self.assertEqual("name_prefix", item["layer_source"])
         self.assertEqual("pk_data.dwd_payment_order_daily", item["table"])
+        self.assertEqual(["pk_data.ods_payment_order_daily"], item["inputs"])
         self.assertIsNone(item.get("code"))
 
     def test_cli_dry_run_does_not_write_and_write_requires_flag(self) -> None:

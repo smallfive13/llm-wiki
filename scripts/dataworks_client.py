@@ -80,6 +80,7 @@ class DataWorksNode:
     program_type: Optional[str]
     scheduler_type: Optional[str]
     repeatability: bool
+    inputs: List[str]
     outputs: List[str]
     tables: List[str]
     fingerprint: Optional[str]
@@ -283,24 +284,30 @@ class DataWorksClient:
         data = (body or {}).get("Data") or {}
         return data if isinstance(data, dict) else {}
 
-    def list_node_outputs(self, node_id: int) -> List[str]:
+    def list_node_io_items(self, node_id: int, io_type: str) -> List[str]:
         try:
             body = obj_to_map(
                 self._client.list_node_io(
-                    self._models.ListNodeIORequest(node_id=node_id, project_env="PROD", io_type="output")
+                    self._models.ListNodeIORequest(node_id=node_id, project_env="PROD", io_type=io_type)
                 ).body
             )
         except Exception as exc:
             raise _safe_error(exc) from exc
         data = (body or {}).get("Data") or []
-        outputs: List[str] = []
+        values: List[str] = []
         if isinstance(data, list):
             for item in data:
                 if isinstance(item, dict):
                     value = item.get("Data") or item.get("TableName")
                     if isinstance(value, str) and value.strip():
-                        outputs.append(value.strip())
-        return outputs
+                        values.append(value.strip())
+        return values
+
+    def list_node_outputs(self, node_id: int) -> List[str]:
+        return self.list_node_io_items(node_id, "output")
+
+    def list_node_inputs(self, node_id: int) -> List[str]:
+        return self.list_node_io_items(node_id, "input")
 
     def find_design_file_for_node(self, project_id: int, node_id: int) -> Optional[dict[str, Any]]:
         try:
@@ -342,6 +349,7 @@ class DataWorksClient:
             file_name = _string_or_none((design_file or {}).get("FileName")) or _string_or_none(node.get("NodeName"))
             folder = _string_or_none((design_file or {}).get("AbsoluteFolderPath"))
             file_path = "/".join(part for part in [folder, file_name] if part)
+            inputs = self.list_node_inputs(node_id)
             outputs = self.list_node_outputs(node_id)
             fingerprint: Optional[str] = None
             if design_file_id is not None:
@@ -358,6 +366,7 @@ class DataWorksClient:
                     program_type=_string_or_none(node.get("ProgramType")),
                     scheduler_type=_string_or_none(node.get("SchedulerType")) or _string_or_none(scheduler_type),
                     repeatability=repeatability,
+                    inputs=_table_names_from_outputs(inputs),
                     outputs=outputs,
                     tables=_table_names_from_outputs(outputs),
                     fingerprint=fingerprint,

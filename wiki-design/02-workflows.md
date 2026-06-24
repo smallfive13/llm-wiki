@@ -285,6 +285,21 @@ Agent 用知识库答疑时默认先信库，不把 DataWorks 当作每问必查
 
 L3 人控：如果回源发现 DataWorks 当前实现与库内口径不一致，只能把差异标为 maintainer 复核项（例如 review queue 或 source-gap），不得自动改正本、不得直接设置 `review: true`。
 
+### DataWorks 表名反查路由
+
+当问题是"线上表对应哪张离线表"、"某字段从哪层来"、"哪个 DWD/DWB 更适合答业务口径"这类表名路由问题时，先查本地 `.wiki/dataworks_index.json`，不要直接全量扫 DataWorks。入口：
+
+```bash
+python3 scripts/wiki_index.py reverse --root <instance-root> --table <table-name>
+```
+
+反查输出必须包含贴源 ODS、下游候选、每个候选的层级说明、是否已有知识页、以及调度血缘 caveat。Agent 使用结果时按以下顺序判断：
+
+1. 优先推荐 DWD / DWB 明细层候选，因为它们通常最接近可解释业务口径。
+2. DWS / ADS 仍要展示，但说明它们偏汇总或应用层，不默认当作明细口径。
+3. 只有 ODS 且无下游时，返回 ODS 溯源结果并说明"未找到下游候选，需人工继续查"。
+4. 反查结果只代表 DataWorks 调度血缘，可能漏掉动态 SQL、脚本内临时表或未登记依赖；不得自动写 wiki 正本。
+
 回答出处：
 
 - 依据库内页面时，回答末尾仍列 source 页的 `source_url`。

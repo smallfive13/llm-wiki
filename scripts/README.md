@@ -466,7 +466,7 @@ python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge --apply-stale
 - `SchedulerType == "PAUSE"` 不进入主索引。
 - `ListFiles(node_id=<prod node id>)` 用来反查设计态 `FileId`；`CommitStatus` 只作为辅助字段，不作为生产过滤依据。
 
-索引默认写到实例根 `.wiki/dataworks_index.json`。这是受管共享基线，应进 Git，但 `.ignore` 默认屏蔽 `.wiki/`，所以不会进入全文检索。索引不包含代码原文、凭证或客户级样本；只保留路径、输出表、分层、指纹和同步信息。JSON 稳定排序，固定 `index_version`，没有每次运行都会变化的 `generated_at`。
+索引默认写到实例根 `.wiki/dataworks_index.json`。这是受管共享基线，应进 Git，但 `.ignore` 默认屏蔽 `.wiki/`，所以不会进入全文检索。索引不包含代码原文、凭证或客户级样本；只保留路径、输入表、输出表、分层、指纹和同步信息。JSON 稳定排序，固定 `index_version`，没有每次运行都会变化的 `generated_at`。
 
 用法：
 
@@ -474,6 +474,11 @@ python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge --apply-stale
 python3 scripts/wiki_index.py --root /abs/path/to/knowledge-pk --project-id 96107 --project-identifier pk_data
 python3 scripts/wiki_index.py --root /abs/path/to/knowledge-pk --project-id 96107 --project-identifier pk_data --json
 python3 scripts/wiki_index.py --root /abs/path/to/knowledge-pk --project-id 96107 --project-identifier pk_data --write
+python3 scripts/wiki_index.py --root /abs/path/to/knowledge-pk --project-id 96107 --project-identifier pk_data --max-pages 2
+python3 scripts/wiki_index.py reverse --root /abs/path/to/knowledge-pk --table mysql_trade.orders
+python3 scripts/wiki_index.py reverse --root /abs/path/to/knowledge-pk --table mysql_trade.orders --json
 ```
 
 默认是 dry-run，只打印将写入的摘要；只有显式 `--write` 才更新 `.wiki/dataworks_index.json`。
+
+全量初始化不传 `--max-pages`，会按 DataWorks `PageNumber` / `PageSize` 翻页拉完整 PROD 调度清单；验证或排障时可以用 `--max-pages 2` 做限量 smoke。`reverse` 子命令只读本地索引，不调用 DataWorks：给定线上表或离线表名后，输出贴源 ODS、下游候选、分层说明、是否已有知识页，以及 caveat："基于 DataWorks 调度血缘，可能漏掉动态 SQL、脚本内临时表或未登记依赖"。候选不隐藏非明细层；推荐优先 DWD / DWB 明细层，没有下游时返回 ODS 并提示人工继续追。

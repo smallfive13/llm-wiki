@@ -3,7 +3,7 @@ id: task_20260624_032
 title: Apply RFC-028 M1 全量初始化 + 反查能力（双向血缘 + ODS↔线上源表 + 表名反查）
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-06-24
 updated: 2026-06-24
@@ -68,7 +68,98 @@ $PY scripts/wiki_index.py reverse --root /Users/zhangjunwu/workspace/obsidian/kn
 
 ## Execution log by codex · <date>
 
-（执行者填写）
+## Execution log by codex · 2026-06-24
+
+Step 0 实跑核实结论：
+
+- `ListNodes(project_env="PROD")` 使用 `PageNumber` / `PageSize` 翻页；实跑 page1=100、page2=100，raw `TotalCount=1384`，全 raw 翻页 pages=14、raw_nodes=1384。
+- 生产过滤口径实跑结果：`Repeatability == true` 且 `SchedulerType == "NORMAL"` 后 normal_repeatable=1353；PAUSE=30。
+- `ListNodeIO(io_type="input")` 返回顶层 `Data/ErrorCode/ErrorMessage/HttpStatusCode/RequestId/Success`；`Data` 是列表，每项含 `Data/NodeId/TableName` 等字段。本 task 读取 `Data`，缺失时回退 `TableName`。
+- ODS inputs 含线上 / 前序源表名。样本：node `ods.loan_biz_credit_enhancement_apply.extract` 的 input 为 `pk_data.ods.loan_biz_credit_enhancement_apply.pre`，outputs 含 `pk_data.ods.loan_biz_credit_enhancement_apply.extract`。
+- 分层样本覆盖 `ODS/DWD/DWB/DWS/unknown`；实跑前 500 raw 节点样本中有 `dwb_oper_coupon_detail`、`dwd_rhino_qc_case_content_2mysql`、`dws_holo.dws_train_user_paper_subject_detail_info`、`ods_sdk_backend_autosync_...`。
+
+改动文件：
+
+- `scripts/dataworks_client.py`：`DataWorksNode` 增 `inputs`；`list_node_io_items()` 统一读 input/output；`list_prod_nodes()` 记录双向血缘。
+- `scripts/wiki_index.py`：`index_version` bump 到 2；索引 item 增 `inputs[]`；分层识别扩展到 `ods/dwd/dwb/dws/ads`；新增 `reverse` 子命令，输出 ODS 溯源、下游候选、分层说明、知识页命中状态和调度血缘 caveat。
+- `tests/test_task_031.py`：适配 v2 index 与 inputs。
+- `tests/test_task_032.py`：覆盖分页、双向血缘、ODS↔线上源表、DWB/DWS/ADS/unknown、reverse、全限定表名不按后缀误匹配、进程级隔离、缺凭证 warning。
+- `scripts/README.md`、`wiki-design/02-workflows.md`：补全全量索引 / reverse 用法与答疑路由策略。
+- pk 实例 `/Users/zhangjunwu/workspace/obsidian/knowledge-pk/AGENTS.md`：同步表名反查约定。
+- pk 实例 `/Users/zhangjunwu/workspace/obsidian/knowledge-pk/.wiki/dataworks_index.json`：限量两页 smoke 写入 v2 受管索引。
+
+验证输出：
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -c "import sys; sys.path.insert(0,'scripts'); import wiki_lint,wiki_graph,wiki_eval; print('泄漏:', [m for m in sys.modules if any(k in m.lower() for k in ('dataworks','wiki_index','alibabacloud','sqlglot'))] or '无')"
+泄漏: 无
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest -v tests.test_task_031 tests.test_task_032
+Ran 15 tests ... OK
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest discover -s tests
+Ran 132 tests in 41.259s
+OK (skipped=1)
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --check-docs
+受管块: 6
+错误: 0
+
+engine_lint=0
+engine_graph=0
+engine_eval=0
+datawarehouse_lint=0
+personal_lint=0
+pk_lint=0
+pk_graph=0
+pk_eval=0
+```
+
+真实限量翻页 smoke：
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_index.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --project-id 96107 --project-identifier pk_data --max-pages 2 --write
+wiki-index
+==========
+action: write
+target: /Users/zhangjunwu/workspace/obsidian/knowledge-pk/.wiki/dataworks_index.json
+items: 176
+layers: DWB:1 · DWD:11 · DWS:1 · ODS:155 · unknown:8
+contains_code_payload: False
+```
+
+真实 reverse smoke：
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_index.py reverse --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --table pk_data.ods.loan_biz_credit_enhancement_apply.pre
+wiki-index reverse
+table: pk_data.ods.loan_biz_credit_enhancement_apply.pre
+caveat: 基于 DataWorks 调度血缘，可能漏掉动态 SQL、脚本内临时表或未登记依赖。
+Recommended:
+- ODS ods.loan_biz_credit_enhancement_apply.extract ... missing_knowledge_page
+- ODS ods.loan_biz_credit_enhancement_apply.pre ... missing_knowledge_page
+Warnings:
+- 未找到下游明细/汇总/应用层候选；先返回 ODS 溯源结果，需人工继续查下游。
+```
+
+执行中发现并修复的异常：
+
+- 初版 reverse 对全限定表名 `pk_data....pre` 会按最后一段 `pre` 误匹配所有 `.pre` ODS。已改为：全限定查询只精确匹配；只有用户输入无点短名时才允许 basename 匹配，并新增单测锁定。
+
+pk 实例 commit：
+
+- `8ac50e7cc948ff1cb662780a68a105e1a68073d3` `[index] upgrade DataWorks index reverse baseline`，已 push 到 `http://git.ppdaicorp.com/international_data/knowledge-pk.git`。
+
+maintainer 全量初始化命令：
+
+```bash
+cd /Users/zhangjunwu/workspace/llm-wiki/llm-wiki
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_index.py \
+  --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk \
+  --project-id 96107 \
+  --project-identifier pk_data \
+  --write
+```
 
 ## Evaluation by claude · <date>
 
