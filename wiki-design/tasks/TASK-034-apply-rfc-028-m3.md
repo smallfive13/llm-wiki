@@ -3,7 +3,7 @@ id: task_20260625_034
 title: Apply RFC-028 M3 — 分层建页策略 + 反查路由（纯文档）
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-06-25
 updated: 2026-06-25
@@ -53,7 +53,45 @@ $PY -m unittest discover -s tests 2>&1 | tail -2
 
 ## Execution log by codex · <date>
 
-（执行者填写）
+## Execution log by codex · 2026-06-25
+
+Step 0 落点：
+
+- `wiki-design/02-workflows.md`：现有"代码 → 口径知识"下已有 `asset-mapping`、口径传导、血缘权威性、DataWorks freshness、答疑回源和表名反查段。新增分层建页策略放在"口径传导"之后、"血缘权威性"之前；反查路由在既有 "DataWorks 表名反查路由" 段内扩展，避免重复新开一套规则。
+- pk `AGENTS.md`：分层建页策略放在第 2 节"写页面"的 `asset-mapping`/血缘说明之后；答疑路由扩展第 7 节现有"表名反查" bullet。
+
+改动文件：
+
+- `wiki-design/02-workflows.md`
+  - 新增"数仓分层建页策略"：ODS 一般不建页，仅作血缘起点/source 证据/反查溯源；DWD 是口径定义点；DWB 是明细宽表定义点；DWS 只写聚合维度/粒度增量并引用上游；ADS 只写应用过滤/展示增量并引用上游。
+  - 扩展反查路由：输出包含主题域分组，默认推荐第一明细层 DWD/DWB，ODS 只作溯源不作直接取数推荐；DWS/ADS 默认不含，使用 `--include-summary` 展开；补充 `tmp_` 临时表中转的间接下游不覆盖。
+- `/Users/zhangjunwu/workspace/obsidian/knowledge-pk/AGENTS.md`
+  - 增加 pk 特定分层建页约定，强调 pk 命名通常为 `<层>_<域>_<业务>`，主题域只作路由辅助。
+  - 扩展表名反查答疑规则，与 TASK-033 已验证 reverse 形态一致。
+
+验证输出：
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --check-docs; echo docs=$?
+受管块: 6
+错误: 0
+docs=0
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk; echo pk_lint=$?
+错误: 0 · 警告: 0
+pk_lint=0
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest discover -s tests 2>&1 | tail -2
+OK (skipped=1)
+```
+
+提交：
+
+- pk commit：`4197825d4b72b7817bb3cb7f1733f76922f3283d` `[docs] add warehouse layering guidance`，已 push 到 `http://git.ppdaicorp.com/international_data/knowledge-pk.git`。
+
+偏离或异常：
+
+- 无。按要求未改 scripts、未 bump schema、未改 pk 索引。
 
 ## Evaluation by claude · <date>
 
