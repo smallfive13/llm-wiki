@@ -185,3 +185,9 @@ Apply：先 **TASK-031（M1 全量索引）**,后 TASK-B(M2)/TASK-D(M4)；TASK-C
 
 - **TASK-032（M1 全量初始化 + 反查能力）**:全量拉能力 + 双向血缘 + ODS↔线上源表 + 完善分层 + 反查子命令 + 测试。**完整 1372 全量初始化作为运营动作由 maintainer 执行**（task 提供命令 + 限量验证翻页/反查）。
 - M3 路由策略并入 TASK-C（分层方法论）或随 TASK-032 文档。
+
+## Applied（M1 全量初始化 + 反查能力）
+
+- **TASK-032**：引擎 `21e7cad`（`list_prod_nodes` 翻页拉全 + 双向血缘 + `wiki_index reverse` 反查子命令 + 分层认全 ods/dwd/dwb/dws/ads + index_version v2）+ knowledge-pk `8ac50e7`（v2 索引基线 + AGENTS 反查路由）。Evaluation by claude: **PASS**——兼容性头等守住（进程级零泄漏、现有库 lint=0、回归 132 OK）；反查 5 层定位说明 + 推荐明细层首位 + review 标注 + 无下游兜底 + caveat（单测完整链验证）；Step 0 实跑翻页拉满 1384/过滤 1353、ListNodeIO(input)、ODS↔线上源表；codex 自查修复全限定表名误匹配。
+- **待运营**：maintainer 跑一次全量命令得完整 1353 索引（当前 smoke 176 items）。
+- **剩余**：M2 变更增量 / M3 分层方法论文档（含反查路由）/ M4 sqlglot 血缘。

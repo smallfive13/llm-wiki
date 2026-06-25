@@ -161,6 +161,37 @@ cd /Users/zhangjunwu/workspace/llm-wiki/llm-wiki
   --write
 ```
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-24
 
-（评估者填写）
+**Verdict: PASS。** 兼容性头等约束守住,反查能力按钉死形态实现并由完整链单测验证,M1 全量初始化能力 + 反查能力就绪。
+
+### 兼容性（头等，独立复验）
+
+| 核验 | 结果 |
+| --- | --- |
+| 核心工具进程级零新依赖 | `wiki_lint/graph/eval` import 后无 dataworks/wiki_index/alibabacloud/sqlglot → **泄漏: 无** ✓ |
+| 现有库行为不变 | datawarehouse / personal lint=0 ✓ |
+| 全量回归 | **132 tests OK (skipped=1)** ✓ |
+
+### 反查形态（实现 + 单测确认，不受 smoke 索引血缘稀疏限制）
+
+- **5 层定位说明全在**(wiki_index.py:167-171):ODS=贴源溯源不优先 / DWD=明细定义层优先 / DWB=明细宽表优先 / DWS=汇总粒度 / ADS=应用报表;
+- 单测 `test_reverse_online_source_to_ods_and_downstream_with_knowledge_page`:线上表 → 反查 → **断言 `recommended[0].layer=="DWD"`(推荐明细层首位)+ `has_knowledge_page`(知识页标注)** ✓——这正是我们定的"全候选+推荐明细层+review 标注"形态;
+- `test_reverse_ods_without_downstream_warns`:无下游兜底警示 ✓;`caveat`(调度血缘可能漏动态SQL)✓。
+
+### Step 0 实跑 + 索引 v2
+
+- 翻页 `PageNumber/PageSize` 拉满(raw TotalCount **1384**、过滤后 normal_repeatable **1353**;较 TASK-031 的 1372 涨 12,生产节点动态变化正常);`ListNodeIO(input)` 拿到 ODS 输入表;分层认全 ods/dwd/dwb/dws;
+- 索引 **v2**:item 含 `inputs[]`+`outputs[]` 双向血缘 + ODS↔线上源表;`index_version` bump;无 volatile、零代码/凭证(沿用 TASK-031 校验)。
+
+### 主动质量（认可）
+
+codex 自查发现并修复 reverse 的**全限定表名误匹配**(`...pre` 按末段 `pre` 误匹配所有 ODS)→ 改为全限定只精确匹配、仅短名允 basename,并加单测 `test_reverse_fully_qualified_table_does_not_match_only_suffix` 锁定。
+
+### 限量验证（按 task 设计）
+
+176 items(前 2 页)而非全量——task 明确"完整 1353 全量由 maintainer 跑"。**全量初始化命令已文档化**,待 maintainer 执行一次即得完整基线。
+
+### 结论
+
+RFC-028 M1 全量初始化能力 + 反查能力就绪。TASK-032 done 有效(引擎 `21e7cad` / pk `8ac50e7`)。下一步:maintainer 跑一次全量命令得完整 1353 索引;之后"线上表用离线哪张"可按"全候选+分层说明+推荐明细层+兜底"回答。剩 M2(变更增量)/M3(分层方法论文档)/M4(sqlglot)。
