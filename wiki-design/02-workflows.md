@@ -295,10 +295,11 @@ python3 scripts/wiki_index.py reverse --root <instance-root> --table <table-name
 
 反查输出必须包含贴源 ODS、下游候选、每个候选的层级说明、是否已有知识页、以及调度血缘 caveat。Agent 使用结果时按以下顺序判断：
 
-1. 优先推荐 DWD / DWB 明细层候选，因为它们通常最接近可解释业务口径。
-2. DWS / ADS 仍要展示，但说明它们偏汇总或应用层，不默认当作明细口径。
-3. 只有 ODS 且无下游时，返回 ODS 溯源结果并说明"未找到下游候选，需人工继续查"。
-4. 反查结果只代表 DataWorks 调度血缘，可能漏掉动态 SQL、脚本内临时表或未登记依赖；不得自动写 wiki 正本。
+1. 反查工具会实时归一化表名：`ods.X.extract/pre/assign/fix` 与 `ods_X` 视为同一 ODS 处理链，`_dly/_snp/_mly/_hly` 等身份后缀保留，不做 token 模糊匹配。
+2. 默认穿过 ODS 内部处理环节，收敛到第一层 DWD / DWB，并按主题域分组；这些候选通常最接近可解释业务口径。
+3. DWS / ADS 默认不展示；只有用户明确要看汇总 / 应用层或排查下游扩散时，才加 `--include-summary`。
+4. 只有 ODS 且无下游时，返回 ODS 溯源结果并说明"未找到下游候选，需人工继续查"。
+5. 反查结果只代表 DataWorks 调度血缘，可能漏掉动态 SQL、脚本内临时表或未登记依赖；不得自动写 wiki 正本。
 
 回答出处：
 

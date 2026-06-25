@@ -476,9 +476,10 @@ python3 scripts/wiki_index.py --root /abs/path/to/knowledge-pk --project-id 9610
 python3 scripts/wiki_index.py --root /abs/path/to/knowledge-pk --project-id 96107 --project-identifier pk_data --write
 python3 scripts/wiki_index.py --root /abs/path/to/knowledge-pk --project-id 96107 --project-identifier pk_data --max-pages 2
 python3 scripts/wiki_index.py reverse --root /abs/path/to/knowledge-pk --table mysql_trade.orders
+python3 scripts/wiki_index.py reverse --root /abs/path/to/knowledge-pk --table mysql_trade.orders --include-summary
 python3 scripts/wiki_index.py reverse --root /abs/path/to/knowledge-pk --table mysql_trade.orders --json
 ```
 
 默认是 dry-run，只打印将写入的摘要；只有显式 `--write` 才更新 `.wiki/dataworks_index.json`。
 
-全量初始化不传 `--max-pages`，会按 DataWorks `PageNumber` / `PageSize` 翻页拉完整 PROD 调度清单；验证或排障时可以用 `--max-pages 2` 做限量 smoke。`reverse` 子命令只读本地索引，不调用 DataWorks：给定线上表或离线表名后，输出贴源 ODS、下游候选、分层说明、是否已有知识页，以及 caveat："基于 DataWorks 调度血缘，可能漏掉动态 SQL、脚本内临时表或未登记依赖"。候选不隐藏非明细层；推荐优先 DWD / DWB 明细层，没有下游时返回 ODS 并提示人工继续追。
+全量初始化不传 `--max-pages`，会按 DataWorks `PageNumber` / `PageSize` 翻页拉完整 PROD 调度清单；验证或排障时可以用 `--max-pages 2` 做限量 smoke。`reverse` 子命令只读本地索引，不调用 DataWorks：给定线上表或离线表名后，反查时实时归一化表名（`ods.X.extract/pre/assign/fix` 与 `ods_X` 统一，保留 `_dly/_snp` 等身份后缀），再做精确血缘匹配。默认穿过 ODS 内部处理环节并收敛到第一层 DWD / DWB，按主题域分组输出候选、层级说明、是否已有知识页，以及 caveat："基于 DataWorks 调度血缘，可能漏掉动态 SQL、脚本内临时表或未登记依赖"。DWS / ADS 默认不展示；需要展开汇总/应用层时显式加 `--include-summary`。

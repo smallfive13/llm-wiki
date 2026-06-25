@@ -3,7 +3,7 @@ id: task_20260625_033
 title: 修复 RFC-028 反查 — 表名归一化 + 收敛到第一明细层 + 主题域分组
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-06-25
 updated: 2026-06-25
@@ -76,7 +76,77 @@ $PY scripts/wiki_index.py reverse --root /Users/zhangjunwu/workspace/obsidian/kn
 
 ## Execution log by codex · <date>
 
-（执行者填写）
+## Execution log by codex · 2026-06-25
+
+Step 0 纯本地核实结论：
+
+- 读取现有 pk 索引 `/Users/zhangjunwu/workspace/obsidian/knowledge-pk/.wiki/dataworks_index.json`，`index_version=2`，`items=1356`，未重跑全量索引。
+- 点分末段高频后缀：`extract=954`、`pre=954`、`assign=75`、`fix=22`；这些是 ODS 处理环节词。其它后缀是业务表名片段或粒度名，未纳入去除集合。
+- 主题域分布样本：`ods:pak=469`、`dwd:risk=230`、`ods:s=151`、`ods:sdk=144`、`dwb:asset=94`、`dwd:asset=73`、`dwb:coll=72`、`dwd:trade=43`、`dws:asset=27`、`dwd:mkt=23`、`dwb:fin=22` 等；域按表名实时提取，不写入索引。
+- 还款链原始事实：
+  - ODS 环节：`ods.pak_listing_autosync_3_tb_repay_record.pre` → `ods.pak_listing_autosync_3_tb_repay_record.extract` → `ods_pak_listing_autosync_3_tb_repay_record`
+  - 真直接明细下游：`DWD dwd_asset_repay_record`，input 为 `pk_data.ods_pak_listing_autosync_3_tb_repay_record`。
+- 修改前真实反查返回 30+ 候选并跨 risk/coll/fin 等域扩散；修改后收敛为 1 个 asset 域明细候选。
+
+改动文件：
+
+- `scripts/wiki_index.py`
+  - 新增 `normalize_table_key()`：反查时实时归一化表名，去点分末段环节词 `{extract, pre, assign, fix}`，统一 `ods.X` 与 `ods_X`，保留 `_dly/_snp/_mly/_hly` 等身份后缀和 project 前缀。
+  - 新增 `table_domain()` 与 `domain_groups`：按 `<层>_<域>_` 提取主题域，reverse 输出按域分组。
+  - `build_reverse_report()` 改为归一化精确匹配，穿 ODS 内部环节，到第一层 DWD/DWB 停；默认不纳入 DWS/ADS。新增 `--include-summary` 显式展示汇总/应用层，`--depth` 控制 ODS 穿透深度。
+  - 移除 token/basename 模糊匹配和 `range(5)` 多跳扩散。
+- `tests/test_task_032.py`：同步 TASK-033 默认不含 DWS/ADS 的新口径。
+- `tests/test_task_033.py`：新增专项 fixture，覆盖 `ods.X.extract` ↔ `ods_X` 归一精确连、多跳不爆炸、身份后缀不误合、多域分组、`--include-summary` 显式展开、无下游兜底和进程级隔离。
+- `scripts/README.md`、`wiki-design/02-workflows.md`：同步归一化、第一明细层收敛、域分组和 `--include-summary` 文档。
+- pk 实例 `AGENTS.md`：同步表名反查新口径；索引未改。
+
+验证输出：
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -c "import sys; sys.path.insert(0,'scripts'); import wiki_lint,wiki_graph,wiki_eval; print('泄漏:', [m for m in sys.modules if any(k in m.lower() for k in ('dataworks','wiki_index','alibabacloud','sqlglot'))] or '无')"
+泄漏: 无
+
+datawarehouse_lint=0
+personal_lint=0
+pk_lint=0
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest -v tests.test_task_033
+Ran 8 tests in 0.091s
+OK
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest discover -s tests
+Ran 140 tests in 60.991s
+OK (skipped=1)
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --check-docs
+受管块: 6
+错误: 0
+```
+
+真实反查前后对比：
+
+- 修改前：`pk_data.ods.pak_listing_autosync_3_tb_repay_record.extract` 返回 30+ DWD/DWB 候选，跨 asset/risk/coll/fin 等域；真下游 `dwd_asset_repay_record` 被淹没。
+- 修改后：
+
+```text
+table: pk_data.ods.pak_listing_autosync_3_tb_repay_record.extract
+normalized_key: pk_data.ods_pak_listing_autosync_3_tb_repay_record
+Recommended:
+- [asset] DWD dwd_asset_repay_record · pk_data.dwd_asset_repay_record · has_knowledge_page
+
+ODS upstream:
+- ods.pak_listing_autosync_3_tb_repay_record.extract
+- ods.pak_listing_autosync_3_tb_repay_record.pre
+- ods_pak_listing_autosync_3_tb_repay_record
+
+Downstream candidates:
+[asset]
+- DWD dwd_asset_repay_record · pk_data.dwd_asset_repay_record · has_knowledge_page
+```
+
+提交：
+
+- pk 实例文档 commit：`c45ab3d7e84eead4a99d490431bb435547f3615f` `[docs] tighten DataWorks reverse lookup guidance`，已 push 到 `http://git.ppdaicorp.com/international_data/knowledge-pk.git`。
 
 ## Evaluation by claude · <date>
 

@@ -19,6 +19,8 @@ INDEX_VERSION = 2
 DEFAULT_INDEX_REL = ".wiki/dataworks_index.json"
 LAYER_ORDER = {"ODS": 0, "DWD": 1, "DWB": 2, "DWS": 3, "ADS": 4, "unknown": 9}
 DETAIL_LAYERS = {"DWD", "DWB"}
+SUMMARY_LAYERS = {"DWS", "ADS"}
+ODS_STAGE_SUFFIXES = {"extract", "pre", "assign", "fix"}
 CAVEAT = "基于 DataWorks 调度血缘，可能漏掉动态 SQL、脚本内临时表或未登记依赖。"
 
 
@@ -162,6 +164,36 @@ def normalize_table(text: str) -> str:
     return str(text or "").strip().lower()
 
 
+def normalize_table_key(text: str) -> str:
+    raw = normalize_table(text)
+    if not raw:
+        return ""
+    parts = [part for part in raw.split(".") if part]
+    if parts and parts[-1] in ODS_STAGE_SUFFIXES:
+        parts = parts[:-1]
+    if not parts:
+        return ""
+    project = parts[0]
+    rest = "_".join(parts[1:]) if len(parts) > 1 else project
+    if len(parts) == 1:
+        return project
+    for layer in ("ods", "dwd", "dwb", "dws", "ads"):
+        if rest == layer:
+            rest = layer
+            break
+        if rest.startswith(f"{layer}_") or rest.startswith(f"{layer}-"):
+            rest = f"{layer}_{rest[len(layer) + 1:]}"
+            break
+    return f"{project}.{rest}"
+
+
+def table_domain(text: str) -> str:
+    key = normalize_table_key(text)
+    base = key.split(".")[-1]
+    match = re.match(r"^(?:ods|dwd|dwb|dws|ads)_([a-z0-9]+)", base)
+    return match.group(1) if match else "unknown"
+
+
 def layer_note(layer: str) -> str:
     return {
         "ODS": "贴源层，通常用于溯源线上源表，不优先作为业务口径答案。",
@@ -203,49 +235,18 @@ def item_tables(item: Dict[str, Any]) -> List[str]:
     return out
 
 
-def item_matches_table(item: Dict[str, Any], table: str) -> bool:
-    wanted = normalize_table(table)
-    use_short = "." not in wanted
-    for value in item_tables(item):
-        current = normalize_table(value)
-        if current == wanted or (use_short and current.split(".")[-1] == wanted):
-            return True
-    return False
-
-
-def normalized_aliases(value: str, *, include_short: bool = False) -> Set[str]:
-    text = normalize_table(value)
-    if not text:
-        return set()
-    values = {text}
-    if include_short:
-        values.add(text.split(".")[-1])
-    return values
-
-
-def query_aliases(value: str) -> Set[str]:
-    text = normalize_table(value)
-    if not text:
-        return set()
-    if "." in text:
-        return {text}
-    return {text}
-
-
-def item_value_keys(item: Dict[str, Any], keys: Iterable[str], *, include_short: bool = False) -> Set[str]:
+def item_keys(item: Dict[str, Any], keys: Iterable[str] = ("table", "inputs", "outputs")) -> Set[str]:
     values: Set[str] = set()
-    for key in keys:
-        raw = item.get(key)
-        if isinstance(raw, str):
-            values.update(normalized_aliases(raw, include_short=include_short))
-        elif isinstance(raw, list):
-            for value in raw:
-                values.update(normalized_aliases(str(value), include_short=include_short))
+    for value in item_tables({key: item.get(key) for key in keys}):
+        normalized = normalize_table_key(value)
+        if normalized:
+            values.add(normalized)
     return values
 
 
-def item_matches_any(item: Dict[str, Any], values: Set[str], keys: Iterable[str]) -> bool:
-    return bool(item_value_keys(item, keys, include_short=True) & values)
+def item_matches_table(item: Dict[str, Any], table: str) -> bool:
+    wanted = normalize_table_key(table)
+    return bool(wanted and wanted in item_keys(item))
 
 
 def candidate(item: Dict[str, Any], pages_by_table: Dict[str, List[str]]) -> Dict[str, Any]:
@@ -256,12 +257,14 @@ def candidate(item: Dict[str, Any], pages_by_table: Dict[str, List[str]]) -> Dic
         pages.extend(pages_by_table.get(normalize_table(value).split(".")[-1], []))
     pages = sorted(set(pages))
     layer = str(item.get("layer") or "unknown")
+    domain = table_domain(table or (item.get("node_name") or ""))
     return {
         "node_id": item.get("node_id"),
         "node_name": item.get("node_name"),
         "table": table,
         "layer": layer,
         "layer_note": layer_note(layer),
+        "domain": domain,
         "review": "has_knowledge_page" if pages else "missing_knowledge_page",
         "knowledge_pages": pages,
         "dataworks_ref": item.get("dataworks_ref"),
@@ -270,75 +273,111 @@ def candidate(item: Dict[str, Any], pages_by_table: Dict[str, List[str]]) -> Dic
     }
 
 
-def build_reverse_report(index: Dict[str, Any], table: str, *, root: Optional[Path] = None) -> Dict[str, Any]:
+def group_by_domain(items: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for item in items:
+        groups.setdefault(str(item.get("domain") or "unknown"), []).append(item)
+    return {key: groups[key] for key in sorted(groups)}
+
+
+def build_reverse_report(
+    index: Dict[str, Any],
+    table: str,
+    *,
+    root: Optional[Path] = None,
+    depth: int = 1,
+    include_summary: bool = False,
+) -> Dict[str, Any]:
     items = [item for item in index.get("items", []) if isinstance(item, dict)]
     pages_by_table = knowledge_page_map(root) if root else {}
-    wanted = query_aliases(table)
-    direct_matches = [item for item in items if item_matches_table(item, table)]
-    upstream_items = [
-        item
-        for item in direct_matches
-        if str(item.get("layer")) == "ODS"
-        or item_matches_any(item, wanted, ("inputs",))
-    ]
+    wanted = normalize_table_key(table)
+    upstream_items: List[Dict[str, Any]] = []
+    first_layer_items: List[Dict[str, Any]] = []
+    summary_items: List[Dict[str, Any]] = []
+    seen_summary: Set[str] = set()
+
+    for item in items:
+        layer = str(item.get("layer") or "unknown")
+        if not wanted or wanted not in item_keys(item, ("table", "inputs", "outputs")):
+            continue
+        if layer == "ODS":
+            upstream_items.append(item)
+        elif layer in DETAIL_LAYERS:
+            first_layer_items.append(item)
+        elif layer in SUMMARY_LAYERS:
+            key = str(item.get("node_id"))
+            if key not in seen_summary:
+                seen_summary.add(key)
+                summary_items.append(item)
+
     upstream_ids = {str(item.get("node_id")) for item in upstream_items}
-
-    downstream_items: List[Dict[str, Any]] = []
-    seen_downstream: Set[str] = set()
-
-    def add_downstream(item: Dict[str, Any]) -> None:
-        key = str(item.get("node_id"))
-        if key in upstream_ids or key in seen_downstream:
-            return
-        if str(item.get("layer")) == "ODS":
-            return
-        seen_downstream.add(key)
-        downstream_items.append(item)
-
-    for item in direct_matches:
-        add_downstream(item)
-
-    frontier: Set[str] = set()
+    seen_details = {str(item.get("node_id")) for item in first_layer_items}
+    frontier: Set[str] = {wanted} if wanted else set()
     for item in upstream_items:
-        frontier.update(item_value_keys(item, ("table", "outputs"), include_short=False))
-    if not frontier:
-        frontier = set(wanted)
+        frontier.update(item_keys(item, ("table", "outputs")))
 
-    # Follow scheduling lineage from ODS outputs into downstream inputs. Keep a
-    # small deterministic bound so reverse lookup cannot balloon on dirty graphs.
-    for _depth in range(5):
-        next_frontier: Set[str] = set()
+    max_depth = max(1, int(depth or 1))
+    for _ in range(max_depth):
+        if not frontier:
+            break
+        next_frontier = set()
+        found_detail = False
         for item in items:
             key = str(item.get("node_id"))
-            if key in upstream_ids or key in seen_downstream or str(item.get("layer")) == "ODS":
+            layer = str(item.get("layer") or "unknown")
+            if key in upstream_ids or key in seen_details:
                 continue
-            if item_matches_any(item, frontier, ("inputs", "table", "outputs")):
-                add_downstream(item)
-                next_frontier.update(item_value_keys(item, ("table", "outputs")))
+            if not (item_keys(item, ("inputs",)) & frontier):
+                continue
+            if layer == "ODS":
+                upstream_items.append(item)
+                upstream_ids.add(key)
+                next_frontier.update(item_keys(item, ("table", "outputs")))
+                continue
+            if layer in DETAIL_LAYERS:
+                first_layer_items.append(item)
+                seen_details.add(key)
+                found_detail = True
+                continue
+            if include_summary and layer in SUMMARY_LAYERS:
+                if key not in seen_summary:
+                    seen_summary.add(key)
+                    summary_items.append(item)
+        if found_detail:
+            break
         if not next_frontier or next_frontier <= frontier:
             break
         frontier = next_frontier
 
     upstream = [candidate(item, pages_by_table) for item in upstream_items]
-    downstream = [candidate(item, pages_by_table) for item in downstream_items]
+    downstream = [candidate(item, pages_by_table) for item in first_layer_items]
+    summary = [candidate(item, pages_by_table) for item in summary_items] if include_summary else []
     if upstream and not downstream:
         warnings = ["未找到下游明细/汇总/应用层候选；先返回 ODS 溯源结果，需人工继续查下游。"]
     elif not upstream and not downstream:
         warnings = ["索引中未命中该表；可能是非生产调度节点、动态 SQL、未拉全索引或表名不一致。"]
     else:
         warnings = []
-    all_candidates = upstream + downstream
+    all_candidates = upstream + downstream + summary
     recommended = [
         item for item in downstream if item.get("layer") in DETAIL_LAYERS
-    ] or downstream or upstream
+    ] or downstream or summary or upstream
     sort_key = lambda item: (LAYER_ORDER.get(str(item.get("layer") or "unknown"), 9), str(item.get("node_name") or ""))
+    upstream = sorted(upstream, key=sort_key)
+    downstream = sorted(downstream, key=sort_key)
+    summary = sorted(summary, key=sort_key)
+    recommended = sorted(recommended, key=sort_key)
+    all_candidates = sorted(all_candidates, key=sort_key)
     return {
         "table": table,
+        "normalized_key": wanted,
         "caveat": CAVEAT,
-        "upstream_ods": sorted(upstream, key=sort_key),
-        "downstream_candidates": sorted(downstream, key=sort_key),
-        "recommended": sorted(recommended, key=sort_key),
-        "all_candidates": sorted(all_candidates, key=sort_key),
+        "upstream_ods": upstream,
+        "downstream_candidates": downstream,
+        "summary_candidates": summary,
+        "recommended": recommended,
+        "all_candidates": all_candidates,
+        "domain_groups": group_by_domain(downstream),
         "warnings": warnings,
     }
 
@@ -348,13 +387,14 @@ def render_reverse(report: Dict[str, Any]) -> str:
         "wiki-index reverse",
         "==================",
         f"table: {report['table']}",
+        f"normalized_key: {report['normalized_key']}",
         f"caveat: {report['caveat']}",
         "",
         "Recommended",
         "-----------",
     ]
     for item in report["recommended"]:
-        lines.append(f"- {item['layer']} {item['node_name']} · {item['table'] or '(no table)'} · {item['review']} · {item['layer_note']}")
+        lines.append(f"- [{item['domain']}] {item['layer']} {item['node_name']} · {item['table'] or '(no table)'} · {item['review']} · {item['layer_note']}")
     if not report["recommended"]:
         lines.append("- (none)")
     lines.extend(["", "ODS upstream", "------------"])
@@ -363,10 +403,16 @@ def render_reverse(report: Dict[str, Any]) -> str:
     if not report["upstream_ods"]:
         lines.append("- (none)")
     lines.extend(["", "Downstream candidates", "---------------------"])
-    for item in report["downstream_candidates"]:
-        lines.append(f"- {item['layer']} {item['node_name']} · {item['table'] or '(no table)'} · {item['review']} · {item['layer_note']}")
+    for domain, items in report.get("domain_groups", {}).items():
+        lines.append(f"[{domain}]")
+        for item in items:
+            lines.append(f"- {item['layer']} {item['node_name']} · {item['table'] or '(no table)'} · {item['review']} · {item['layer_note']}")
     if not report["downstream_candidates"]:
         lines.append("- (none)")
+    if report.get("summary_candidates"):
+        lines.extend(["", "Summary candidates", "------------------"])
+        for item in report["summary_candidates"]:
+            lines.append(f"- [{item['domain']}] {item['layer']} {item['node_name']} · {item['table'] or '(no table)'} · {item['review']} · {item['layer_note']}")
     if report["warnings"]:
         lines.extend(["", "Warnings", "--------"])
         lines.extend(f"- {item}" for item in report["warnings"])
@@ -380,6 +426,8 @@ def build_parser() -> argparse.ArgumentParser:
     reverse.add_argument("--root", help="wiki instance root; default: knowledge")
     reverse.add_argument("--index", default=DEFAULT_INDEX_REL, help="index path relative to instance root")
     reverse.add_argument("--table", required=True, help="table name to lookup")
+    reverse.add_argument("--depth", type=int, default=1, help="ODS traversal depth before detail layer; default: 1")
+    reverse.add_argument("--include-summary", action="store_true", help="also include DWS/ADS summary candidates")
     reverse.add_argument("--json", action="store_true", help="output JSON")
 
     parser.add_argument("--root", help="wiki instance root; default: knowledge")
@@ -404,7 +452,7 @@ def main(argv: Optional[List[str]] = None, *, client_factory: Optional[Any] = No
     if args.command == "reverse":
         try:
             index = load_index(root, args.index)
-            report = build_reverse_report(index, args.table, root=root)
+            report = build_reverse_report(index, args.table, root=root, depth=args.depth, include_summary=args.include_summary)
         except ConfigError as exc:
             print(f"wiki-index config error: {exc}", file=sys.stderr)
             return 2
