@@ -442,14 +442,19 @@ python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge
 python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge --json
 python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge --check
 python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge --apply-stale
+python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge-pk --incremental-deployments --project-id 96107
+python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge-pk --incremental-deployments --project-id 96107 --check
+python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge-pk --incremental-deployments --project-id 96107 --apply
 ```
 
 默认只读，只输出 report 和 review_queue 建议，不改任何页面。`--apply-stale` 才会把 drift 页写成 `status: stale`，不改 `code_fingerprint`、`last_synced` 或其它字段。
 
+增量部署模式只看 DataWorks 成功部署到生产的文件变更：`ListDeployments(status=1)` + `GetDeployment(ToEnvironment=2)` + `DeployedItems[*].FileId/FileVersion`。它不是开发态编辑 / 草稿扫描。默认 dry-run：只对变更文件调用 `GetFile` 计算 `dw-code-v1` 指纹，和本地 `.wiki/dataworks_index.json` 比较，并用 `dataworks_ref` / 归一化血缘列出受影响口径页；不会改页面状态，也不会写索引。只有显式 `--apply` 才把变化后的指纹写回索引；页面是否 stale / review 仍由 maintainer 人工处理。
+
 退出码：
 
 - `0`：运行完成；有 drift / auth warning 也返回 0
-- `1`：`--check` 下发现 drift
+- `1`：`--check` 下发现 drift 或增量部署模式下存在 index update
 - `2`：参数或实例路径配置错误
 
 ## wiki-index

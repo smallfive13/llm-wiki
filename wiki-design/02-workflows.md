@@ -283,6 +283,14 @@ profile 可为 `asset-mapping`、`topic`、`decision` 增加可选锚点字段�
 
 `scripts/wiki_freshness.py` 是单独的在线巡检入口，默认只读：扫描锚点、调用 DataWorks SDK、输出 report 和 review_queue 建议，不修改 frontmatter。只有显式 `--apply-stale` 才把 drift 页改成 `status: stale`；`--check` 在发现 drift 时 exit 1，可作为 CI gate。`wiki_lint.py` / `wiki_graph.py` / `wiki_eval.py` 保持离线，不 import DataWorks SDK。
 
+增量防腐巡检使用同一入口的部署模式：
+
+```bash
+python3 scripts/wiki_freshness.py --root <instance-root> --incremental-deployments --project-id <project-id>
+```
+
+这里的"变更"只指 DataWorks 成功部署到生产的文件变更，不包括开发态编辑或草稿保存。工具读取 `ListDeployments(status=1)` + `GetDeployment(ToEnvironment=2)` 的 `DeployedItems[*].FileId/FileVersion`，只对这些变更文件 `GetFile` 计算指纹；再用本地索引的 `dataworks_ref` 和归一化血缘找受影响口径页，输出待复核清单。默认 dry-run，不改页面 status、不写索引；只有 maintainer 明确使用 `--apply` 才更新 `.wiki/dataworks_index.json` 中对应文件指纹。即使索引已更新，页面是否 stale、是否重新背书仍必须人工判断。
+
 ### 答疑回源
 
 Agent 用知识库答疑时默认先信库，不把 DataWorks 当作每问必查的实时后端。是否回源只看内容和页面状态，不看请求来自企微、CLI 还是其它入口。

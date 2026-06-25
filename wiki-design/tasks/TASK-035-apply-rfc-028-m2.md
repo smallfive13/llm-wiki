@@ -3,7 +3,7 @@ id: task_20260625_035
 title: Apply RFC-028 M2 — DataWorks 变更增量（生产部署变更 → 反查受影响页待复核）
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-06-25
 updated: 2026-06-25
@@ -64,7 +64,87 @@ $PY -m unittest discover -s tests 2>&1 | tail -2
 
 ## Execution log by codex · <date>
 
-（执行者填写）
+## Execution log by codex · 2026-06-25
+
+Step 0 实跑核实结论：
+
+- 当前 Codex 会话没有暴露可调用的 DataWorks MCP tool；未使用 MCP。
+- 回退到官方 SDK 路径并实跑确认：
+  - SDK 存在 `ListDeploymentsRequest` / `GetDeploymentRequest`。
+  - `ListDeploymentsRequest` 字段包括 `project_id/page_number/page_size/status/end_execute_time/end_create_time`；不支持 `start_time/end_time`。
+  - `ListDeployments(project_id=96107, status=1, end_execute_time=<now>, page_size=5)` 返回成功部署列表，部署项字段含 `Id/Name/Status/CreateTime/ExecuteTime`。
+  - `GetDeployment(project_id=96107, deployment_id=<Id>)` 返回 `Deployment` + `DeployedItems`；实测 `Deployment.ToEnvironment=2`、`Status=1`，`DeployedItems` 含 `FileId/FileVersion`。
+  - 样本：`deployment_id=2472542`，`DeployedItems[0].FileId=500424882`，`FileVersion=8085`。
+- 变更文件 → 指纹链路实跑通过：`GetFile(file:96107/500424882)` 返回 `Data.File.Content`，指纹格式 `sha256:<hex>`，长度 71。未打印 AK/SK 或代码内容。
+
+改动文件：
+
+- `scripts/dataworks_client.py`
+  - 新增 `DataWorksDeploymentItem`。
+  - 新增 `list_successful_prod_deployment_items()`：读取 `ListDeployments(status=1)`，逐条 `GetDeployment`，只保留 `ToEnvironment == 2` 的成功生产部署文件，并按 `(deployment_id,file_id,file_version)` 去重。
+  - 新增 `get_successful_prod_deployment_items()`：解析 `DeployedItems[*].FileId/FileVersion`。
+- `scripts/wiki_freshness.py`
+  - 新增 `--incremental-deployments --project-id <id>` 模式。
+  - 默认 dry-run：只输出 report，不改 frontmatter，不写索引。
+  - 只对部署变更 FileId 调 `GetFile` 算 `dw-code-v1` 指纹；不全量重算。
+  - 用索引中的 `dataworks_ref:file` 和 `normalize_table_key()` 归一化血缘反查受影响口径页。
+  - `--apply` 才写 `.wiki/dataworks_index.json` 中对应文件指纹；不自动改页面 `status`。
+  - `--check` 遇到 index update 返回 1；参数错误返回 2；auth/接口 warning 仍返回 0。
+- `tests/test_task_035.py`
+  - 覆盖只对变更文件算指纹、受影响页反查、dry-run 不写、`--apply` 只写索引不改页面状态、exit code、凭证缺失 warning、生产部署过滤 shape、进程级隔离。
+- `scripts/README.md`、`wiki-design/02-workflows.md`
+  - 补充增量部署防腐用法、成功生产部署语义、dry-run / `--apply` 行为。
+
+验证输出：
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest -v tests.test_task_035
+Ran 6 tests in 0.088s
+OK
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m py_compile scripts/dataworks_client.py scripts/wiki_freshness.py scripts/wiki_index.py
+exit 0
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -c "import sys; sys.path.insert(0,'scripts'); import wiki_lint,wiki_graph,wiki_eval; print('泄漏:', [m for m in sys.modules if any(k in m.lower() for k in ('dataworks','wiki_index','alibabacloud','sqlglot'))] or '无')"
+泄漏: 无
+
+datawarehouse_lint=0
+personal_lint=0
+pk_lint=0
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --check-docs; echo docs=$?
+错误: 0
+docs=0
+
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest discover -s tests
+Ran 146 tests in 54.782s
+OK (skipped=1)
+```
+
+真实增量 dry-run smoke：
+
+```text
+$ /Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_freshness.py \
+  --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk \
+  --incremental-deployments \
+  --project-id 96107 \
+  --max-pages 1 \
+  --json
+
+mode incremental_deployments
+dry_run True
+changed_files 100
+affected_pages 0
+index_updates 0
+warnings []
+first_file {'deployment_id': 2472562, 'file_id': 500657796, 'file_version': 17, 'indexed': True, 'fingerprint_changed': False}
+```
+
+偏离或异常：
+
+- MCP 未暴露，按任务约定使用 SDK 回退路径。
+- SDK `ListDeployments` 没有 start time 参数，只有 `end_execute_time/end_create_time`；本实现支持 end time + page/max-pages。时间窗下界需要后续若官方接口提供 cursor/下界参数再扩展。
+- 真实 smoke 为 dry-run，未修改 pk 仓索引或页面。
 
 ## Evaluation by claude · <date>
 

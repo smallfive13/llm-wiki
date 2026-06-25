@@ -14,7 +14,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from dataworks_client import DataWorksClient, DataWorksClientError, parse_ref
-from wiki_common import LOCAL_TZ, load_markdown, now_iso
+from wiki_common import LOCAL_TZ, load_markdown, now_iso, write_json_atomic
+from wiki_index import DEFAULT_INDEX_REL, load_index, normalize_table_key
 
 
 VERSION = "0.1.0"
@@ -46,6 +47,188 @@ def scan_wiki_docs(root: Path):
     if not wiki_root.exists():
         return []
     return [load_markdown(path, root) for path in sorted(wiki_root.glob("**/*.md"))]
+
+
+def doc_table_keys(doc) -> set[str]:
+    keys: set[str] = set()
+    for field in ("physical_table", "physical_field"):
+        value = doc.fm.get(field)
+        if isinstance(value, str):
+            key = normalize_table_key(value)
+            if key:
+                keys.add(key)
+    raw_ref = doc.fm.get("dataworks_ref")
+    if isinstance(raw_ref, str) and raw_ref.startswith("table:"):
+        key = normalize_table_key(raw_ref.removeprefix("table:"))
+        if key:
+            keys.add(key)
+    for value in re.findall(r"\b[A-Za-z0-9_]+\.(?:ods|dwd|dwb|dws|ads)[A-Za-z0-9_.-]*\b", doc.body, flags=re.IGNORECASE):
+        key = normalize_table_key(value)
+        if key:
+            keys.add(key)
+    return keys
+
+
+def doc_file_refs(doc) -> set[int]:
+    refs: set[int] = set()
+    raw_ref = doc.fm.get("dataworks_ref")
+    if isinstance(raw_ref, str) and raw_ref.startswith("file:"):
+        try:
+            ref = parse_ref(raw_ref)
+        except DataWorksClientError:
+            return refs
+        if ref.file_id is not None:
+            refs.add(ref.file_id)
+    return refs
+
+
+def index_item_table_keys(item: Dict[str, Any]) -> set[str]:
+    keys: set[str] = set()
+    for field in ("table",):
+        value = item.get(field)
+        if isinstance(value, str):
+            key = normalize_table_key(value)
+            if key:
+                keys.add(key)
+    for field in ("inputs", "outputs"):
+        values = item.get(field) or []
+        if isinstance(values, list):
+            for value in values:
+                key = normalize_table_key(str(value))
+                if key:
+                    keys.add(key)
+    return keys
+
+
+def affected_docs_for_item(item: Dict[str, Any], docs: List[Any]) -> List[Dict[str, Any]]:
+    file_id = item.get("file_id")
+    table_keys = index_item_table_keys(item)
+    affected: List[Dict[str, Any]] = []
+    for doc in docs:
+        reasons = []
+        if isinstance(file_id, int) and file_id in doc_file_refs(doc):
+            reasons.append("dataworks_ref:file")
+        if table_keys & doc_table_keys(doc):
+            reasons.append("normalized_lineage")
+        if reasons:
+            affected.append(
+                {
+                    "page_id": doc.fm.get("id"),
+                    "file": doc.rel,
+                    "reasons": sorted(set(reasons)),
+                    "status": doc.fm.get("status"),
+                    "review": doc.fm.get("review"),
+                }
+            )
+    affected.sort(key=lambda item: str(item.get("file") or ""))
+    return affected
+
+
+def evaluate_deployment_incremental(
+    root: Path,
+    *,
+    project_id: int,
+    client_factory: Optional[Callable[[], Any]] = None,
+    end_execute_time_ms: Optional[int] = None,
+    max_pages: Optional[int] = None,
+    apply: bool = False,
+    index_rel: str = DEFAULT_INDEX_REL,
+) -> Dict[str, Any]:
+    report: Dict[str, Any] = {
+        "wiki_freshness_version": VERSION,
+        "mode": "incremental_deployments",
+        "ran_at": now_iso(),
+        "root": str(root),
+        "project_id": project_id,
+        "dry_run": not apply,
+        "source": {
+            "kind": "ListDeployments+GetDeployment",
+            "status": "success",
+            "to_environment": 2,
+            "end_execute_time_ms": end_execute_time_ms,
+            "max_pages": max_pages,
+        },
+        "warnings": [],
+        "changed_files": [],
+        "affected_pages": [],
+        "index_updates": [],
+        "applied": {"index_written": False},
+    }
+    try:
+        index = load_index(root, index_rel)
+    except Exception as exc:
+        report["warnings"].append(warning("INDEX_UNAVAILABLE", None, str(exc)))
+        return report
+
+    try:
+        client = client_factory() if client_factory else DataWorksClient.from_env()
+    except DataWorksClientError as exc:
+        report["warnings"].append(warning(exc.code, None, exc.message))
+        return report
+
+    try:
+        changes = client.list_successful_prod_deployment_items(project_id, end_execute_time_ms=end_execute_time_ms, max_pages=max_pages)
+    except DataWorksClientError as exc:
+        report["warnings"].append(warning(exc.code, None, exc.message))
+        return report
+
+    by_file_id = {
+        item.get("file_id"): item
+        for item in index.get("items", [])
+        if isinstance(item, dict) and isinstance(item.get("file_id"), int)
+    }
+    docs = scan_wiki_docs(root)
+    changed_index = False
+    affected_by_file: Dict[str, Dict[str, Any]] = {}
+    for change in changes:
+        changed: Dict[str, Any] = {
+            "deployment_id": change.deployment_id,
+            "file_id": change.file_id,
+            "file_version": change.file_version,
+            "execute_time": change.execute_time_iso,
+            "indexed": change.file_id in by_file_id,
+            "status": "ok",
+            "reason": "",
+        }
+        item = by_file_id.get(change.file_id)
+        try:
+            code = client.get_file_code(f"file:{project_id}/{change.file_id}")
+            changed["current_fingerprint"] = code.fingerprint
+        except DataWorksClientError as exc:
+            changed["status"] = "warning"
+            changed["reason"] = exc.message
+            report["warnings"].append(warning(exc.code, None, f"file:{project_id}/{change.file_id}: {exc.message}"))
+            report["changed_files"].append(changed)
+            continue
+        if item:
+            changed["previous_fingerprint"] = item.get("code_fingerprint")
+            changed["fingerprint_changed"] = code.fingerprint != item.get("code_fingerprint")
+            affected = affected_docs_for_item(item, docs)
+            changed["affected_pages"] = affected
+            for page in affected:
+                affected_by_file.setdefault(str(page.get("file")), page)
+            if changed["fingerprint_changed"]:
+                report["index_updates"].append(
+                    {
+                        "file_id": change.file_id,
+                        "node_name": item.get("node_name"),
+                        "from": item.get("code_fingerprint"),
+                        "to": code.fingerprint,
+                    }
+                )
+                if apply:
+                    item["code_fingerprint"] = code.fingerprint
+                    item["last_synced"] = change.execute_time_iso or now_iso()
+                    changed_index = True
+        else:
+            changed["fingerprint_changed"] = None
+            changed["reason"] = "file_id not present in local index"
+        report["changed_files"].append(changed)
+    report["affected_pages"] = sorted(affected_by_file.values(), key=lambda item: str(item.get("file") or ""))
+    if apply and changed_index:
+        write_json_atomic(root / index_rel, index)
+        report["applied"]["index_written"] = True
+    return report
 
 
 def parse_last_synced(value: Any) -> Optional[datetime]:
@@ -190,6 +373,39 @@ def evaluate_instance(
 
 
 def render_human(report: Dict[str, Any]) -> str:
+    if report.get("mode") == "incremental_deployments":
+        lines = [
+            "wiki-freshness incremental-deployments",
+            "======================================",
+            f"root: {report['root']}",
+            f"project_id: {report['project_id']}",
+            f"dry_run: {report['dry_run']}",
+            f"changed_files: {len(report['changed_files'])} · affected_pages: {len(report['affected_pages'])} · index_updates: {len(report['index_updates'])}",
+            "",
+            "Changed files",
+            "-------------",
+        ]
+        if not report["changed_files"]:
+            lines.append("- (none)")
+        for item in report["changed_files"]:
+            lines.append(
+                f"- file:{report['project_id']}/{item.get('file_id')} · deployment={item.get('deployment_id')} · "
+                f"version={item.get('file_version')} · indexed={item.get('indexed')} · changed={item.get('fingerprint_changed')}"
+            )
+        lines.extend(["", "Affected pages", "--------------"])
+        if not report["affected_pages"]:
+            lines.append("- (none)")
+        for item in report["affected_pages"]:
+            lines.append(f"- {item.get('file')} · reasons={','.join(item.get('reasons') or [])} · status={item.get('status')} · review={item.get('review')}")
+        lines.extend(["", "Warnings", "--------"])
+        if not report["warnings"]:
+            lines.append("- (none)")
+        for item in report["warnings"]:
+            lines.append(f"- {item.get('code')}: {item.get('file') or '(global)'} · {item.get('message')}")
+        if report.get("applied", {}).get("index_written"):
+            lines.extend(["", "Applied", "-------", "- index written"])
+        return "\n".join(lines) + "\n"
+
     lines = [
         "wiki-freshness",
         "==============",
@@ -221,6 +437,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--json", action="store_true", help="output JSON report")
     parser.add_argument("--check", action="store_true", help="exit 1 when drift is detected")
     parser.add_argument("--apply-stale", action="store_true", help="write status: stale to drift pages")
+    parser.add_argument("--incremental-deployments", action="store_true", help="check successful production deployments instead of page anchors")
+    parser.add_argument("--project-id", type=int, help="DataWorks project id for --incremental-deployments")
+    parser.add_argument("--end-execute-time-ms", type=int, help="deployment window end time in epoch milliseconds")
+    parser.add_argument("--max-pages", type=int, help="limit deployment pages for smoke tests")
+    parser.add_argument("--apply", action="store_true", help="write updated fingerprints to dataworks_index.json in incremental mode")
     return parser
 
 
@@ -234,12 +455,25 @@ def main(argv: Optional[List[str]] = None, *, client_factory: Optional[Callable[
         print(f"wiki-freshness config error: {exc}", file=sys.stderr)
         return 2
 
-    report = evaluate_instance(root, client_factory=client_factory, apply_stale=args.apply_stale)
+    if args.incremental_deployments:
+        if args.project_id is None:
+            print("wiki-freshness config error: --project-id is required for --incremental-deployments", file=sys.stderr)
+            return 2
+        report = evaluate_deployment_incremental(
+            root,
+            project_id=args.project_id,
+            client_factory=client_factory,
+            end_execute_time_ms=args.end_execute_time_ms,
+            max_pages=args.max_pages,
+            apply=args.apply,
+        )
+    else:
+        report = evaluate_instance(root, client_factory=client_factory, apply_stale=args.apply_stale)
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
     else:
         print(render_human(report), end="")
-    if args.check and report["drift_count"]:
+    if args.check and (report.get("drift_count", 0) or report.get("index_updates")):
         return 1
     return 0
 

@@ -88,6 +88,16 @@ class DataWorksNode:
     paused: bool = False
 
 
+@dataclass(frozen=True)
+class DataWorksDeploymentItem:
+    deployment_id: int
+    file_id: int
+    file_version: Optional[int]
+    execute_time_ms: Optional[int]
+    execute_time_iso: Optional[str]
+    to_environment: Optional[int]
+
+
 FILE_REF_RE = re.compile(r"^file:([^/]+)/(\d+)$")
 TABLE_REF_RE = re.compile(r"^table:([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)$")
 
@@ -245,6 +255,94 @@ class DataWorksClient:
 
     def get_file_fingerprint(self, raw_ref: str) -> str:
         return self.get_file_code(raw_ref).fingerprint
+
+    def list_successful_prod_deployment_items(
+        self,
+        project_id: int,
+        *,
+        end_execute_time_ms: Optional[int] = None,
+        page_size: int = 100,
+        max_pages: Optional[int] = None,
+    ) -> List[DataWorksDeploymentItem]:
+        result: List[DataWorksDeploymentItem] = []
+        seen: set[tuple[int, int, Optional[int]]] = set()
+        page_number = 1
+        while True:
+            kwargs: dict[str, Any] = {
+                "project_id": project_id,
+                "page_number": page_number,
+                "page_size": page_size,
+                "status": 1,
+            }
+            if end_execute_time_ms is not None:
+                kwargs["end_execute_time"] = end_execute_time_ms
+            try:
+                body = obj_to_map(self._client.list_deployments(self._models.ListDeploymentsRequest(**kwargs)).body)
+            except Exception as exc:
+                raise _safe_error(exc) from exc
+            data = (body or {}).get("Data") or {}
+            deployments = data.get("Deployments") or []
+            if not isinstance(deployments, list) or not deployments:
+                break
+            for deployment in deployments:
+                if not isinstance(deployment, dict):
+                    continue
+                deployment_id = _int_or_none(deployment.get("Id"))
+                if deployment_id is None:
+                    continue
+                result.extend(self.get_successful_prod_deployment_items(project_id, deployment_id))
+            total = data.get("TotalCount")
+            if max_pages is not None and page_number >= max_pages:
+                break
+            if not isinstance(total, int) or page_number * page_size >= total:
+                break
+            page_number += 1
+        deduped: List[DataWorksDeploymentItem] = []
+        for item in result:
+            key = (item.deployment_id, item.file_id, item.file_version)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(item)
+        deduped.sort(key=lambda item: (item.execute_time_ms or 0, item.deployment_id, item.file_id, item.file_version or 0), reverse=True)
+        return deduped
+
+    def get_successful_prod_deployment_items(self, project_id: int, deployment_id: int) -> List[DataWorksDeploymentItem]:
+        try:
+            body = obj_to_map(
+                self._client.get_deployment(
+                    self._models.GetDeploymentRequest(project_id=project_id, deployment_id=deployment_id)
+                ).body
+            )
+        except Exception as exc:
+            raise _safe_error(exc) from exc
+        data = (body or {}).get("Data") or {}
+        deployment = data.get("Deployment") or {}
+        if not isinstance(deployment, dict):
+            deployment = {}
+        if deployment.get("Status") != 1 or deployment.get("ToEnvironment") != 2:
+            return []
+        execute_ms = _int_or_none(deployment.get("ExecuteTime"))
+        items = data.get("DeployedItems") or []
+        result: List[DataWorksDeploymentItem] = []
+        if isinstance(items, list):
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                file_id = _int_or_none(item.get("FileId"))
+                if file_id is None:
+                    continue
+                result.append(
+                    DataWorksDeploymentItem(
+                        deployment_id=deployment_id,
+                        file_id=file_id,
+                        file_version=_int_or_none(item.get("FileVersion")),
+                        execute_time_ms=execute_ms,
+                        execute_time_iso=epoch_ms_to_iso(execute_ms),
+                        to_environment=_int_or_none(deployment.get("ToEnvironment")),
+                    )
+                )
+        return result
 
     def list_nodes_prod_raw(self, project_id: int, *, page_size: int = 100, max_pages: Optional[int] = None) -> List[dict[str, Any]]:
         nodes: List[dict[str, Any]] = []
