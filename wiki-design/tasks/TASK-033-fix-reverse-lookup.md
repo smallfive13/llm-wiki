@@ -148,6 +148,31 @@ Downstream candidates:
 
 - pk 实例文档 commit：`c45ab3d7e84eead4a99d490431bb435547f3615f` `[docs] tighten DataWorks reverse lookup guidance`，已 push 到 `http://git.ppdaicorp.com/international_data/knowledge-pk.git`。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-25
 
-（评估者填写）
+**Verdict: PASS。** 根因真修了,且补上了 TASK-032 漏掉的"真实数据二次核实",确认收敛精确无漏。
+
+### 兼容性 + 回归（独立复验）
+
+| 核验 | 结果 |
+| --- | --- |
+| 核心工具进程级零新依赖 | **泄漏: 无** ✓ |
+| 现有库行为不变 | datawarehouse / personal lint=0 ✓ |
+| 全量回归 | **140 tests OK (skipped=1)** ✓ |
+
+### 根因修复实锤（自己跑真实反查，不只信报告）
+
+- **归一化生效**:反查输出 `normalized_key: pk_data.ods_pak_listing_autosync_3_tb_repay_record`——把 ODS 输出 `ods.X.extract` 归到了 DWD 引用的 `ods_X`,这正是之前连不上的根;
+- **30+ → 1**:还款 ODS 反查从跨 risk/coll/fin 的 30+ 噪音,收敛为 `[asset] DWD dwd_asset_repay_record · has_knowledge_page` 一个;域分组 + caveat + 默认不含 DWS/ADS 全对。
+
+### 二次核实（TASK-032 漏的这步，这次补上）
+
+独立用 `wiki_index.normalize_table_key` 重算"inputs 归一后含还款 ODS 的非 ODS node"全集 = **只有 `dwd_asset_repay_record`**,与反查结果**完全一致**——证明收敛"不是过严漏候选",而是精确正确。核实 `dwb_asset_repay_dtl`:它 inputs 是 `tmp_asset_repay_dtl`/`tmp_asset_delay_dtl` 临时表,**不直接消费还款 ODS**,正确排除。
+
+### 一个已知局限（caveat 已覆盖，记给运营）
+
+`dwb_asset_repay_dtl` 经**临时表中转**消费还款数据,直接血缘断在 `tmp_` 表,反查找不到这类"经临时表的间接下游"——这正是 caveat"可能漏掉脚本内临时表"声明的已知局限,非 bug。用反查时知道:它给的是**直接调度血缘下游**,经 tmp 中转的要靠人工/caveat 补。
+
+### 结论
+
+RFC-028 反查能力**修复闭环,可信可用**。Step 0 环节词钉死 `{extract,pre,assign,fix}`、保留身份后缀;不改索引、不重跑全量。TASK-033 done 有效（引擎 `ac6b5bd` / pk `c45ab3d`）。**教训闭环**:反查类功能必须在真实脏数据上验 + 独立核实结果集,mock 单测不够——这次两步都做了。

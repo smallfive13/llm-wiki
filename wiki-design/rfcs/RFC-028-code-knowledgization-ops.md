@@ -199,3 +199,5 @@ Apply：先 **TASK-031（M1 全量索引）**,后 TASK-B(M2)/TASK-D(M4)；TASK-C
 - **表名不归一**:ODS 输出 `pk_data.ods.X.extract`/`.pre`(点分+环节后缀)vs DWD 引用 `pk_data.ods_X`(下划线无后缀)——同表两种写法,真直接下游精确连不上,靠 token 模糊匹配勉强连又引噪音。
 
 索引本身(1356、双向血缘、分层、安全)**正确**,坏的只是 reverse 匹配。口径已与用户聊定 → **TASK-033 修复**(归一化 + 收敛到第一明细层 + 主题域分组,反查时实时算、不改索引、不重跑全量)。
+
+**TASK-033 已闭环**（引擎 `ac6b5bd` / pk `c45ab3d`）：归一化把 `ods.X.extract` 归到 `ods_X`（reverse 输出 `normalized_key` 证明），还款 ODS 反查 **30+ → 1**（`dwd_asset_repay_record`，按 asset 域分组）；环节词钉死 `{extract,pre,assign,fix}`、保留 `_dly/_snp` 身份后缀;默认不含 DWS/ADS（`--include-summary` 可展开）。Evaluation by claude: **PASS**——含 TASK-032 漏掉的**二次核实**（独立重算直接下游全集 = 反查结果,无过严漏候选）。已知局限:经 `tmp_` 临时表中转的间接下游反查不覆盖（caveat 已声明）。教训:反查类功能须在真实脏数据验 + 独立核实结果集,mock 不够。
