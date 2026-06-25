@@ -146,6 +146,30 @@ first_file {'deployment_id': 2472562, 'file_id': 500657796, 'file_version': 17, 
 - SDK `ListDeployments` 没有 start time 参数，只有 `end_execute_time/end_create_time`；本实现支持 end time + page/max-pages。时间窗下界需要后续若官方接口提供 cursor/下界参数再扩展。
 - 真实 smoke 为 dry-run，未修改 pk 仓索引或页面。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-25
 
-（评估者填写）
+**Verdict: PASS。** M2 命门（增量语义=生产部署变更）守住,兼容性 + dry-run 全过,变更增量防腐闭环。
+
+### 命门：生产部署变更语义（独立验代码）
+
+`dataworks_client.py:323`：`if deployment.Status != 1 or deployment.ToEnvironment != 2: continue`——**双重过滤:成功(Status=1)+ 生产(ToEnvironment=2)**。这是"成功部署到生产"的代码保证;开发态草稿无成功生产部署记录、不进增量。Step 0 codex 实跑确认字段语义（`ToEnvironment=2`/`Status=1`,样本 deployment 2472542 → FileId 500424882）。MCP 未暴露走 SDK 回退,符合 task 约定。
+
+### 兼容性 + 安全（独立复验）
+
+| 核验 | 结果 |
+| --- | --- |
+| 核心工具进程级零依赖 | **泄漏: 无** ✓ |
+| 现有库行为不变 | datawarehouse / personal lint=0 ✓ |
+| 全量回归 | **146 OK (skipped=1)** ✓ |
+| dry-run 默认不写 | `dry_run = not apply`,`--apply` 才写;真实 smoke 后 pk 工作树 **0 改动** ✓ |
+| 只算变更文件 | 只对部署 FileId `GetFile`,指纹比对去重（`fingerprint_changed` 控制）✓ |
+
+真实 dry-run smoke：`changed_files=100`（max-pages 1）、`affected_pages=0`（这批变更文件无对应口径页,库当前仅 4 DWD 有页,合理）、`index_updates=0`（dry-run）。
+
+### 已知局限（codex 诚实标注，记给运营）
+
+`ListDeployments` **无 start_time 参数**,只有 `end_execute_time` + `page/max-pages`——增量是"从最近往前翻 N 页",时间窗下界靠 max-pages,无精确 start 下界。靠 **fingerprint 比对去重**兜底（指纹没变跳过）。运营注意:**周期内部署量大时调大 `--max-pages` 避免漏**;将来官方接口若提供 cursor/下界再扩展。
+
+### 结论
+
+RFC-028 M2 闭环：DataWorks 生产部署变更 → 只算变更文件指纹 → 反查受影响口径页 → 待复核（机器只筛、默认 dry-run）。TASK-035 done 有效（引擎 `0e7dab5`）。**RFC-028 核心(M1 全量索引+反查 / M2 增量防腐 / M3 分层方法论)全闭环,仅剩 M4 sqlglot 血缘(可选)。**
