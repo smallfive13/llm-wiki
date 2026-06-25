@@ -191,3 +191,11 @@ Apply：先 **TASK-031（M1 全量索引）**,后 TASK-B(M2)/TASK-D(M4)；TASK-C
 - **TASK-032**：引擎 `21e7cad`（`list_prod_nodes` 翻页拉全 + 双向血缘 + `wiki_index reverse` 反查子命令 + 分层认全 ods/dwd/dwb/dws/ads + index_version v2）+ knowledge-pk `8ac50e7`（v2 索引基线 + AGENTS 反查路由）。Evaluation by claude: **PASS**——兼容性头等守住（进程级零泄漏、现有库 lint=0、回归 132 OK）；反查 5 层定位说明 + 推荐明细层首位 + review 标注 + 无下游兜底 + caveat（单测完整链验证）；Step 0 实跑翻页拉满 1384/过滤 1353、ListNodeIO(input)、ODS↔线上源表；codex 自查修复全限定表名误匹配。
 - **待运营**：maintainer 跑一次全量命令得完整 1353 索引（当前 smoke 176 items）。
 - **剩余**：M2 变更增量 / M3 分层方法论文档（含反查路由）/ M4 sqlglot 血缘。
+
+### 反查复评（2026-06-25，真实全量数据暴露缺陷 → TASK-033 修复）
+
+跑完真实全量索引后复验反查,发现 TASK-032 的 `reverse` 在真实数据上**语义失真**(我此前 PASS 基于 mock 单测链,命名统一+单跳,没覆盖真实脏数据):
+- **多跳爆炸**:`for _depth in range(5)` 把 5 跳血缘可达的全算下游 → 还款 ODS 反查返回 30+ 候选(蔓延到风控/催收/财务);
+- **表名不归一**:ODS 输出 `pk_data.ods.X.extract`/`.pre`(点分+环节后缀)vs DWD 引用 `pk_data.ods_X`(下划线无后缀)——同表两种写法,真直接下游精确连不上,靠 token 模糊匹配勉强连又引噪音。
+
+索引本身(1356、双向血缘、分层、安全)**正确**,坏的只是 reverse 匹配。口径已与用户聊定 → **TASK-033 修复**(归一化 + 收敛到第一明细层 + 主题域分组,反查时实时算、不改索引、不重跑全量)。
