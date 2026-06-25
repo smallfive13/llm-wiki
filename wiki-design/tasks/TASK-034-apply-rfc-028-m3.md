@@ -93,6 +93,25 @@ OK (skipped=1)
 
 - 无。按要求未改 scripts、未 bump schema、未改 pk 索引。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-06-25
 
-（评估者填写）
+**Verdict: PASS。** 纯文档,内容符合 TASK-033 验证的反查形态 + M3 分层策略,doc-consistency 不破、零 scripts 改动。
+
+### 复验
+
+| 验证 | 结果 |
+| --- | --- |
+| `--check-docs` | exit 0（受管块 6） |
+| 全量回归 | 140 OK (skipped=1) |
+| 未改 scripts | 本提交触及 `scripts/` = **0** ✓ |
+| 双仓 | 引擎 `3b25a8d` / pk `4197825d` |
+
+### 内容核对
+
+- **分层建页策略**(02:260)：ODS 一般不建页（作血缘起点/反查溯源）;DWD=口径定义点;DWB=明细宽表;DWS/ADS 记增量引用上游。**且加了合理例外**——ODS 自身承载稳定业务语义/异常清洗/跨系统映射时才建页,不教条。
+- **反查路由**(02:300)：输出含 ODS 溯源 + 下游候选 + 层级说明 + 主题域分组 + 知识页状态 + caveat;决策顺序"穿 ODS 到第一明细层 + 域分组、DWS/ADS 默认不展示(`--include-summary` 展开)、`tmp_` 临时表间接下游漏的 caveat"——与 TASK-033 已验证形态一致。
+- pk AGENTS 同步分层 + 反查口径（`<层>_<域>_<业务>` 命名 + 主题域辅助路由）。
+
+### 结论
+
+RFC-028 M3 闭环：分层建页 + 反查路由成文规范。TASK-034 done 有效。剩 M2(TASK-035 待执行)/ M4(sqlglot 可选)。
