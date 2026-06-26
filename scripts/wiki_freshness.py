@@ -124,6 +124,29 @@ def affected_docs_for_item(item: Dict[str, Any], docs: List[Any]) -> List[Dict[s
     return affected
 
 
+def latest_change_by_file(changes: List[Any]) -> List[Any]:
+    latest: Dict[int, Any] = {}
+    for change in changes:
+        current = latest.get(change.file_id)
+        current_key = (
+            current.execute_time_ms or 0,
+            current.deployment_id,
+            current.file_version or 0,
+        ) if current else None
+        change_key = (
+            change.execute_time_ms or 0,
+            change.deployment_id,
+            change.file_version or 0,
+        )
+        if current is None or change_key > current_key:
+            latest[change.file_id] = change
+    return sorted(
+        latest.values(),
+        key=lambda item: (item.execute_time_ms or 0, item.deployment_id, item.file_id, item.file_version or 0),
+        reverse=True,
+    )
+
+
 def evaluate_deployment_incremental(
     root: Path,
     *,
@@ -180,7 +203,7 @@ def evaluate_deployment_incremental(
     docs = scan_wiki_docs(root)
     changed_index = False
     affected_by_file: Dict[str, Dict[str, Any]] = {}
-    for change in changes:
+    for change in latest_change_by_file(changes):
         changed: Dict[str, Any] = {
             "deployment_id": change.deployment_id,
             "file_id": change.file_id,

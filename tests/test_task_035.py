@@ -111,11 +111,14 @@ def write_index(root: Path) -> None:
 
 
 class FakeIncrementalClient:
-    def __init__(self, *, fingerprint: str = "sha256:new") -> None:
+    def __init__(self, *, fingerprint: str = "sha256:new", changes=None) -> None:
         self.fingerprint = fingerprint
+        self.changes = changes
         self.file_calls = []
 
     def list_successful_prod_deployment_items(self, project_id, *, end_execute_time_ms=None, max_pages=None):
+        if self.changes is not None:
+            return self.changes
         return [
             dataworks_client.DataWorksDeploymentItem(
                 deployment_id=1,
@@ -151,6 +154,47 @@ class Task035IncrementalTest(unittest.TestCase):
             self.assertIn("dataworks_ref:file", report["affected_pages"][0]["reasons"])
             self.assertIn("normalized_lineage", report["affected_pages"][0]["reasons"])
             self.assertIn("sha256:old", (root / ".wiki/dataworks_index.json").read_text(encoding="utf-8"))
+
+    def test_incremental_deduplicates_to_latest_change_per_file(self) -> None:
+        changes = [
+            dataworks_client.DataWorksDeploymentItem(
+                deployment_id=1,
+                file_id=100,
+                file_version=7,
+                execute_time_ms=1780000000000,
+                execute_time_iso="2026-05-27T09:46:40+08:00",
+                to_environment=2,
+            ),
+            dataworks_client.DataWorksDeploymentItem(
+                deployment_id=2,
+                file_id=100,
+                file_version=8,
+                execute_time_ms=1780000100000,
+                execute_time_iso="2026-05-27T09:48:20+08:00",
+                to_environment=2,
+            ),
+            dataworks_client.DataWorksDeploymentItem(
+                deployment_id=3,
+                file_id=200,
+                file_version=1,
+                execute_time_ms=1780000200000,
+                execute_time_iso="2026-05-27T09:50:00+08:00",
+                to_environment=2,
+            ),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            init_instance(root)
+            write_index(root)
+            page(root, "wiki/asset-mappings/repay.md", dataworks_ref="file:96107/100")
+            client = FakeIncrementalClient(changes=changes)
+
+            report = wiki_freshness.evaluate_deployment_incremental(root, project_id=96107, client_factory=lambda: client)
+
+            self.assertEqual(["file:96107/200", "file:96107/100"], client.file_calls)
+            self.assertEqual([200, 100], [item["file_id"] for item in report["changed_files"]])
+            self.assertEqual(2, report["changed_files"][1]["deployment_id"])
+            self.assertEqual([200, 100], [item["file_id"] for item in report["index_updates"]])
 
     def test_apply_writes_index_but_not_page_status(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
