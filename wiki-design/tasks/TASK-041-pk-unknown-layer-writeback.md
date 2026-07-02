@@ -3,7 +3,7 @@ id: task_20260702_041
 title: knowledge-pk 索引写回 124 确认层级 + 反查 smoke + routing 收尾
 author: claude
 executor: codex
-status: pending
+status: done
 type: other
 created: 2026-07-02
 updated: 2026-07-02
@@ -56,6 +56,126 @@ $PY scripts/wiki_lint.py --root $PK --check-only; echo lint=$?
 - 索引仍守基线的确认（version/items/无代码）
 - lint / graph / eval、commit sha、偏离或异常
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-07-02
+
+### Step 0 / 写回核对
+
+- knowledge-pk working tree clean 后开工。
+- 从 `wiki/topics/unknown-layer-classification.md` 解析 124 行，全部唯一匹配 `.wiki/dataworks_index.json` item。
+- 写回确认项 102 行：
+  - detail-candidate: 66
+  - downstream-derived: 22
+  - trace-only: 14
+- 22 行 `待定 / unknown` 保留 `layer=unknown`。
+- 索引不变量：
+  - `index_version=2`
+  - `items=1353`
+  - 未写入 code/content payload
+
+### 索引写回结果
+
+写回后 layer 分布：
+
+```text
+DDM 13
+DIM 27
+DWB 45
+DWD 174
+DWS 36
+EDW 9
+ODS 974
+S-DIM 5
+S-DWB 11
+S-DWD 23
+TMP 13
+unknown 23
+```
+
+`layer_source` 分布：
+
+```text
+manual 102
+name_prefix 1190
+output_table 39
+unknown 22
+```
+
+偏离/说明：
+
+- TASK 期望 unknown 约 22；实际 total unknown=23，其中 22 个是待定项，另 1 个是 Dexin 投影。
+- Dexin 投影不在本 task 允许写入的物理 layer 枚举 `DIM/S-DWD/S-DWB/S-DIM/TMP/DDM/EDW` 内，因此保持 `layer=unknown`、`layer_source=manual`，由 RFC-029/TASK-040 的 `pk_dexin.` 机械识别提供 trace-only 角色。
+
+### 反查 smoke
+
+`dim_merchant_info`：
+
+```text
+Recommended:
+- DIM dim_merchant_info · pk_data.dim_merchant_info · has_knowledge_page · 维表/映射定义层，可作为枚举或映射口径候选。
+```
+
+`tmp_asset_repay_dtl`：
+
+```text
+Recommended:
+- (none)
+Matched trace-only:
+- TMP tmp_asset_repay_dtl · pk_data.tmp_asset_repay_dtl · 仅溯源，不建议作为取数定义点
+Warnings:
+- ambiguous_table_key
+```
+
+`pk_data.ddm_asset_limit_loan_dtl`：
+
+```text
+default: Recommended (none), Summary candidates hidden
+--include-summary:
+- DDM ddm_asset_limit_loan_dtl · pk_data.ddm_asset_limit_loan_dtl · has_knowledge_page · 集市/下游派生层，默认不作为口径定义点，需 --include-summary 展开。
+```
+
+`pk_data.edw_erp_dm_op_internation_cmn_listing`：
+
+```text
+default: Recommended (none), Summary candidates hidden
+--include-summary:
+- EDW edw_erp_dm_op_internation_cmn_listing · pk_data.edw_erp_dm_op_internation_cmn_listing · has_knowledge_page · 报表/下游派生层，默认不作为口径定义点，需 --include-summary 展开。
+```
+
+歧义样例 `s_dwd_asset_merchant_apply_snapshot_dly`：
+
+```text
+Warnings:
+- ambiguous_table_key: 表名无 project 前缀且命中多个候选，请带 project 前缀重查。
+```
+
+非阻塞展示瑕疵：
+
+- DDM/EDW `--include-summary` 能正确展开 summary candidate，但同时仍输出旧的“索引中未命中该表” warning。该 warning 来自 reverse 的展示路径，不影响本 task 的索引写回与角色分档结果，后续若要清理应走引擎侧小修。
+
+### 文档收尾
+
+- 3 个 routing topic 已把“待 RFC-029 / 索引仍保持 unknown”改为“RFC-029 已生效 / 确认项已写回 / 待定项保留 unknown”。
+- `wiki/open-questions/unknown-layer-reverse-support.md` 已 `status: archived`，并记录 reverse 已支持、写回完成、Dexin 特殊口径和 domain 后续缺口。
+- `wiki/topics/unknown-layer-classification.md` 已同步说明 TASK-041 写回完成。
+
+### 验证
+
+```text
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --check-only
+lint=0
+
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_graph.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --json
+graph=0
+nodes 1405 edges 1987 dangling 0 ambiguous 0
+
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_eval.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --json
+eval=0
+score 83
+review_coverage eligible=44 reviewed=6 percent=14
+```
+
+### Commits
+
+- knowledge-pk: `1129bc2` `[pk task-041] write back unknown layer classifications`
 
 ## Evaluation by claude · <date>

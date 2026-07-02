@@ -48,7 +48,7 @@ Task 回答"怎么做、谁来做"，与 RFC 回答"要不要这么改"互补。
 | [task_20260702_038](TASK-038-pk-dwd-dwb-caliber-deepen.md) | knowledge-pk DWD/DWB 业务口径深化 — 深化模板 + 首批优先表 | done | claude | codex | RFC-027, RFC-028 |
 | [task_20260702_039](TASK-039-pk-query-faq-first-batch.md) | knowledge-pk 高频问答 query 页 — 首批 FAQ | done | claude | codex | — |
 | [task_20260702_040](TASK-040-apply-rfc-029.md) | Apply RFC-029 — 反查物理层级扩展 + 推荐角色分档（引擎侧） | pending | claude | codex | RFC-029 |
-| [task_20260702_041](TASK-041-pk-unknown-layer-writeback.md) | knowledge-pk 索引写回 124 确认层级 + 反查 smoke + routing 收尾 | pending | claude | codex | RFC-029 |
+| [task_20260702_041](TASK-041-pk-unknown-layer-writeback.md) | knowledge-pk 索引写回 124 确认层级 + 反查 smoke + routing 收尾 | done | claude | codex | RFC-029 |
 
 > 注：本表在 TASK-031 后存在既有欠账（032-035 已存在于目录但未回填索引行）；036-039 为本轮新增。
 
