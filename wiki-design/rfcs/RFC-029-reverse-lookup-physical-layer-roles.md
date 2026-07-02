@@ -112,3 +112,9 @@ TASK-037 Codex 复核（2026-07-02）：实跑 `reverse --table dim_merchant_inf
 
 - `LAYER_ROLE` 可以保留现有 `DETAIL_LAYERS` / `SUMMARY_LAYERS` 的兼容 wrapper，减少回归面；测试断言 DWD/DWB/DWS/ADS/ODS/unknown 输出与现状一致。
 - 新层级建议统一大小写规范，例如索引保存 `DIM`、`S-DWD`、`S-DWB`、`S-DIM`、`TMP`、`DDM`、`EDW`，normalize 后再查 `LAYER_ROLE`，避免 `s_dwd` / `S_DWD` / `S-DWD` 三种写法漂移。
+
+## Applied in 4c3bf92
+
+- Applied by codex on 2026-07-02.
+- Implemented `LAYER_ROLE`, physical layer role routing, unqualified-name ambiguity handling, Dexin trace-only detection, and trace-only exact-match output in `scripts/wiki_index.py`.
+- Added `tests/test_task_040.py` and synchronized `wiki-design/02-workflows.md` plus `scripts/README.md`.
