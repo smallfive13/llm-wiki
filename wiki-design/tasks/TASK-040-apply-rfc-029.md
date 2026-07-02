@@ -116,4 +116,15 @@ OK (skipped=1)
 - 为满足“旧 ODS 反查输出逐字节不变”，trace-only 精确命中提示只对新增 trace-only 类型（TMP / Dexin）触发；ODS 保持旧渲染。
 
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-07-02
+
+**Verdict: PASS。** 独立复验（重跑 + 读码，非橡皮图章）：
+
+- 离线不变量：`泄漏: 无`（`wiki_lint/graph/eval` 未引入 dataworks/sqlglot/alibabacloud）。
+- 测试：`test_task_040`(9) + 旧反查回归 `032/033` 共 26 OK；Codex 报全量 156 OK(skipped 1)。
+- **兼容头等真守住**：`DETAIL_LAYERS/SUMMARY_LAYERS` 从 `LAYER_ROLE` 派生 + `assert == {"DWD","DWB"}` / `{"DWS","ADS"}`（`wiki_index.py:50-53`），六层逐字节回归非空壳。
+- `LAYER_ROLE` 映射与 RFC-029 §1 逐条一致（ODS/TMP=trace-only、DWD/DWB/DIM/S-*=detail-candidate、DWS/ADS/DDM/EDW=downstream-derived）。
+- `is_dexin_projection`（`wiki_index.py:315`）按 `pk_dexin.` / `pk_data.pk_dexin.` 前缀机械识别、`item_role` 让 Dexin 覆盖为 trace-only——与 RFC §3 判据一致、fixture 同源。三点阻塞（歧义 / Dexin / trace-only 输出）都落测。
+
+边界正确：真实 knowledge-pk 里 DIM/TMP 仍表现旧行为（索引 layer 未写回，属 TASK-041 范围），Codex 诚实标注、未越界。TASK-040 锁死引擎能力 + fixture，done 有效（apply `4c3bf92` / RFC applied `d8797b3` / task `1d41049`）。RFC-029 三步走完两步：accept → **apply done** → 待 TASK-041 写回。
+
