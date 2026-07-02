@@ -316,11 +316,12 @@ python3 scripts/wiki_index.py reverse --root <instance-root> --table <table-name
 反查输出必须包含贴源 ODS、下游候选、每个候选的层级说明、主题域分组、是否已有知识页、以及调度血缘 caveat。Agent 使用结果时按以下顺序判断：
 
 1. 反查工具会实时归一化表名：`ods.X.extract/pre/assign/fix` 与 `ods_X` 视为同一 ODS 处理链，`_dly/_snp/_mly/_hly` 等身份后缀保留，不做 token 模糊匹配。
-2. 默认穿过 ODS 内部处理环节，收敛到第一层 DWD / DWB，并按主题域分组；这些候选通常最接近可解释业务口径。
-3. DWS / ADS 默认不展示；只有用户明确要看汇总 / 应用层或排查下游扩散时，才加 `--include-summary`。
-4. 默认推荐明细层候选；ODS 只能作为溯源证据，不作为直接取数推荐。
+2. 默认穿过 ODS 内部处理环节，收敛到第一层明细候选，并按主题域分组；明细候选包括 DWD / DWB / DIM / S-DWD / S-DWB / S-DIM，通常最接近可解释业务口径。
+3. DWS / ADS / DDM / EDW 是下游派生层，默认不展示；只有用户明确要看汇总、应用层或排查下游扩散时，才加 `--include-summary`。
+4. 默认推荐明细层候选；ODS / TMP / Dexin 投影只能作为溯源证据，不作为直接取数推荐。若用户精确查询 TMP 或 Dexin 投影，输出会显式标注"仅溯源，不建议作为取数定义点"。
 5. 只有 ODS 且无下游时，返回 ODS 溯源结果并说明"未找到下游候选，需人工继续查"。
-6. 反查结果只代表 DataWorks 调度血缘，可能漏掉动态 SQL、脚本内临时表、`tmp_` 临时表中转后的间接下游或未登记依赖；不得自动写 wiki 正本。
+6. 无 project 前缀表名（例如 `dim_x`、`s_dwd_x`、`tmp_x`）只有唯一命中时才自动 resolve；若同 basename 命中多个 project，输出 `ambiguous_table_key`，必须带 project 前缀重查。
+7. 反查结果只代表 DataWorks 调度血缘，可能漏掉动态 SQL、脚本内临时表、`tmp_` 临时表中转后的间接下游或未登记依赖；不得自动写 wiki 正本。
 
 回答出处：
 

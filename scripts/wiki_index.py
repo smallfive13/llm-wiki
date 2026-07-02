@@ -17,9 +17,40 @@ from wiki_common import write_json_atomic
 
 INDEX_VERSION = 2
 DEFAULT_INDEX_REL = ".wiki/dataworks_index.json"
-LAYER_ORDER = {"ODS": 0, "DWD": 1, "DWB": 2, "DWS": 3, "ADS": 4, "unknown": 9}
-DETAIL_LAYERS = {"DWD", "DWB"}
-SUMMARY_LAYERS = {"DWS", "ADS"}
+LAYER_ROLE = {
+    "ODS": "trace-only",
+    "TMP": "trace-only",
+    "DWD": "detail-candidate",
+    "DWB": "detail-candidate",
+    "DIM": "detail-candidate",
+    "S-DWD": "detail-candidate",
+    "S-DWB": "detail-candidate",
+    "S-DIM": "detail-candidate",
+    "DWS": "downstream-derived",
+    "ADS": "downstream-derived",
+    "DDM": "downstream-derived",
+    "EDW": "downstream-derived",
+    "unknown": "unknown",
+}
+LAYER_ORDER = {
+    "ODS": 0,
+    "TMP": 0,
+    "DWD": 1,
+    "DWB": 2,
+    "DIM": 2,
+    "S-DWD": 2,
+    "S-DWB": 2,
+    "S-DIM": 2,
+    "DWS": 3,
+    "ADS": 4,
+    "DDM": 4,
+    "EDW": 4,
+    "unknown": 9,
+}
+DETAIL_LAYERS = {layer for layer, role in LAYER_ROLE.items() if role == "detail-candidate" and layer in {"DWD", "DWB"}}
+SUMMARY_LAYERS = {layer for layer, role in LAYER_ROLE.items() if role == "downstream-derived" and layer in {"DWS", "ADS"}}
+assert DETAIL_LAYERS == {"DWD", "DWB"}
+assert SUMMARY_LAYERS == {"DWS", "ADS"}
 ODS_STAGE_SUFFIXES = {"extract", "pre", "assign", "fix"}
 CAVEAT = "基于 DataWorks 调度血缘，可能漏掉动态 SQL、脚本内临时表或未登记依赖。"
 
@@ -48,12 +79,18 @@ def resolve_instance_root(repo_root: Path, raw_root: Optional[str]) -> Path:
 def infer_layer(name: Optional[str], tables: Iterable[str]) -> Tuple[str, str]:
     for source, text in [("name_prefix", name)] if name else []:
         lowered = text.lower()
-        for layer in ("ods", "dwd", "dwb", "dws", "ads"):
+        for layer in ("s_dwd", "s_dwb", "s_dim"):
+            if lowered == layer or lowered.startswith((f"{layer}_", f"{layer}.", f"{layer}-")):
+                return layer.replace("_", "-").upper(), source
+        for layer in ("ods", "tmp", "dwd", "dwb", "dim", "dws", "ads", "ddm", "edw"):
             if lowered == layer or lowered.startswith((f"{layer}_", f"{layer}.", f"{layer}-")):
                 return layer.upper(), source
     for table in tables:
         lowered = table.split(".")[-1].lower()
-        for layer in ("ods", "dwd", "dwb", "dws", "ads"):
+        for layer in ("s_dwd", "s_dwb", "s_dim"):
+            if lowered == layer or lowered.startswith((f"{layer}_", f"{layer}.", f"{layer}-")):
+                return layer.replace("_", "-").upper(), "output_table"
+        for layer in ("ods", "tmp", "dwd", "dwb", "dim", "dws", "ads", "ddm", "edw"):
             if lowered == layer or lowered.startswith((f"{layer}_", f"{layer}.", f"{layer}-")):
                 return layer.upper(), "output_table"
     return "unknown", "unknown"
@@ -164,6 +201,33 @@ def normalize_table(text: str) -> str:
     return str(text or "").strip().lower()
 
 
+def normalize_layer(layer: Any) -> str:
+    text = str(layer or "unknown").strip()
+    if not text:
+        return "unknown"
+    lowered = text.lower().replace("_", "-")
+    aliases = {
+        "ods": "ODS",
+        "tmp": "TMP",
+        "dwd": "DWD",
+        "dwb": "DWB",
+        "dim": "DIM",
+        "s-dwd": "S-DWD",
+        "s-dwb": "S-DWB",
+        "s-dim": "S-DIM",
+        "dws": "DWS",
+        "ads": "ADS",
+        "ddm": "DDM",
+        "edw": "EDW",
+        "unknown": "unknown",
+    }
+    return aliases.get(lowered, text.upper())
+
+
+def layer_role(layer: Any) -> str:
+    return LAYER_ROLE.get(normalize_layer(layer), "unknown")
+
+
 def normalize_table_key(text: str) -> str:
     raw = normalize_table(text)
     if not raw:
@@ -187,6 +251,11 @@ def normalize_table_key(text: str) -> str:
     return f"{project}.{rest}"
 
 
+def table_basename_key(text: str) -> str:
+    key = normalize_table_key(text)
+    return key.split(".")[-1] if key else ""
+
+
 def table_domain(text: str) -> str:
     key = normalize_table_key(text)
     base = key.split(".")[-1]
@@ -195,12 +264,20 @@ def table_domain(text: str) -> str:
 
 
 def layer_note(layer: str) -> str:
+    layer = normalize_layer(layer)
     return {
         "ODS": "贴源层，通常用于溯源线上源表，不优先作为业务口径答案。",
+        "TMP": "临时中间层，仅用于血缘溯源，不建议作为业务口径取数定义点。",
         "DWD": "明细定义层，通常优先作为业务口径候选。",
         "DWB": "明细宽表/业务明细层，通常优先作为业务口径候选。",
+        "DIM": "维表/映射定义层，可作为枚举或映射口径候选。",
+        "S-DWD": "服务化明细层，可作为业务口径候选，需确认服务化边界。",
+        "S-DWB": "服务化宽表层，可作为业务口径候选，需确认服务化边界。",
+        "S-DIM": "服务化维表层，可作为枚举或映射口径候选。",
         "DWS": "汇总层，适合说明聚合粒度和下游使用。",
         "ADS": "应用层，适合说明应用过滤、展示或报表口径。",
+        "DDM": "集市/下游派生层，默认不作为口径定义点，需 --include-summary 展开。",
+        "EDW": "报表/下游派生层，默认不作为口径定义点，需 --include-summary 展开。",
         "unknown": "未识别层级，需要人工判断。",
     }.get(layer, "未识别层级，需要人工判断。")
 
@@ -235,12 +312,61 @@ def item_tables(item: Dict[str, Any]) -> List[str]:
     return out
 
 
+def is_dexin_projection(item: Dict[str, Any]) -> bool:
+    values: List[str] = []
+    for key in ("table", "node_name"):
+        if item.get(key):
+            values.append(str(item[key]))
+    for value in item.get("outputs") or []:
+        values.append(str(value))
+    for value in values:
+        normalized = normalize_table(value)
+        if normalized.startswith("pk_dexin.") or normalized.startswith("pk_data.pk_dexin."):
+            return True
+    return False
+
+
+def item_role(item: Dict[str, Any]) -> str:
+    if is_dexin_projection(item):
+        return "trace-only"
+    return layer_role(item.get("layer"))
+
+
 def item_keys(item: Dict[str, Any], keys: Iterable[str] = ("table", "inputs", "outputs")) -> Set[str]:
     values: Set[str] = set()
     for value in item_tables({key: item.get(key) for key in keys}):
         normalized = normalize_table_key(value)
         if normalized:
             values.add(normalized)
+    return values
+
+
+def item_basename_keys(item: Dict[str, Any], keys: Iterable[str] = ("table", "inputs", "outputs")) -> Set[str]:
+    values: Set[str] = set()
+    for value in item_tables({key: item.get(key) for key in keys}):
+        basename = table_basename_key(value)
+        if basename:
+            values.add(basename)
+    return values
+
+
+def item_lookup_keys(item: Dict[str, Any]) -> Set[str]:
+    values = item_keys(item, ("table", "inputs", "outputs"))
+    node_name = item.get("node_name")
+    if isinstance(node_name, str):
+        normalized = normalize_table_key(node_name)
+        if normalized:
+            values.add(normalized)
+    return values
+
+
+def item_lookup_basename_keys(item: Dict[str, Any]) -> Set[str]:
+    values = item_basename_keys(item, ("table", "inputs", "outputs"))
+    node_name = item.get("node_name")
+    if isinstance(node_name, str):
+        basename = table_basename_key(node_name)
+        if basename:
+            values.add(basename)
     return values
 
 
@@ -256,13 +382,14 @@ def candidate(item: Dict[str, Any], pages_by_table: Dict[str, List[str]]) -> Dic
         pages.extend(pages_by_table.get(normalize_table(value), []))
         pages.extend(pages_by_table.get(normalize_table(value).split(".")[-1], []))
     pages = sorted(set(pages))
-    layer = str(item.get("layer") or "unknown")
+    layer = normalize_layer(item.get("layer") or "unknown")
     domain = table_domain(table or (item.get("node_name") or ""))
     return {
         "node_id": item.get("node_id"),
         "node_name": item.get("node_name"),
         "table": table,
         "layer": layer,
+        "role": item_role(item),
         "layer_note": layer_note(layer),
         "domain": domain,
         "review": "has_knowledge_page" if pages else "missing_knowledge_page",
@@ -291,20 +418,37 @@ def build_reverse_report(
     items = [item for item in index.get("items", []) if isinstance(item, dict)]
     pages_by_table = knowledge_page_map(root) if root else {}
     wanted = normalize_table_key(table)
+    wanted_basename = table_basename_key(table)
+    query_has_project = "." in normalize_table(table)
+    ambiguous_matches: List[Dict[str, Any]] = []
+    matched_trace_only: List[Dict[str, Any]] = []
+    if wanted:
+        if not query_has_project:
+            basename = [item for item in items if wanted_basename and wanted_basename in item_lookup_basename_keys(item)]
+            if len(basename) == 1:
+                candidates = sorted(key for key in item_lookup_keys(basename[0]) if key.split(".")[-1] == wanted_basename)
+                qualified = [key for key in candidates if "." in key]
+                wanted = (qualified or candidates or sorted(item_lookup_keys(basename[0])))[0]
+            elif len(basename) > 1:
+                ambiguous_matches = basename
+        direct = [item for item in items if wanted in item_lookup_keys(item)]
     upstream_items: List[Dict[str, Any]] = []
     first_layer_items: List[Dict[str, Any]] = []
     summary_items: List[Dict[str, Any]] = []
     seen_summary: Set[str] = set()
 
     for item in items:
-        layer = str(item.get("layer") or "unknown")
-        if not wanted or wanted not in item_keys(item, ("table", "inputs", "outputs")):
+        layer = normalize_layer(item.get("layer") or "unknown")
+        role = item_role(item)
+        if not wanted or wanted not in item_lookup_keys(item):
             continue
+        if role == "trace-only" and layer != "ODS":
+            matched_trace_only.append(item)
         if layer == "ODS":
             upstream_items.append(item)
-        elif layer in DETAIL_LAYERS:
+        elif role == "detail-candidate":
             first_layer_items.append(item)
-        elif layer in SUMMARY_LAYERS:
+        elif role == "downstream-derived":
             key = str(item.get("node_id"))
             if key not in seen_summary:
                 seen_summary.add(key)
@@ -324,7 +468,8 @@ def build_reverse_report(
         found_detail = False
         for item in items:
             key = str(item.get("node_id"))
-            layer = str(item.get("layer") or "unknown")
+            layer = normalize_layer(item.get("layer") or "unknown")
+            role = item_role(item)
             if key in upstream_ids or key in seen_details:
                 continue
             if not (item_keys(item, ("inputs",)) & frontier):
@@ -334,12 +479,12 @@ def build_reverse_report(
                 upstream_ids.add(key)
                 next_frontier.update(item_keys(item, ("table", "outputs")))
                 continue
-            if layer in DETAIL_LAYERS:
+            if role == "detail-candidate":
                 first_layer_items.append(item)
                 seen_details.add(key)
                 found_detail = True
                 continue
-            if include_summary and layer in SUMMARY_LAYERS:
+            if include_summary and role == "downstream-derived":
                 if key not in seen_summary:
                     seen_summary.add(key)
                     summary_items.append(item)
@@ -352,26 +497,30 @@ def build_reverse_report(
     upstream = [candidate(item, pages_by_table) for item in upstream_items]
     downstream = [candidate(item, pages_by_table) for item in first_layer_items]
     summary = [candidate(item, pages_by_table) for item in summary_items] if include_summary else []
-    if upstream and not downstream:
+    trace_only = [candidate(item, pages_by_table) for item in matched_trace_only if item_role(item) == "trace-only"]
+    if ambiguous_matches:
+        warnings = ["ambiguous_table_key: 表名无 project 前缀且命中多个候选，请带 project 前缀重查。"]
+    elif upstream and not downstream:
         warnings = ["未找到下游明细/汇总/应用层候选；先返回 ODS 溯源结果，需人工继续查下游。"]
     elif not upstream and not downstream:
         warnings = ["索引中未命中该表；可能是非生产调度节点、动态 SQL、未拉全索引或表名不一致。"]
     else:
         warnings = []
     all_candidates = upstream + downstream + summary
-    recommended = [
-        item for item in downstream if item.get("layer") in DETAIL_LAYERS
-    ] or downstream or summary or upstream
+    recommended = [] if (ambiguous_matches or trace_only) else ([item for item in downstream if item.get("role") == "detail-candidate"] or downstream or summary or upstream)
     sort_key = lambda item: (LAYER_ORDER.get(str(item.get("layer") or "unknown"), 9), str(item.get("node_name") or ""))
     upstream = sorted(upstream, key=sort_key)
     downstream = sorted(downstream, key=sort_key)
     summary = sorted(summary, key=sort_key)
+    trace_only = sorted(trace_only, key=sort_key)
     recommended = sorted(recommended, key=sort_key)
     all_candidates = sorted(all_candidates, key=sort_key)
     return {
         "table": table,
         "normalized_key": wanted,
         "caveat": CAVEAT,
+        "ambiguous_matches": [candidate(item, pages_by_table) for item in ambiguous_matches],
+        "matched_trace_only": trace_only,
         "upstream_ods": upstream,
         "downstream_candidates": downstream,
         "summary_candidates": summary,
@@ -397,6 +546,10 @@ def render_reverse(report: Dict[str, Any]) -> str:
         lines.append(f"- [{item['domain']}] {item['layer']} {item['node_name']} · {item['table'] or '(no table)'} · {item['review']} · {item['layer_note']}")
     if not report["recommended"]:
         lines.append("- (none)")
+    if report.get("matched_trace_only"):
+        lines.extend(["", "Matched trace-only", "------------------"])
+        for item in report["matched_trace_only"]:
+            lines.append(f"- {item['layer']} {item['node_name']} · {item['table'] or '(no table)'} · 仅溯源，不建议作为取数定义点")
     lines.extend(["", "ODS upstream", "------------"])
     for item in report["upstream_ods"]:
         lines.append(f"- {item['node_name']} · inputs={item['inputs']} · outputs={item['outputs']} · {item['review']}")
