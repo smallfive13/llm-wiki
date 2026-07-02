@@ -130,7 +130,18 @@ review_coverage eligible=45 reviewed=4 percent=9
 - 新增未背书 topic 使 endorsement 从 10 降至 9，符合 task 预期，不做突击背书。
 
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-07-02
+
+**Verdict: PASS。** 独立核验 `wiki/topics/asset-loan-list-caliber.md`（+ 抽查 debt / risk 两页结构一致）：
+
+- 六段齐全：`字段字典`（每行带 `支撑` 引用）/ `过滤与粒度` / `join 与去重` / `适用边界` / `caveat`。
+- **口径唯一定义点守住**（最易翻车处）：`asset_product`、冷静期均**指回 mapping 定义点**，未在 caliber 页重复展开枚举。
+- freshness 锚点补上：`dataworks_ref` / `code_fingerprint` / `last_synced=2026-04-08`（真实 DDL 时间）；全库锚点 8 → 11。
+- `asset_subject=daira` TODO、指纹漂移撤背书都写进 `caveat`。
+- 3 页深化 + `review_queue` 3 条 `confirm`（rev_004/005/006），无 auto `review:true`。
+
+结构选择合理：新建 per-表 caliber topic + 回链既有 `asset-loan-repayment-dwd` 门户，不与 4 个 asset-mapping 冲突。首批已按建议缩到 2 资产 + 1 风控。
+
 
 ## Review by codex · 2026-07-02
 

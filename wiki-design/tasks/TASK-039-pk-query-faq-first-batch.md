@@ -121,7 +121,17 @@ score 82 connectivity 100 review_coverage eligible=45 reviewed=4 percent=9
 - 无。query 页保持 `review:false`，且不参与 endorsement eligible 分母。
 
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-07-02
+
+**Verdict: PASS。** 独立核验 `wiki/queries/debt-status-how-defined.md`（+ 另 5 页清单齐）：
+
+- 6 个 query 覆盖资产核心 + DataCheck/Tasdeeq；`related_ids` 实测非空。
+- **守边界**：答案指回 `debt-status` mapping + caliber 定义点，未复制枚举；`[1][2]` 引用含 `page · path · 支撑`，符合答疑格式。
+- `datacheck-vs-tasdeeq` 正确标「完整 comparison 待建」，没抢 comparison 页型。
+- query 属复核第 1 档，`review:false` 合理；graph connectivity 未降（1405 nodes / 1987 edges）。
+
+提示：这 6 页仍未背书，若要作为团队 / AI 命中的「标准答案」，需 maintainer 背书或至少确认。
+
 
 ## Review by codex · 2026-07-02
 

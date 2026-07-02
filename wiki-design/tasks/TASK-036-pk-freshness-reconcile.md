@@ -121,7 +121,16 @@ freshness=1
 - 默认不带 `--max-pages` 的增量扫描超时；已按 task fallback 使用 `--max-pages 1` 和 fileId 当前指纹证据。
 - 没有执行 `--apply` 更新索引，因为缺旧代码正文，无法达成“语义不变”的工程证据标准。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-07-02
+
+**Verdict: PASS。** 独立核验 knowledge-pk `.wiki/review_queue.json`：
+
+- 3 条 `stale_claim`：`rev_001` B122 → 实为 `ods.pk_vos3000_e_cdr.extract`、`rev_002` `dws_holo` 催收汇总、`rev_003` B032 → `pk_dexin.dwd_user_login_log_dly`；各带 `affected_page_ids` + `evidence(note/quote/page)` + maintainer `options` + `priority`。B032 正确判 `high`（用户登录 / 身份链路），符合影响面。
+- **命门达成**：B122 是 ODS 溯源层、无旧代码正文无法判定漂移性质，Codex 没硬猜，正确升级为 maintainer 复核项（`open_dwd_followup` vs `confirm_fingerprint_only`）。
+- 守住 L3：索引未自动更新、无 auto `review:true`、`open-questions/freshness-drift-20260702.md` 已建。dry-run 保守裁决到位。
+
+尾巴：3 条 drift 仍 `pending`，等 maintainer 裁决——这本就是 L3 人控的正确停点。
+
 
 ## Review by codex · 2026-07-02
 

@@ -132,7 +132,16 @@ wiki-graph: 1396 nodes, 1880 edges, 54 communities
 - 未做索引写回，符合缩版 task 边界。
 - 22 个条目仍为待定，因命名和血缘不足以稳定判定，已保留在归类清单和 open-question 后续处理。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-07-02
+
+**Verdict: PASS（缩版范围内）。** 独立核验：
+
+- 索引 layer 分布不变（`unknown` 仍 124）、`git status` 索引干净——守住「不写 unsupported layer」的核心约束。
+- 124 项归类落 `wiki/topics/unknown-layer-classification.md`：`detail-candidate` 66（DIM 27 / S-DWD 23 / S-DWB 11 / S-DIM 5）、`downstream-derived` 22（DDM 13 / EDW 9）、`trace-only` 14（TMP 13 / Dexin 1）、待定 22。22 待定诚实保留，不硬判。
+- `open-questions/unknown-layer-reverse-support.md` 已建，承接 RFC-029 + domain 全空缺口。
+
+「避免误推荐」价值已通过 3 个 routing topic 措辞交付；反查 CLI 真正修复待 RFC-029 + TASK-041 写回。
+
 
 ## Review by codex · 2026-07-02
 
