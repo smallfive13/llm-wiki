@@ -2,7 +2,7 @@
 id: rfc_20260702_029
 title: 反查物理层级扩展 + 推荐角色分档（DIM / S-* / TMP / DDM / EDW）
 author: claude
-status: proposed
+status: accepted
 created: 2026-07-02
 updated: 2026-07-02
 targets:
@@ -16,6 +16,8 @@ reviewers:
 ---
 
 # RFC-029: 反查物理层级扩展 + 推荐角色分档
+
+> **作者修订 · 2026-07-02（回应 codex review）**：本版已按 codex 三点阻塞调整——补无前缀歧义规则、Dexin 识别机械化、trace-only 精确命中输出语义；并折入 `LAYER_ROLE` 兼容 wrapper 与大小写归一。status → discussing，待用户 Decision。
 
 ## 背景
 
@@ -40,17 +42,26 @@ RFC-028 的表名反查（`wiki_index.py reverse`）只认数仓标准分层 `OD
 | `downstream-derived`（下游派生） | 默认不推荐，`--include-summary` 才显示 | DWS、ADS、**DDM、EDW** |
 | `trace-only`（仅溯源） | 只作血缘溯源，不作取数推荐 | ODS、**TMP**、**Dexin 投影** |
 
-现有 `DETAIL_LAYERS` / `SUMMARY_LAYERS` 收敛成一张 `LAYER_ROLE` 声明表（层级名 → 角色），`LAYER_ORDER` 补入新层级；DWD/DWB/DWS/ADS/ODS/unknown 的角色与今日完全一致。
+现有 `DETAIL_LAYERS` / `SUMMARY_LAYERS` 收敛成一张 `LAYER_ROLE` 声明表（层级名 → 角色），`LAYER_ORDER` 补入新层级；DWD/DWB/DWS/ADS/ODS/unknown 的角色与今日完全一致。保留 `DETAIL_LAYERS` / `SUMMARY_LAYERS` 兼容 wrapper 从 `LAYER_ROLE` 派生，缩小回归面。
 
-### 2. 表名归一化补前缀命中
+### 2. 表名归一化补前缀命中 + 歧义规则
 
-反查的 `normalize_table_key`（TASK-033）当前对无 project 前缀的 `dim_ / s_dwd_ / s_dwb_ / tmp_ / ddm_ / edw_` 表名命中不稳。本 RFC 补：这些前缀的表名在有 / 无 `pk_data.`（及 `pk_dexin.`）前缀时都能命中同一 index item，与现有 `ods.X.*` 归一同一处理。
+反查的 `normalize_table_key`（TASK-033）当前对无 project 前缀的 `dim_ / s_dwd_ / s_dwb_ / tmp_ / ddm_ / edw_` 表名命中不稳。本 RFC 补：
 
-### 3. 离线不变量保持
+- 这些前缀的表名在有 / 无 `pk_data.`（及 `pk_dexin.`）前缀时都能命中同一 index item，与现有 `ods.X.*` 归一同一处理。
+- **歧义规则**（响应 codex review 点 1）：无前缀表名**只在归一后唯一命中时**自动 resolve；若同一 basename 有多个候选（如 `pk_data.dim_x` 与 `pk_dexin.dim_x` 并存），**不作推荐**，输出 `ambiguous_table_key` warning，提示用户带 project 前缀重查。
+- **大小写归一**：索引统一存 `DIM / S-DWD / S-DWB / S-DIM / TMP / DDM / EDW`，查 `LAYER_ROLE` 前先 normalize，杜绝 `s_dwd / S_DWD / S-DWD` 三写法漂移。
+
+### 3. Dexin 识别 + trace-only 命中输出（响应 codex review 点 2、3）
+
+- **Dexin 投影识别机械化**：判为 `trace-only` 的「Dexin 投影」= index item 的 `table` / `node_name` / `outputs` 任一以 `pk_dexin.` 或 `pk_data.pk_dexin.` 开头；不靠人工语义，fixture 与后续写回 task 用同一判据。
+- **trace-only 精确命中输出**：`TMP / ODS / Dexin` 不进 Recommended；但当用户查询的正是某个 trace-only 表时，CLI 必须显式输出「matched trace-only item · 仅溯源，不建议作为取数定义点」，而非只在 upstream 或 warning 里间接出现。此输出口径进验证断言。
+
+### 4. 离线不变量保持
 
 `reverse` 仍只读本地 `.wiki/dataworks_index.json`，不联网；`wiki_lint / wiki_graph / wiki_eval` 保持离线零依赖，不受影响。
 
-### 4. 落地顺序
+### 5. 落地顺序
 
 RFC-029 accepted → 一个 apply-task 改 `wiki_index.py` + 文档 + fixture；随后再开实例 task 把 TASK-037 归好的 124 项确认层级写回 knowledge-pk 索引（此前 TASK-037 只更新了 routing 措辞，未写索引）。两步分离，避免"工具没就绪就先污染索引"。
 
@@ -62,8 +73,10 @@ TASK-037 Codex 复核（2026-07-02）：实跑 `reverse --table dim_merchant_inf
 
 - fixture：构造含 DIM / S-DWD / TMP / DDM / EDW 的 mini 索引，断言 `reverse` 对 detail-candidate 推荐、对 downstream-derived 默认隐藏 / `--include-summary` 显示、对 trace-only 只溯源。
 - 归一化 fixture：有 / 无 `pk_data.` 前缀的 `dim_ / s_dwd_ / tmp_` 表名命中同一 item。
+- 歧义 fixture：同 basename 多 project 候选 → 输出 `ambiguous_table_key` warning、不推荐。
+- trace-only 输出 fixture：精确查询某 TMP / Dexin 表 → 输出「matched trace-only · 仅溯源，不建议取数」，不进 Recommended。
 - 真实 smoke（knowledge-pk）：`reverse --table dim_merchant_info` / `s_dwd_asset_merchant_apply_snapshot_dly` 命中并作候选推荐，`tmp_asset_repay_dtl` 标为仅溯源 / 不推荐。
-- 回归：DWD/DWB/DWS/ADS/ODS/unknown 反查输出与改动前一致；`wiki_lint/graph/eval` 离线零依赖断言不变；全量 `unittest` 绿。
+- 回归：DWD/DWB/DWS/ADS/ODS/unknown 反查输出与改动前一致（含 `DETAIL_LAYERS` / `SUMMARY_LAYERS` 兼容 wrapper 逐字节断言）；`wiki_lint/graph/eval` 离线零依赖断言不变；全量 `unittest` 绿。
 
 ## 替代方案
 
@@ -81,7 +94,7 @@ TASK-037 Codex 复核（2026-07-02）：实跑 `reverse --table dim_merchant_inf
 
 ## Decision
 
-（由用户填写，或用户明确授权某个 Agent 代写。）
+**Accepted**（用户 2026-07-02 明确 accept，授权 claude 代写结论）。三点阻塞（无前缀歧义规则、Dexin 机械识别、trace-only 精确命中输出）已在本版提案解决，Codex review 方向认可。落地：**TASK-040**（引擎 apply）→ **TASK-041**（knowledge-pk 124 层级写回）。
 
 ## Review by codex · 2026-07-02
 
