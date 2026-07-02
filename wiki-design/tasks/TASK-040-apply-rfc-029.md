@@ -3,7 +3,7 @@ id: task_20260702_040
 title: Apply RFC-029 — 反查物理层级扩展 + 推荐角色分档（引擎侧）
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-07-02
 updated: 2026-07-02
@@ -55,6 +55,65 @@ $PY -m unittest discover -s tests 2>&1 | tail -2
 - commit sha + RFC-029 `Applied in`
 - 偏离或异常
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-07-02
+
+### Step 0 spec-review
+
+确认 RFC-029 已 accepted，Decision 已登记。现有 `wiki_index.py` 反查核心落点为 `normalize_table_key` / `item_keys` / `build_reverse_report` / `render_reverse`，旧 `DETAIL_LAYERS={DWD,DWB}` 与 `SUMMARY_LAYERS={DWS,ADS}` 是兼容重点。
+
+### 改动位置
+
+- `scripts/wiki_index.py`
+  - 新增 `LAYER_ROLE`：`detail-candidate` / `downstream-derived` / `trace-only` 三档角色。
+  - `DETAIL_LAYERS` / `SUMMARY_LAYERS` 保留为兼容 wrapper，并断言仍等于旧值 `{'DWD','DWB'}` / `{'DWS','ADS'}`。
+  - `infer_layer` 支持 `DIM / S-DWD / S-DWB / S-DIM / TMP / DDM / EDW`。
+  - 新增 `normalize_layer` / `layer_role` / `is_dexin_projection` / `item_role`。
+  - 无 project 前缀查询先按 basename 候选数判断：唯一命中才 resolve，多候选输出 `ambiguous_table_key`，不推荐。
+  - Dexin 通过 `table` / `node_name` / `outputs` 的 `pk_dexin.` 或 `pk_data.pk_dexin.` 前缀机械识别为 `trace-only`。
+  - TMP / Dexin 精确命中输出 `Matched trace-only`，并标注「仅溯源，不建议作为取数定义点」；ODS 旧输出保持不变以满足兼容性。
+- `tests/test_task_040.py`
+  - 覆盖三档分档、无前缀唯一命中、无前缀歧义、node_name 合成输出命中、Dexin 机械识别、trace-only 精确命中 suppress downstream recommendation、旧六层逐字节回归、离线隔离。
+- `wiki-design/02-workflows.md` / `scripts/README.md`
+  - 补物理层级三档角色、`--include-summary`、`ambiguous_table_key`、Dexin trace-only 与 trace-only 输出说明。
+
+### 兼容 / 回归
+
+- 旧六层渲染在 `tests.test_task_040.test_legacy_six_layer_rendering_is_byte_compatible` 中逐字节断言。
+- `tests.test_task_032` / `tests.test_task_033` 旧反查回归通过。
+- `wiki_lint` / `wiki_graph` / `wiki_eval` 离线隔离断言通过：`泄漏: 无`。
+
+### 验证输出
+
+```text
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -c "import sys; sys.path.insert(0,'scripts'); import wiki_lint,wiki_graph,wiki_eval; print('泄漏:', [m for m in sys.modules if any(k in m.lower() for k in ('dataworks','alibabacloud','sqlglot'))] or '无')"
+泄漏: 无
+
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest -v tests.test_task_040
+Ran 9 tests in 0.046s
+OK
+
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest discover -s tests
+Ran 156 tests in 84.553s
+OK (skipped=1)
+```
+
+### Real instance smoke
+
+在当前 knowledge-pk 索引尚未执行 TASK-041 写回 124 项层级前，真实 smoke 仍受现有索引内容限制：
+
+- `dim_merchant_info` 可归一到 `pk_data.dim_merchant_info`，但当前索引 item 输出为合成表名且 layer 仍未写回，因此暂无候选；TASK-041 写回后会进入 DIM 角色。
+- `s_dwd_asset_merchant_apply_snapshot_dly` 当前同 basename 多候选，输出 `ambiguous_table_key`，符合 RFC-029 歧义规则。
+- `pk_data.tmp_asset_repay_dtl` 当前索引 layer 仍未写回 TMP，因此仍表现为旧 DWB 下游推荐；TASK-041 写回 TMP 后会触发 trace-only 精确命中。
+
+### Commits
+
+- Apply commit: `4c3bf92` (`[apply rfc-029] add physical layer reverse roles`)
+- RFC Applied commit: `d8797b3` (`[rfc-029] mark applied by codex`)
+
+### 偏离或异常
+
+- 首次验证命令把完整 conda 命令放入 shell 变量，zsh 按整串路径执行失败；已按要求改为每条命令直接写完整 `/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python ...` 后重跑通过。
+- 为满足“旧 ODS 反查输出逐字节不变”，trace-only 精确命中提示只对新增 trace-only 类型（TMP / Dexin）触发；ODS 保持旧渲染。
+
 
 ## Evaluation by claude · <date>
