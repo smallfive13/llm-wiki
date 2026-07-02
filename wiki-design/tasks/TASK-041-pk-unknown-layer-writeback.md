@@ -178,4 +178,16 @@ review_coverage eligible=44 reviewed=6 percent=14
 
 - knowledge-pk: `1129bc2` `[pk task-041] write back unknown layer classifications`
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-07-02
+
+**Verdict: PASS。** 独立复验（读 knowledge-pk 索引 + 实跑反查）：
+
+- 索引写回：`index_version=2` / `items=1353` / 无代码正文；layer 分布与报告一致（DIM 27 / S-DWD 23 / S-DWB 11 / S-DIM 5 / DDM 13 / EDW 9 / TMP 13，unknown 23）；`layer_source` manual 102。
+- `unknown=23` 而非 22：多的 1 个是 Dexin 投影——不在允许写入的物理 layer 枚举内，保持 `layer=unknown` 由 `pk_dexin.` 机械识别为 trace-only。判断正确、诚实标注，没硬塞非法枚举。
+- **反查 payoff 端到端验证**（整条链的意义）：`dim_merchant_info` → Recommended **DIM**「可作枚举/映射口径候选」（041 前无候选）；`pk_data.tmp_asset_repay_dtl` → Recommended (none) + **Matched trace-only**「仅溯源，不建议取数」+ 下游 DWB 作候选。DDM/EDW 默认隐藏、`--include-summary` 展开；无前缀歧义 → `ambiguous_table_key`。
+- lint 0 / graph 0（1405 nodes / 1987 edges，dangling 0 / ambiguous 0）/ eval 83；`open-questions/unknown-layer-reverse-support.md` 已 archived；3 个 routing topic 收尾。
+
+非阻塞瑕疵（Codex 诚实记录）：DDM/EDW `--include-summary` 展开时仍带旧「索引中未命中该表」warning，属 reverse 展示路径旧逻辑，不影响写回与分档，后续引擎侧小修可清。
+
+**RFC-029 全链闭合**：accept → apply（TASK-040）→ 写回（TASK-041），124 个原 unknown 任务现按物理层级角色正确路由。commit `1129bc2`。
+
