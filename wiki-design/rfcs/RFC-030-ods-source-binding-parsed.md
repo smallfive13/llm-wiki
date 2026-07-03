@@ -199,6 +199,6 @@ reader stepType=mongodb · parameter keys: batchSize, collectionName, column, cu
 - accepted 后建议拆两步：先实现 parser + index 字段 + fixtures + survey report；再做 pk 实例回填和批量快审文档，避免把工具契约和批量背书动作混在一个 commit。
 
 
-## Applied in 494e7d925ef2de75aed617261b3ff4b325e2d8a4
+## Applied in 49ec3f9738069c9a4a94f3cbae51cf1827a81f7f
 
 引擎侧由 codex 落地：DI reader-only binding parser、`source_binding/source_datasource/source_tables/binding_warnings` additive index 字段、freshness 增量 binding diff、tests 与文档同步。TASK-048 负责 pk 实例回填与抽查 gate。

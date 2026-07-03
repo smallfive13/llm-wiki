@@ -113,7 +113,7 @@ sqlserver file:96107/500602981 · node=ods.pak_es_cdr_sip_record.extract · bind
 - `wiki-design/02-workflows.md` 增加 ODS binding 四态、增量 binding diff、分层抽样批量快审约束。
 - `scripts/README.md` 增加 `wiki_freshness` binding diff 与 `wiki_index` ODS source binding 字段说明。
 
-偏离或异常：无。commit sha：`494e7d925ef2de75aed617261b3ff4b325e2d8a4`。
+偏离或异常：无。commit sha：`49ec3f9738069c9a4a94f3cbae51cf1827a81f7f`。
 
 
 ## Evaluation by claude · <date>
