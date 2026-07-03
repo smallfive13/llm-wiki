@@ -451,6 +451,8 @@ python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge-pk --incremental
 
 增量部署模式只看 DataWorks 成功部署到生产的文件变更：`ListDeployments(status=1)` + `GetDeployment(ToEnvironment=2)` + `DeployedItems[*].FileId/FileVersion`。它不是开发态编辑 / 草稿扫描。默认 dry-run：只对变更文件调用 `GetFile` 计算 `dw-code-v1` 指纹，和本地 `.wiki/dataworks_index.json` 比较，并用 `dataworks_ref` / 归一化血缘列出受影响口径页；不会改页面状态，也不会写索引。只有显式 `--apply` 才把变化后的指纹写回索引；页面是否 stale / review 仍由 maintainer 人工处理。
 
+当变更文件对应 `program_type=DI` 或本地索引已有 `source_binding=parsed` 时，增量模式会用同一个 `GetFile` 内容重解析 ODS 源表 binding，并在 report 里分别给出 `fingerprint_changed` 与 `binding_changed`。`binding_changed` 会生成待复核建议，但不会自动撤 `review:true`，也不会改 wiki 页面状态。
+
 退出码：
 
 - `0`：运行完成；有 drift / auth warning 也返回 0
@@ -471,7 +473,16 @@ python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge-pk --incremental
 - `SchedulerType == "PAUSE"` 不进入主索引。
 - `ListFiles(node_id=<prod node id>)` 用来反查设计态 `FileId`；`CommitStatus` 只作为辅助字段，不作为生产过滤依据。
 
-索引默认写到实例根 `.wiki/dataworks_index.json`。这是受管共享基线，应进 Git，但 `.ignore` 默认屏蔽 `.wiki/`，所以不会进入全文检索。索引不包含代码原文、凭证或客户级样本；只保留路径、输入表、输出表、分层、指纹和同步信息。JSON 稳定排序，固定 `index_version`，没有每次运行都会变化的 `generated_at`。
+索引默认写到实例根 `.wiki/dataworks_index.json`。这是受管共享基线，应进 Git，但 `.ignore` 默认屏蔽 `.wiki/`，所以不会进入全文检索。索引不包含代码原文、凭证或客户级样本；只保留路径、输入表、输出表、分层、指纹、同步信息和可选 ODS source binding。JSON 稳定排序，固定 `index_version`，没有每次运行都会变化的 `generated_at`。
+
+ODS DI source binding 字段是 additive optional，不 bump `index_version=2`：
+
+- `source_binding`: `parsed` / `ambiguous` / `unparsed` / `inferred`。
+- `source_datasource`: parsed 时的源端 datasource。
+- `source_tables`: parsed 时的源端表或 collection 列表；多表不截断。
+- `binding_warnings`: ambiguous / unparsed 的原因。
+
+解析器只看 DI JSON 的 reader step：mysql/sqlserver 取 `reader.parameter.connection[].datasource/table[]`，mongodb 取 `reader.parameter.datasource/collectionName`；writer ODPS table 是目标表，严禁当源表。PYODPS3 等脚本模式保持 `inferred`。
 
 用法：
 

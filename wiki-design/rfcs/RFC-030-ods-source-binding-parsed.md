@@ -197,3 +197,8 @@ reader stepType=mongodb · parameter keys: batchSize, collectionName, column, cu
 - RFC 写“DI 任务配置里明确写着 DataSource + table”需要改成更精确的“DataWorks DI JSON reader 配置里明确写源端 datasource 与 table/collection；不同 reader stepType 字段路径不同”。
 - `confidence` 从 low 升 medium 只应适用于 parsed 且无 ambiguity 的 ODS source；不应扩大到 PYODPS3 inferred。
 - accepted 后建议拆两步：先实现 parser + index 字段 + fixtures + survey report；再做 pk 实例回填和批量快审文档，避免把工具契约和批量背书动作混在一个 commit。
+
+
+## Applied in 494e7d925ef2de75aed617261b3ff4b325e2d8a4
+
+引擎侧由 codex 落地：DI reader-only binding parser、`source_binding/source_datasource/source_tables/binding_warnings` additive index 字段、freshness 增量 binding diff、tests 与文档同步。TASK-048 负责 pk 实例回填与抽查 gate。

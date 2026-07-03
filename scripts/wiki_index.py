@@ -11,7 +11,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
-from dataworks_client import DataWorksClient, DataWorksClientError, DataWorksNode
+from dataworks_client import DataWorksClient, DataWorksClientError, DataWorksNode, parse_di_source_binding, source_binding_to_index_fields
 from wiki_common import write_json_atomic
 
 
@@ -110,7 +110,7 @@ def primary_table(tables: List[str]) -> Optional[str]:
 
 def node_to_item(node: DataWorksNode) -> Dict[str, Any]:
     layer, layer_source = infer_layer(node.node_name, node.tables)
-    return {
+    item = {
         "code_fingerprint": node.fingerprint,
         "dataworks_ref": f"file:{node.project_id}/{node.file_id}" if node.file_id is not None else None,
         "file_id": node.file_id,
@@ -126,6 +126,9 @@ def node_to_item(node: DataWorksNode) -> Dict[str, Any]:
         "program_type": node.program_type,
         "table": primary_table(sorted(node.tables)),
     }
+    if node.program_type and node.program_type != "DI":
+        item["source_binding"] = "inferred"
+    return item
 
 
 def stable_index(
@@ -148,6 +151,30 @@ def stable_index(
     }
 
 
+def attach_source_bindings(index: Dict[str, Any], client: Any, *, project_id: int) -> Dict[str, Any]:
+    for item in index.get("items", []):
+        if not isinstance(item, dict):
+            continue
+        for key in ("source_binding", "source_datasource", "source_tables", "binding_warnings"):
+            item.pop(key, None)
+        program_type = item.get("program_type")
+        if program_type != "DI":
+            item.setdefault("source_binding", "inferred")
+            continue
+        file_id = item.get("file_id")
+        if not isinstance(file_id, int):
+            item.update(source_binding_to_index_fields(parse_di_source_binding("", program_type="DI")))
+            continue
+        try:
+            code = client.get_file_code(f"file:{project_id}/{file_id}")
+            binding = parse_di_source_binding(code.content, program_type="DI")
+        except DataWorksClientError as exc:
+            binding = parse_di_source_binding("", program_type="DI")
+            binding = type(binding)("unparsed", None, [], [f"GetFile failed: {exc.code}"])
+        item.update(source_binding_to_index_fields(binding))
+    return index
+
+
 def build_index(
     client: Any,
     *,
@@ -157,7 +184,8 @@ def build_index(
     snapshot_date: Optional[str] = None,
 ) -> Dict[str, Any]:
     nodes = client.list_prod_nodes(project_id, max_pages=max_pages)
-    return stable_index(nodes, project_id=project_id, project_identifier=project_identifier, snapshot_date=snapshot_date)
+    index = stable_index(nodes, project_id=project_id, project_identifier=project_identifier, snapshot_date=snapshot_date)
+    return attach_source_bindings(index, client, project_id=project_id)
 
 
 def load_index(root: Path, rel_path: str = DEFAULT_INDEX_REL) -> Dict[str, Any]:

@@ -291,6 +291,17 @@ python3 scripts/wiki_freshness.py --root <instance-root> --incremental-deploymen
 
 这里的"变更"只指 DataWorks 成功部署到生产的文件变更，不包括开发态编辑或草稿保存。工具读取 `ListDeployments(status=1)` + `GetDeployment(ToEnvironment=2)` 的 `DeployedItems[*].FileId/FileVersion`，只对这些变更文件 `GetFile` 计算指纹；再用本地索引的 `dataworks_ref` 和归一化血缘找受影响口径页，输出待复核清单。默认 dry-run，不改页面 status、不写索引；只有 maintainer 明确使用 `--apply` 才更新 `.wiki/dataworks_index.json` 中对应文件指纹。即使索引已更新，页面是否 stale、是否重新背书仍必须人工判断。
 
+ODS DI 同步任务的源表 binding 是增量防腐的一部分：只对变更文件且 `program_type=DI` 或已有 `source_binding=parsed` 的索引项重解析 reader 配置。工具分别输出 `fingerprint_changed` 与 `binding_changed`；指纹变化但 binding 不变时只更新指纹，binding 变化时新增待复核建议。工具不得自动撤回 `review:true`，也不得自动修改 wiki 页面状态。
+
+ODS binding 四态：
+
+- `parsed`：DataWorks DI JSON reader 配置可机械解析。mysql/sqlserver 从 `reader.parameter.connection[].datasource/table[]` 取源端；mongodb 从 `reader.parameter.datasource/collectionName` 取源端。writer ODPS table 是目标表，禁止当源表。
+- `ambiguous`：DI JSON 可读但 reader shape 超出支持，例如多 reader、缺 datasource、table 为空；必须附 `binding_warnings`。
+- `unparsed`：DI content 不是可解析 JSON 或结构异常。
+- `inferred`：PYODPS3 等未走 DI 配置解析，仍按命名/血缘推断。
+
+批量快审背书只适用于 `source_binding=parsed` 且指纹当前的 ODS source 页。maintainer 必须按 reader `stepType` 分层抽样（mysql / mongodb / sqlserver 都覆盖，sqlserver 只有 1 个则必查），并记录解析器 commit、索引 snapshot、样本 file_id/node_name、source_datasource/source_tables 与人工核对结论。抽查通过后，批量 `review:true` 的范围仅限本次解析器支持且抽查通过的 binding shape；`ambiguous` / `unparsed` / `inferred` 不在批量背书范围。
+
 ### 答疑回源
 
 Agent 用知识库答疑时默认先信库，不把 DataWorks 当作每问必查的实时后端。是否回源只看内容和页面状态，不看请求来自企微、CLI 还是其它入口。

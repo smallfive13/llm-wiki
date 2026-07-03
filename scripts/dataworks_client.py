@@ -9,11 +9,12 @@ usable without SDK or network access.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from wiki_common import LOCAL_TZ
 
@@ -98,6 +99,14 @@ class DataWorksDeploymentItem:
     to_environment: Optional[int]
 
 
+@dataclass(frozen=True)
+class DataWorksSourceBinding:
+    source_binding: str
+    source_datasource: Optional[str]
+    source_tables: List[str]
+    binding_warnings: List[str]
+
+
 FILE_REF_RE = re.compile(r"^file:([^/]+)/(\d+)$")
 TABLE_REF_RE = re.compile(r"^table:([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)$")
 
@@ -136,6 +145,122 @@ def code_sha256(files: Sequence[Tuple[str, Any]]) -> str:
     ]
     payload = "\n".join(normalized).encode("utf-8")
     return FINGERPRINT_PREFIX + hashlib.sha256(payload).hexdigest()
+
+
+def _string_list(value: Any) -> List[str]:
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    if isinstance(value, list):
+        result: List[str] = []
+        for item in value:
+            if isinstance(item, str) and item.strip():
+                result.append(item.strip())
+        return result
+    return []
+
+
+def _dedupe(values: Iterable[str]) -> List[str]:
+    seen: set[str] = set()
+    result: List[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
+
+
+def source_binding_to_index_fields(binding: DataWorksSourceBinding) -> Dict[str, Any]:
+    fields: Dict[str, Any] = {"source_binding": binding.source_binding}
+    if binding.source_datasource:
+        fields["source_datasource"] = binding.source_datasource
+    if binding.source_tables:
+        fields["source_tables"] = binding.source_tables
+    if binding.binding_warnings:
+        fields["binding_warnings"] = binding.binding_warnings
+    return fields
+
+
+def source_binding_from_index_item(item: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        key: item.get(key)
+        for key in ("source_binding", "source_datasource", "source_tables", "binding_warnings")
+        if key in item
+    }
+
+
+def parse_di_source_binding(content: Any, *, program_type: Optional[str] = "DI") -> DataWorksSourceBinding:
+    if program_type and str(program_type).upper() != "DI":
+        return DataWorksSourceBinding("inferred", None, [], [])
+    try:
+        data = json.loads(normalize_code_content(content))
+    except Exception:
+        return DataWorksSourceBinding("unparsed", None, [], ["content is not valid DI JSON"])
+    if not isinstance(data, dict):
+        return DataWorksSourceBinding("unparsed", None, [], ["DI JSON top-level is not object"])
+    steps = data.get("steps")
+    if not isinstance(steps, list):
+        return DataWorksSourceBinding("unparsed", None, [], ["DI JSON missing steps list"])
+
+    readers = [step for step in steps if isinstance(step, dict) and step.get("category") == "reader"]
+    if not readers:
+        return DataWorksSourceBinding("ambiguous", None, [], ["DI JSON has no reader step"])
+    if len(readers) > 1:
+        return DataWorksSourceBinding("ambiguous", None, [], ["DI JSON has multiple reader steps"])
+
+    reader = readers[0]
+    parameter = reader.get("parameter")
+    if not isinstance(parameter, dict):
+        return DataWorksSourceBinding("ambiguous", None, [], ["reader parameter is not object"])
+    step_type = str(reader.get("stepType") or "").lower()
+    warnings: List[str] = []
+    datasource: Optional[str] = None
+    tables: List[str] = []
+
+    if step_type in {"mysql", "sqlserver"}:
+        connections = parameter.get("connection")
+        if not isinstance(connections, list) or not connections:
+            return DataWorksSourceBinding("ambiguous", None, [], [f"{step_type} reader missing connection list"])
+        datasources: List[str] = []
+        for idx, connection in enumerate(connections):
+            if not isinstance(connection, dict):
+                warnings.append(f"connection[{idx}] is not object")
+                continue
+            ds = connection.get("datasource")
+            if isinstance(ds, str) and ds.strip():
+                datasources.append(ds.strip())
+            else:
+                warnings.append(f"connection[{idx}] missing datasource")
+            connection_tables = _string_list(connection.get("table"))
+            if connection_tables:
+                tables.extend(connection_tables)
+            else:
+                warnings.append(f"connection[{idx}] missing table list")
+        datasources = _dedupe(datasources)
+        tables = _dedupe(tables)
+        if len(datasources) == 1:
+            datasource = datasources[0]
+        elif len(datasources) > 1:
+            warnings.append("multiple datasource values in reader connection list")
+        if datasource and tables and not warnings:
+            return DataWorksSourceBinding("parsed", datasource, tables, [])
+        return DataWorksSourceBinding("ambiguous", datasource, tables, warnings or ["mysql/sqlserver reader binding incomplete"])
+
+    if step_type == "mongodb":
+        ds = parameter.get("datasource")
+        if isinstance(ds, str) and ds.strip():
+            datasource = ds.strip()
+        else:
+            warnings.append("mongodb reader missing datasource")
+        tables = _dedupe(_string_list(parameter.get("collectionName")))
+        if not tables:
+            warnings.append("mongodb reader missing collectionName")
+        if datasource and tables and not warnings:
+            return DataWorksSourceBinding("parsed", datasource, tables, [])
+        return DataWorksSourceBinding("ambiguous", datasource, tables, warnings or ["mongodb reader binding incomplete"])
+
+    return DataWorksSourceBinding("ambiguous", None, [], [f"unsupported reader stepType: {step_type or '<empty>'}"])
 
 
 def epoch_ms_to_iso(value: Any) -> Optional[str]:

@@ -13,7 +13,7 @@ from datetime import datetime, time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from dataworks_client import DataWorksClient, DataWorksClientError, parse_ref
+from dataworks_client import DataWorksClient, DataWorksClientError, parse_di_source_binding, parse_ref, source_binding_from_index_item, source_binding_to_index_fields
 from wiki_common import LOCAL_TZ, load_markdown, now_iso, write_json_atomic
 from wiki_index import DEFAULT_INDEX_REL, load_index, normalize_table_key
 
@@ -226,6 +226,14 @@ def evaluate_deployment_incremental(
         if item:
             changed["previous_fingerprint"] = item.get("code_fingerprint")
             changed["fingerprint_changed"] = code.fingerprint != item.get("code_fingerprint")
+            should_parse_binding = item.get("program_type") == "DI" or item.get("source_binding") == "parsed"
+            if should_parse_binding:
+                previous_binding = source_binding_from_index_item(item)
+                binding = parse_di_source_binding(code.content, program_type=str(item.get("program_type") or "DI"))
+                current_binding = source_binding_to_index_fields(binding)
+                changed["binding_previous"] = previous_binding
+                changed["binding_current"] = current_binding
+                changed["binding_changed"] = previous_binding != current_binding
             affected = affected_docs_for_item(item, docs)
             changed["affected_pages"] = affected
             for page in affected:
@@ -242,7 +250,23 @@ def evaluate_deployment_incremental(
                 if apply:
                     item["code_fingerprint"] = code.fingerprint
                     item["last_synced"] = change.execute_time_iso or now_iso()
+                    if should_parse_binding:
+                        for key in ("source_binding", "source_datasource", "source_tables", "binding_warnings"):
+                            item.pop(key, None)
+                        item.update(current_binding)
                     changed_index = True
+            if changed.get("binding_changed"):
+                report["warnings"].append(warning("BINDING_CHANGED", None, f"file:{project_id}/{change.file_id}: source binding changed"))
+                report.setdefault("review_queue_suggestions", []).append(
+                    {
+                        "type": "source_binding_changed",
+                        "status": "pending",
+                        "priority": "high",
+                        "file_id": change.file_id,
+                        "node_name": item.get("node_name"),
+                        "reason": "DataWorks DI reader source binding changed",
+                    }
+                )
         else:
             changed["fingerprint_changed"] = None
             changed["reason"] = "file_id not present in local index"
@@ -411,9 +435,12 @@ def render_human(report: Dict[str, Any]) -> str:
         if not report["changed_files"]:
             lines.append("- (none)")
         for item in report["changed_files"]:
+            binding = ""
+            if "binding_changed" in item:
+                binding = f" · binding_changed={item.get('binding_changed')}"
             lines.append(
                 f"- file:{report['project_id']}/{item.get('file_id')} · deployment={item.get('deployment_id')} · "
-                f"version={item.get('file_version')} · indexed={item.get('indexed')} · changed={item.get('fingerprint_changed')}"
+                f"version={item.get('file_version')} · indexed={item.get('indexed')} · changed={item.get('fingerprint_changed')}" + binding
             )
         lines.extend(["", "Affected pages", "--------------"])
         if not report["affected_pages"]:
