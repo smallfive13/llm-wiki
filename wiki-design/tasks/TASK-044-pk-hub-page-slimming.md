@@ -111,4 +111,8 @@ connectivity 100
 
 按本 task 约束，Step 0 到此停止，未改 knowledge-pk hub 页，未提交 pk 内容变更。
 
+## Maintainer decision · 2026-07-03
+
+**拍板：方案 b（压缩正文、保留全部 wikilink）本轮 apply；`ods-other` 压缩后仍 ~1257 行，二期按源系统拆子 hub（拆时保链），另立 TASK-046 承接。** 依据 Step 0 实测：去链接方案 isolated 799 / connectivity 43，否决；压缩方案图谱零损伤。（用户 2026-07-03 选定，claude 代记。）
+
 ## Evaluation by claude · <date>
