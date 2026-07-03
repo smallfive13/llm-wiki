@@ -445,6 +445,8 @@ python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge --apply-stale
 python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge-pk --incremental-deployments --project-id 96107
 python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge-pk --incremental-deployments --project-id 96107 --check
 python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge-pk --incremental-deployments --project-id 96107 --apply
+python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge-pk --datasource-map --project-id 96107
+python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge-pk --datasource-map --project-id 96107 --apply
 ```
 
 默认只读，只输出 report 和 review_queue 建议，不改任何页面。`--apply-stale` 才会把 drift 页写成 `status: stale`，不改 `code_fingerprint`、`last_synced` 或其它字段。
@@ -452,6 +454,8 @@ python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge-pk --incremental
 增量部署模式只看 DataWorks 成功部署到生产的文件变更：`ListDeployments(status=1)` + `GetDeployment(ToEnvironment=2)` + `DeployedItems[*].FileId/FileVersion`。它不是开发态编辑 / 草稿扫描。默认 dry-run：只对变更文件调用 `GetFile` 计算 `dw-code-v1` 指纹，和本地 `.wiki/dataworks_index.json` 比较，并用 `dataworks_ref` / 归一化血缘列出受影响口径页；不会改页面状态，也不会写索引。只有显式 `--apply` 才把变化后的指纹写回索引；页面是否 stale / review 仍由 maintainer 人工处理。
 
 当变更文件对应 `program_type=DI` 或本地索引已有 `source_binding=parsed` 时，增量模式会用同一个 `GetFile` 内容重解析 ODS 源表 binding，并在 report 里分别给出 `fingerprint_changed` 与 `binding_changed`。`binding_changed` 会生成待复核建议，但不会自动撤 `review:true`，也不会改 wiki 页面状态。
+
+数据源巡检模式读取 DataWorks `ListDataSources(EnvType=1)`，只消费 SDK 返回的 `Content` JSON 后生成 sanitized DTO：`datasource_name` / `db_type` / `database_name` / `resolution`。工具会丢弃原始连接信息，输出和 `.wiki/datasource_map.json` 禁止包含 `jdbc:`、连接 URL、host / address / endpoint / port、username / password / accessKey / secret / token。默认 dry-run；只有 `--apply` 才更新 `.wiki/datasource_map.json`。若 datasource 的 `database_name` / `db_type` 变化，只输出待复核建议，不自动改索引或页面。
 
 退出码：
 
@@ -481,6 +485,18 @@ ODS DI source binding 字段是 additive optional，不 bump `index_version=2`�
 - `source_datasource`: parsed 时的源端 datasource。
 - `source_tables`: parsed 时的源端表或 collection 列表；多表不截断。
 - `binding_warnings`: ambiguous / unparsed 的原因。
+
+数据源解析表默认写到实例根 `.wiki/datasource_map.json`。它也是受管共享基线，应进 Git，但不是可由本地 wiki 正文重建的普通派生层；`.ignore` 应屏蔽它进入全文检索。该文件只允许保存 `datasource_name`、`db_type`、`database_name`、`resolution`、`source_hash`、`updated_at` 等 sanitized 字段，不保存连接串、host、端口、账号或凭证。
+
+可用命令：
+
+```bash
+python3 scripts/wiki_index.py datasource-map --root /abs/path/to/knowledge-pk --project-id 96107
+python3 scripts/wiki_index.py datasource-map --root /abs/path/to/knowledge-pk --project-id 96107 --write
+python3 scripts/wiki_index.py --root /abs/path/to/knowledge-pk --project-id 96107 --project-identifier pk_data --attach-datasource-map
+```
+
+`--attach-datasource-map` 会在已有 `source_binding=parsed` 且 datasource map 解析成功的索引项上附加 `source_database` / `source_db_type`，字段是 additive optional，不 bump `index_version=2`。旧索引没有这些字段时，`reverse` 和 freshness 行为保持兼容。
 
 解析器只看 DI JSON 的 reader step：mysql/sqlserver 取 `reader.parameter.connection[].datasource/table[]`，mongodb 取 `reader.parameter.datasource/collectionName`；writer ODPS table 是目标表，严禁当源表。PYODPS3 等脚本模式保持 `inferred`。
 

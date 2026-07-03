@@ -13,9 +13,9 @@ from datetime import datetime, time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from dataworks_client import DataWorksClient, DataWorksClientError, parse_di_source_binding, parse_ref, source_binding_from_index_item, source_binding_to_index_fields
+from dataworks_client import DataWorksClient, DataWorksClientError, assert_no_datasource_secrets, parse_di_source_binding, parse_ref, source_binding_from_index_item, source_binding_to_index_fields
 from wiki_common import LOCAL_TZ, load_markdown, now_iso, write_json_atomic
-from wiki_index import DEFAULT_INDEX_REL, load_index, normalize_table_key
+from wiki_index import DEFAULT_DATASOURCE_MAP_REL, DEFAULT_INDEX_REL, build_datasource_map, load_datasource_map, load_index, normalize_table_key
 
 
 VERSION = "0.1.0"
@@ -278,6 +278,95 @@ def evaluate_deployment_incremental(
     return report
 
 
+def _datasource_by_name(data: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    result: Dict[str, Dict[str, Any]] = {}
+    for item in data.get("items", []):
+        if isinstance(item, dict) and isinstance(item.get("datasource_name"), str):
+            result[item["datasource_name"]] = item
+    return result
+
+
+def evaluate_datasource_map(
+    root: Path,
+    *,
+    project_id: int,
+    client_factory: Optional[Callable[[], Any]] = None,
+    apply: bool = False,
+    map_rel: str = DEFAULT_DATASOURCE_MAP_REL,
+) -> Dict[str, Any]:
+    report: Dict[str, Any] = {
+        "wiki_freshness_version": VERSION,
+        "mode": "datasource_map",
+        "ran_at": now_iso(),
+        "root": str(root),
+        "project_id": project_id,
+        "dry_run": not apply,
+        "map_path": map_rel,
+        "warnings": [],
+        "changes": [],
+        "review_queue_suggestions": [],
+        "applied": {"map_written": False},
+    }
+    try:
+        current = load_datasource_map(root, map_rel)
+    except Exception:
+        current = {"items": []}
+    try:
+        client = client_factory() if client_factory else DataWorksClient.from_env()
+        fresh = build_datasource_map(client, project_id=project_id)
+    except DataWorksClientError as exc:
+        report["warnings"].append(warning(exc.code, None, exc.message))
+        return report
+    assert_no_datasource_secrets(fresh)
+    old_by_name = _datasource_by_name(current)
+    new_by_name = _datasource_by_name(fresh)
+    for name in sorted(set(old_by_name) | set(new_by_name)):
+        old = old_by_name.get(name)
+        new = new_by_name.get(name)
+        status = None
+        if old is None:
+            status = "added"
+        elif new is None:
+            status = "removed"
+        else:
+            old_pair = (old.get("db_type"), old.get("database_name"), old.get("resolution"))
+            new_pair = (new.get("db_type"), new.get("database_name"), new.get("resolution"))
+            if old_pair != new_pair:
+                status = "changed"
+        if status:
+            change = {
+                "datasource_name": name,
+                "status": status,
+                "previous": {
+                    "db_type": old.get("db_type") if old else None,
+                    "database_name": old.get("database_name") if old else None,
+                    "resolution": old.get("resolution") if old else None,
+                },
+                "current": {
+                    "db_type": new.get("db_type") if new else None,
+                    "database_name": new.get("database_name") if new else None,
+                    "resolution": new.get("resolution") if new else None,
+                },
+            }
+            assert_no_datasource_secrets(change)
+            report["changes"].append(change)
+            if status == "changed":
+                report["review_queue_suggestions"].append(
+                    {
+                        "type": "datasource_target_changed",
+                        "status": "pending",
+                        "priority": "high",
+                        "datasource_name": name,
+                        "reason": "DataWorks datasource database/db_type changed",
+                    }
+                )
+    if apply:
+        write_json_atomic(root / map_rel, fresh)
+        report["applied"]["map_written"] = True
+    assert_no_datasource_secrets(report)
+    return report
+
+
 def parse_last_synced(value: Any) -> Optional[datetime]:
     if value is None:
         return None
@@ -456,6 +545,33 @@ def render_human(report: Dict[str, Any]) -> str:
             lines.extend(["", "Applied", "-------", "- index written"])
         return "\n".join(lines) + "\n"
 
+    if report.get("mode") == "datasource_map":
+        lines = [
+            "wiki-freshness datasource-map",
+            "=============================",
+            f"root: {report['root']}",
+            f"project_id: {report['project_id']}",
+            f"dry_run: {report['dry_run']}",
+            f"changes: {len(report['changes'])}",
+            "",
+            "Changes",
+            "-------",
+        ]
+        if not report["changes"]:
+            lines.append("- (none)")
+        for item in report["changes"]:
+            lines.append(f"- {item['status']}: {item['datasource_name']} · {item['previous']} -> {item['current']}")
+        lines.extend(["", "Warnings", "--------"])
+        if not report["warnings"]:
+            lines.append("- (none)")
+        for item in report["warnings"]:
+            lines.append(f"- {item.get('code')}: {item.get('file') or '(global)'} · {item.get('message')}")
+        if report.get("applied", {}).get("map_written"):
+            lines.extend(["", "Applied", "-------", "- datasource map written"])
+        text = "\n".join(lines) + "\n"
+        assert_no_datasource_secrets(text)
+        return text
+
     lines = [
         "wiki-freshness",
         "==============",
@@ -488,7 +604,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--check", action="store_true", help="exit 1 when drift is detected")
     parser.add_argument("--apply-stale", action="store_true", help="write status: stale to drift pages")
     parser.add_argument("--incremental-deployments", action="store_true", help="check successful production deployments instead of page anchors")
+    parser.add_argument("--datasource-map", action="store_true", help="check DataWorks datasource map drift instead of page anchors")
     parser.add_argument("--project-id", type=int, help="DataWorks project id for --incremental-deployments")
+    parser.add_argument("--datasource-map-path", default=DEFAULT_DATASOURCE_MAP_REL, help="datasource map path relative to instance root")
     parser.add_argument("--end-execute-time-ms", type=int, help="deployment window end time in epoch milliseconds")
     parser.add_argument("--max-pages", type=int, help="limit deployment pages for smoke tests")
     parser.add_argument("--apply", action="store_true", help="write updated fingerprints to dataworks_index.json in incremental mode")
@@ -505,6 +623,10 @@ def main(argv: Optional[List[str]] = None, *, client_factory: Optional[Callable[
         print(f"wiki-freshness config error: {exc}", file=sys.stderr)
         return 2
 
+    if args.incremental_deployments and args.datasource_map:
+        print("wiki-freshness config error: choose only one of --incremental-deployments or --datasource-map", file=sys.stderr)
+        return 2
+
     if args.incremental_deployments:
         if args.project_id is None:
             print("wiki-freshness config error: --project-id is required for --incremental-deployments", file=sys.stderr)
@@ -517,13 +639,24 @@ def main(argv: Optional[List[str]] = None, *, client_factory: Optional[Callable[
             max_pages=args.max_pages,
             apply=args.apply,
         )
+    elif args.datasource_map:
+        if args.project_id is None:
+            print("wiki-freshness config error: --project-id is required for --datasource-map", file=sys.stderr)
+            return 2
+        report = evaluate_datasource_map(
+            root,
+            project_id=args.project_id,
+            client_factory=client_factory,
+            apply=args.apply,
+            map_rel=args.datasource_map_path,
+        )
     else:
         report = evaluate_instance(root, client_factory=client_factory, apply_stale=args.apply_stale)
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
     else:
         print(render_human(report), end="")
-    if args.check and (report.get("drift_count", 0) or report.get("index_updates")):
+    if args.check and (report.get("drift_count", 0) or report.get("index_updates") or report.get("changes")):
         return 1
     return 0
 

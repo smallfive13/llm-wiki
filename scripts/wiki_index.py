@@ -11,12 +11,22 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
-from dataworks_client import DataWorksClient, DataWorksClientError, DataWorksNode, parse_di_source_binding, source_binding_to_index_fields
+from dataworks_client import (
+    DataWorksClient,
+    DataWorksClientError,
+    DataWorksDatasourceResolution,
+    DataWorksNode,
+    assert_no_datasource_secrets,
+    datasource_resolution_to_map,
+    parse_di_source_binding,
+    source_binding_to_index_fields,
+)
 from wiki_common import write_json_atomic
 
 
 INDEX_VERSION = 2
 DEFAULT_INDEX_REL = ".wiki/dataworks_index.json"
+DEFAULT_DATASOURCE_MAP_REL = ".wiki/datasource_map.json"
 LAYER_ROLE = {
     "ODS": "trace-only",
     "TMP": "trace-only",
@@ -172,6 +182,62 @@ def attach_source_bindings(index: Dict[str, Any], client: Any, *, project_id: in
             binding = parse_di_source_binding("", program_type="DI")
             binding = type(binding)("unparsed", None, [], [f"GetFile failed: {exc.code}"])
         item.update(source_binding_to_index_fields(binding))
+    return index
+
+
+def stable_datasource_map(resolutions: List[DataWorksDatasourceResolution], *, project_id: int) -> Dict[str, Any]:
+    items = [datasource_resolution_to_map(item) for item in resolutions]
+    items.sort(key=lambda item: str(item.get("datasource_name") or ""))
+    data = {
+        "map_version": 1,
+        "project_id": project_id,
+        "source": {"kind": "ListDataSources", "env_type": 1},
+        "items": items,
+    }
+    assert_no_datasource_secrets(data)
+    return data
+
+
+def build_datasource_map(client: Any, *, project_id: int) -> Dict[str, Any]:
+    return stable_datasource_map(client.list_datasource_resolutions(project_id), project_id=project_id)
+
+
+def load_datasource_map(root: Path, rel_path: str = DEFAULT_DATASOURCE_MAP_REL) -> Dict[str, Any]:
+    path = root / rel_path
+    if not path.is_file():
+        raise ConfigError(f"datasource map not found: {path}")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+        raise ConfigError(f"invalid datasource map: {path}")
+    assert_no_datasource_secrets(data)
+    return data
+
+
+def attach_datasource_resolutions(index: Dict[str, Any], datasource_map: Dict[str, Any]) -> Dict[str, Any]:
+    by_name = {
+        str(item.get("datasource_name")): item
+        for item in datasource_map.get("items", [])
+        if isinstance(item, dict) and item.get("datasource_name")
+    }
+    for item in index.get("items", []):
+        if not isinstance(item, dict):
+            continue
+        for key in ("source_database", "source_db_type"):
+            item.pop(key, None)
+        if item.get("source_binding") != "parsed":
+            continue
+        source_datasource = item.get("source_datasource")
+        if not isinstance(source_datasource, str):
+            continue
+        resolution = by_name.get(source_datasource)
+        if not resolution or resolution.get("resolution") != "parsed":
+            continue
+        database = resolution.get("database_name")
+        db_type = resolution.get("db_type")
+        if isinstance(database, str) and database.strip():
+            item["source_database"] = database.strip()
+        if isinstance(db_type, str) and db_type.strip():
+            item["source_db_type"] = db_type.strip()
     return index
 
 
@@ -604,6 +670,13 @@ def render_reverse(report: Dict[str, Any]) -> str:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build DataWorks managed code index")
     subparsers = parser.add_subparsers(dest="command")
+    datasource_map = subparsers.add_parser("datasource-map", help="build sanitized DataWorks datasource map")
+    datasource_map.add_argument("--root", help="wiki instance root; default: knowledge")
+    datasource_map.add_argument("--project-id", type=int, required=True, help="DataWorks project id")
+    datasource_map.add_argument("--output", default=DEFAULT_DATASOURCE_MAP_REL, help="map path relative to instance root")
+    datasource_map.add_argument("--write", action="store_true", help="write the datasource map; default is dry-run")
+    datasource_map.add_argument("--json", action="store_true", help="output JSON datasource map")
+
     reverse = subparsers.add_parser("reverse", help="reverse lookup a source or warehouse table from local index")
     reverse.add_argument("--root", help="wiki instance root; default: knowledge")
     reverse.add_argument("--index", default=DEFAULT_INDEX_REL, help="index path relative to instance root")
@@ -616,9 +689,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--project-id", type=int, help="DataWorks project id")
     parser.add_argument("--project-identifier", help="DataWorks project identifier / MaxCompute project name")
     parser.add_argument("--output", default=DEFAULT_INDEX_REL, help="index path relative to instance root")
+    parser.add_argument("--datasource-map", default=DEFAULT_DATASOURCE_MAP_REL, help="datasource map path relative to instance root")
     parser.add_argument("--write", action="store_true", help="write the managed index; default is dry-run")
     parser.add_argument("--json", action="store_true", help="output JSON index")
     parser.add_argument("--max-pages", type=int, help="limit ListNodes pages for smoke tests")
+    parser.add_argument("--attach-datasource-map", action="store_true", help="attach source_database/source_db_type from datasource map")
     return parser
 
 
@@ -643,6 +718,31 @@ def main(argv: Optional[List[str]] = None, *, client_factory: Optional[Any] = No
         else:
             print(render_reverse(report), end="")
         return 0
+    if args.command == "datasource-map":
+        try:
+            client = client_factory() if client_factory else DataWorksClient.from_env()
+            data = build_datasource_map(client, project_id=args.project_id)
+        except DataWorksClientError as exc:
+            report = {"warnings": [{"code": exc.code, "message": exc.message}], "items": []}
+            if args.json:
+                print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+            else:
+                print(f"wiki-index warning: {exc.code}: {exc.message}")
+            return 0
+        target = root / args.output
+        if args.write:
+            write_json_atomic(target, data)
+        if args.json:
+            print(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True))
+        else:
+            parsed = sum(1 for item in data["items"] if item.get("resolution") == "parsed")
+            print("wiki-index datasource-map")
+            print("=========================")
+            print(f"action: {'write' if args.write else 'dry-run'}")
+            print(f"target: {target}")
+            print(f"items: {len(data['items'])}")
+            print(f"parsed: {parsed}")
+        return 0
     if args.project_id is None:
         print("wiki-index config error: --project-id is required for build mode", file=sys.stderr)
         return 2
@@ -654,6 +754,9 @@ def main(argv: Optional[List[str]] = None, *, client_factory: Optional[Any] = No
             project_identifier=args.project_identifier,
             max_pages=args.max_pages,
         )
+        if args.attach_datasource_map:
+            datasource_map = load_datasource_map(root, args.datasource_map)
+            index = attach_datasource_resolutions(index, datasource_map)
     except DataWorksClientError as exc:
         report = {"warnings": [{"code": exc.code, "message": exc.message}], "items": []}
         if args.json:

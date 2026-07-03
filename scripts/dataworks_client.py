@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+from hashlib import sha256
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -107,6 +108,16 @@ class DataWorksSourceBinding:
     binding_warnings: List[str]
 
 
+@dataclass(frozen=True)
+class DataWorksDatasourceResolution:
+    datasource_name: str
+    db_type: Optional[str]
+    database_name: Optional[str]
+    resolution: str
+    source_hash: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
 FILE_REF_RE = re.compile(r"^file:([^/]+)/(\d+)$")
 TABLE_REF_RE = re.compile(r"^table:([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)$")
 
@@ -188,6 +199,89 @@ def source_binding_from_index_item(item: Dict[str, Any]) -> Dict[str, Any]:
         for key in ("source_binding", "source_datasource", "source_tables", "binding_warnings")
         if key in item
     }
+
+
+FORBIDDEN_DATASOURCE_OUTPUT_RE = re.compile(
+    r"(?i)(jdbc:|://|\\bhost\\b|\\baddress\\b|\\bendpoint\\b|\\bport\\b|\\busername\\b|\\bpassword\\b|accesskey|secret|token)"
+)
+
+
+def sanitize_datasource_map_payload(payload: Any) -> str:
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+
+def assert_no_datasource_secrets(payload: Any) -> None:
+    text = sanitize_datasource_map_payload(payload)
+    match = FORBIDDEN_DATASOURCE_OUTPUT_RE.search(text)
+    if match:
+        raise DataWorksClientError("DATASOURCE_SECRET_LEAK", f"sanitized datasource output contains forbidden token: {match.group(0)}")
+
+
+def datasource_resolution_to_map(resolution: DataWorksDatasourceResolution) -> Dict[str, Any]:
+    result: Dict[str, Any] = {
+        "datasource_name": resolution.datasource_name,
+        "resolution": resolution.resolution,
+    }
+    if resolution.db_type:
+        result["db_type"] = resolution.db_type
+    if resolution.database_name:
+        result["database_name"] = resolution.database_name
+    if resolution.source_hash:
+        result["source_hash"] = resolution.source_hash
+    if resolution.updated_at:
+        result["updated_at"] = resolution.updated_at
+    assert_no_datasource_secrets(result)
+    return result
+
+
+def _parse_database_from_jdbc_url(jdbc_url: Any) -> Optional[str]:
+    if not isinstance(jdbc_url, str) or not jdbc_url.strip():
+        return None
+    text = jdbc_url.strip()
+    match = re.search(r"(?i)(?:[;?&])databaseName=([^;?&]+)", text)
+    if match:
+        return match.group(1).strip() or None
+    match = re.match(r"(?i)^jdbc:[a-z0-9]+://[^/]+/([^?;]+)", text)
+    if match:
+        return match.group(1).strip() or None
+    return None
+
+
+def parse_datasource_resolution(item: Dict[str, Any]) -> DataWorksDatasourceResolution:
+    name = str(item.get("Name") or "").strip()
+    db_type = str(item.get("DataSourceType") or "").strip().lower() or None
+    content_text = item.get("Content")
+    content: Dict[str, Any] = {}
+    if isinstance(content_text, str) and content_text.strip():
+        try:
+            parsed = json.loads(content_text)
+            if isinstance(parsed, dict):
+                content = parsed
+        except Exception:
+            content = {}
+    source_hash = sha256(str(content_text or "").encode("utf-8")).hexdigest() if content_text is not None else None
+    database_name: Optional[str] = None
+    resolution = "failed"
+    if isinstance(content.get("database"), str) and content["database"].strip():
+        database_name = content["database"].strip()
+        resolution = "parsed"
+    elif db_type == "mongodb" and isinstance(content.get("authDb"), str) and content["authDb"].strip():
+        database_name = content["authDb"].strip()
+        resolution = "parsed"
+    else:
+        database_name = _parse_database_from_jdbc_url(content.get("jdbcUrl"))
+        if database_name:
+            resolution = "parsed"
+    result = DataWorksDatasourceResolution(
+        datasource_name=name,
+        db_type=db_type,
+        database_name=database_name,
+        resolution=resolution,
+        source_hash=source_hash,
+        updated_at=str(item.get("GmtModified") or "").strip() or None,
+    )
+    datasource_resolution_to_map(result)
+    return result
 
 
 def parse_di_source_binding(content: Any, *, program_type: Optional[str] = "DI") -> DataWorksSourceBinding:
@@ -555,6 +649,38 @@ class DataWorksClient:
 
     def get_design_file_code(self, project_id: int, file_id: int) -> DataWorksFileCode:
         return self.get_file_code(f"file:{project_id}/{file_id}")
+
+    def list_datasource_resolutions(self, project_id: int, *, page_size: int = 100) -> List[DataWorksDatasourceResolution]:
+        result: List[DataWorksDatasourceResolution] = []
+        page_number = 1
+        while True:
+            try:
+                body = obj_to_map(
+                    self._client.list_data_sources(
+                        self._models.ListDataSourcesRequest(
+                            project_id=project_id,
+                            env_type=1,
+                            page_number=page_number,
+                            page_size=page_size,
+                        )
+                    ).body
+                )
+            except Exception as exc:
+                raise _safe_error(exc) from exc
+            data = (body or {}).get("Data") or {}
+            page_items = data.get("DataSources") or []
+            if not isinstance(page_items, list) or not page_items:
+                break
+            for item in page_items:
+                if isinstance(item, dict):
+                    result.append(parse_datasource_resolution(item))
+            total = data.get("TotalCount")
+            if not isinstance(total, int) or len(result) >= total:
+                break
+            page_number += 1
+        result.sort(key=lambda item: item.datasource_name)
+        assert_no_datasource_secrets([datasource_resolution_to_map(item) for item in result])
+        return result
 
     def list_prod_nodes(self, project_id: int, *, page_size: int = 100, max_pages: Optional[int] = None) -> List[DataWorksNode]:
         result: List[DataWorksNode] = []

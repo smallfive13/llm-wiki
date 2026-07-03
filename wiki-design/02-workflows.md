@@ -293,6 +293,16 @@ python3 scripts/wiki_freshness.py --root <instance-root> --incremental-deploymen
 
 ODS DI 同步任务的源表 binding 是增量防腐的一部分：只对变更文件且 `program_type=DI` 或已有 `source_binding=parsed` 的索引项重解析 reader 配置。工具分别输出 `fingerprint_changed` 与 `binding_changed`；指纹变化但 binding 不变时只更新指纹，binding 变化时新增待复核建议。工具不得自动撤回 `review:true`，也不得自动修改 wiki 页面状态。
 
+DataWorks 数据源解析是 binding 的下一跳：`source_datasource` 只是 DataWorks 数据源连接别名，不等于线上物理库名。线上库名来自 `ListDataSources(EnvType=1)` 的数据源详情，由工具生成 sanitized `.wiki/datasource_map.json` 受管共享基线。该文件可进 Git，但必须被 `.ignore` 屏蔽全文检索；它只保存 `datasource_name`、`db_type`、`database_name`、`resolution` 等安全字段，不保存连接串、host、端口、账号或凭证。`source_database` / `source_db_type` 是 index 上的 additive optional 字段，不 bump `index_version=2`。
+
+数据源巡检入口：
+
+```bash
+python3 scripts/wiki_freshness.py --root <instance-root> --datasource-map --project-id <project-id>
+```
+
+默认 dry-run，只比较当前 DataWorks datasource map 与本地 `.wiki/datasource_map.json`；发现 `database_name` / `db_type` 变化时输出待复核建议，不自动改索引或页面。只有 maintainer 明确使用 `--apply` 才更新 map。输出和 map 文件必须通过禁词门禁，不得包含 `jdbc:`、连接 URL、host/address/endpoint/port、username/password/accessKey/secret/token。
+
 ODS binding 四态：
 
 - `parsed`：DataWorks DI JSON reader 配置可机械解析。mysql/sqlserver 从 `reader.parameter.connection[].datasource/table[]` 取源端；mongodb 从 `reader.parameter.datasource/collectionName` 取源端。writer ODPS table 是目标表，禁止当源表。
