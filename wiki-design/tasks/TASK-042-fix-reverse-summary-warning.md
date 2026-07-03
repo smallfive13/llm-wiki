@@ -91,4 +91,9 @@ OK (skipped=1)
 
 - engine: `d5c24fc` `[task-042] fix reverse summary warning`
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-07-03
+
+**Verdict: PASS。** 独立复验：DDM `--include-summary` 真实 smoke 输出已无「索引中未命中该表」warning；`test_task_042 + test_task_040` 共 11 OK、全量 158 OK；修法（`has_any_match` 计入 summary/trace_only 命中）范围最小，未动 LAYER_ROLE / 推荐 / 隐藏逻辑。真正无命中的表仍会报 warning（fixture 覆盖），warning 逻辑没改死。
+
+一处记录出入：Execution log 写 engine commit `d5c24fc`，实际落库为 `b4f6125`（应为 amend 后 sha 未回填），以 git 为准，不影响结论。
+

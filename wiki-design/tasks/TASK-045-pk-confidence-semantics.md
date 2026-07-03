@@ -126,4 +126,7 @@ score 83
 
 - knowledge-pk: `6a2580b` `[pk task-045] set source confidence low`
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-07-03
+
+**Verdict: PASS。** 独立复验：confidence 分布 low 1354 / medium 51 / high 0，与规则完全吻合（模板 source→low，深化/人工页保持 medium，high 仅随背书）；pk `AGENTS.md` 已增赋值规则段；`review`/`status` 未被动、无 auto 背书。confidence 从死字段变成有区分度的信号，答疑排序可用。lint/graph/eval 全 0。commit `6a2580b`。
+

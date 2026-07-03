@@ -139,4 +139,7 @@ score 83
 
 - knowledge-pk: `4e7dd59` `[pk task-043] backfill dataworks index domains`
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-07-03
+
+**Verdict: PASS。** 独立复验：索引 v2 / 1353 items 不变；domain 分布与报告一致（None 1263→227，asset 175 / user 268 / risk 213 / coll 129 / oper 144 / capital 75 / merchant 91 …）；reverse `dwd_asset_loan_list` 候选正确分到 `[asset]`。规则设计合理：保留 TASK-041 人工 domain 不覆盖、227 项不硬判（训练/系统配置/Mongo 水位等），与「判不准留空」约束一致。lint/graph/eval 全 0，score 83。commit `4e7dd59`。
+
