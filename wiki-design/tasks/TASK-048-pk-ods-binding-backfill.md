@@ -253,4 +253,16 @@ Additional checks:
 - source 页 diff 抽查：仅 `review` / `last_verified` 字段变化。
 - `review_queue` 首次写入时出现 `REVIEW_QUEUE_PATH_DRIFT` warning；已改为 schema 兼容写法后 lint 0/0。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-07-03
+
+**Verdict: PASS。** 独立复验（读 pk 索引 + 全量扫 source 页 frontmatter）：
+
+- `review:true` 全库 336（6 原有 + 330 新背书）；source 页分布 `(true, medium)` 330 / `(false, low)` 1024——**背书范围零溢出**（恰好 = parsed 页，ambiguous/inferred/非 ODS 模板一个没混入），confidence 联动同样精确。
+- `rev_20260703_007` 已 resolved，背书边界（datasource 是别名非线上库、线上库待 RFC-031）记入决议与 log.md；措辞精确化正确留给 RFC-031 一次做完。
+- 抽查 gate 流程完整走通：回填 → 硬停 → maintainer 核对 17 样本（含名字/配置分歧行）→ 拍板 → 批量背书。这是 RFC-030「批量快审」模式的首次完整落地，974 页僵局破了 330 页。
+- lint 0/0；graph isolated 0。
+
+**说明（避免误读）**：eval `endorsement` 仍是 9——该维度只计非 source 知识页，330 个 source 背书不进分母。本次背书的价值在**答疑口径**：parsed+review:true 的 ODS 映射可直接回答、免"未经人工背书"声明，这正是 RFC-030 立项要解决的问题。
+
+RFC-030 全链闭合：提案 → 实跑复核 → accept → 引擎（047）→ 回填+抽查+背书（048）。commit `50d2bd5`。
+
