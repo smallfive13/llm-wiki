@@ -3,7 +3,7 @@ id: task_20260703_048
 title: knowledge-pk ODS binding 回填（336 DI）+ 分层抽查 gate + 批量背书
 author: claude
 executor: codex
-status: pending
+status: done
 type: other
 created: 2026-07-03
 updated: 2026-07-03
@@ -182,5 +182,75 @@ Additional verification:
 **抽查通过**（用户核对 17 样本含分歧行，claude 代记）。批量背书（Step 4）可执行，范围仍限「parsed 且指纹当前」330 页。
 
 **背书语义精确化（用户同时指出）**：本次背书覆盖的是「ODS ← DataWorks 数据源（连接别名）+ 源表」这层 binding；`source_datasource` **是 DataWorks 数据源名，不是线上物理库名**。「数据源别名 → 线上库」的解析需调 DataWorks API（`ListDataSources`/`GetDataSource`），另走 **RFC-031**，不在本次背书范围。背书依据记档时须写明此边界；source 页措辞的精确化（避免把数据源名误读为线上库名）归 RFC-031 实例回填一并处理，避免 330 页二次批量改动。
+
+## Execution log by codex · 2026-07-03 · Step 4/5
+
+### Step 4 · Batch endorsement
+
+- Maintainer decision 已放行：17 条分层样本抽查通过。
+- 批量背书范围：`source_binding: parsed` 且带当前 `code_fingerprint` / `last_synced` 的 ODS source 页。
+- 已更新 source 页：330。
+- 更新字段：`review: false -> true`；`last_verified: 2026-06-29 -> 2026-07-03`。
+- 未更新范围：`ambiguous` 6、`inferred` 638 均保持未背书。
+- 新增 review_queue 决议：`rev_20260703_007`，`resolved_action: confirm_reviewed`。
+- pk 背书提交：`50d2bd5e384480a8277cf9bb286ea91f1bb123f6` (`[pk task-048] endorse parsed ODS bindings`)。
+
+背书边界已写入 `log.md` 与 `review_queue`：
+
+- 本次确认的是 DataWorks DI reader 配置中的数据源连接别名与源表绑定。
+- `source_datasource` 是 DataWorks 数据源别名，不是线上物理库名。
+- 数据源别名到线上库名解析留给 RFC-031。
+- 本步未做 source 页措辞精确化，避免 RFC-031 前二次批量修改 330 页。
+
+### Step 5 · Verification
+
+范围复核：
+
+```text
+{'parsed_true': 330, 'parsed_false': 0, 'ambiguous_true': 0, 'inferred_true': 0}
+```
+
+lint:
+
+```text
+wiki-lint instance root: /Users/zhangjunwu/workspace/obsidian/knowledge-pk · profile: knowledge-pk
+
+wiki-lint v0.1.0
+================
+实例: /Users/zhangjunwu/workspace/obsidian/knowledge-pk · profile: knowledge-pk
+扫描: knowledge-pk/wiki/ (1431 文件) · knowledge-pk/inbox/ (0 draft) · knowledge-pk/raw/ (1354 source)
+
+[OK]    schema 校验: 1431 页扫描
+[OK]    ID 唯一性: 1431 个 id
+[OK]    canonical 引用 + supersedes 对称
+[OK]    source 单主键
+[OK]    entity 别名（含链式跳转 / status:redirect）: 0 entries
+[OK]    inbox: 0 draft
+[OK]    脱敏扫描（inbox/archive）: 0 命中
+
+ingest 进度
+===========
+状态计数：new 0 · triaged 0 · ingested 1354 · skipped 0 · failed 0 · deleted 0 · superseded 0 · archived 0
+triaged 待 apply: 0
+
+待 apply（按 manifest 顺序）：0
+
+派生层未重建（--check-only）
+
+错误: 0 · 警告: 0
+```
+
+graph / eval:
+
+```text
+graph: exit 0; nodes 1431; edges 2707; isolated 0
+eval: exit 0; score 82; endorsement 9; review_coverage reviewed 6 / eligible 70
+```
+
+Additional checks:
+
+- `git diff --check`: pass
+- source 页 diff 抽查：仅 `review` / `last_verified` 字段变化。
+- `review_queue` 首次写入时出现 `REVIEW_QUEUE_PATH_DRIFT` warning；已改为 schema 兼容写法后 lint 0/0。
 
 ## Evaluation by claude · <date>
