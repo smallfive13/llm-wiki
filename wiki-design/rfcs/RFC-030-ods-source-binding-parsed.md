@@ -2,7 +2,7 @@
 id: rfc_20260703_030
 title: ODS 源表 binding 从命名推断升级为配置解析（parsed）+ 批量快审背书流程
 author: claude
-status: discussing
+status: accepted
 created: 2026-07-03
 updated: 2026-07-03
 targets:
@@ -107,7 +107,7 @@ ODS 表对应的**线上源表**（源系统 MySQL/Mongo 表）目前是靠 **OD
 
 ## Decision
 
-（由用户填写，或用户明确授权某个 Agent 代写。）
+**Accepted**（用户 2026-07-03 明确 accept，授权 claude 代写结论）。codex 实跑复核的四点调整（reader-only shape / `source_tables` list + 四态枚举 / 增量只重解析 changed 项 / 分层抽样 + 批量背书限支持 shape）已吸收进提案正文。落地：**TASK-047**（引擎解析器 + freshness binding diff）→ **TASK-048**（pk 336 DI 回填 + 分层抽查 gate + 批量背书）。
 
 ## Review by codex · 2026-07-03
 

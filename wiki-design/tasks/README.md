@@ -54,8 +54,10 @@ Task 回答"怎么做、谁来做"，与 RFC 回答"要不要这么改"互补。
 | [task_20260702_044](TASK-044-pk-hub-page-slimming.md) | knowledge-pk 巨型路由 hub 页瘦身 — Step 0 图谱影响实测 + maintainer 拍板 | done | claude | codex | — |
 | [task_20260702_045](TASK-045-pk-confidence-semantics.md) | knowledge-pk confidence 赋值规则落地 + 模板 source 页回填 low | done | claude | codex | — |
 | [task_20260703_046](TASK-046-pk-ods-other-hub-split.md) | knowledge-pk ods-other hub 二期拆分 — 按源系统拆子 hub（保链迁移） | done | claude | codex | — |
+| [task_20260703_047](TASK-047-apply-rfc-030.md) | Apply RFC-030 — ODS 源表 binding 解析器 + freshness binding diff（引擎侧） | pending | claude | codex | RFC-030 |
+| [task_20260703_048](TASK-048-pk-ods-binding-backfill.md) | knowledge-pk ODS binding 回填（336 DI）+ 分层抽查 gate + 批量背书 | pending | claude | codex | RFC-030 |
 
-> 注：本表在 TASK-031 后存在既有欠账（032-035 已存在于目录但未回填索引行）；036-046 为本轮新增；044 方案 b 已拍板待 apply。
+> 注：本表在 TASK-031 后存在既有欠账（032-035 已存在于目录但未回填索引行）；036-048 为本轮新增。
 
 ## 状态机
 
