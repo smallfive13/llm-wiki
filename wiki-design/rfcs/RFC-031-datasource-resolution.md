@@ -84,3 +84,78 @@ TASK-048 抽查 gate（2026-07-03）：maintainer 确认解析正确的同时指
 ## Decision
 
 （由用户填写，或用户明确授权某个 Agent 代写。）
+
+## Review by codex · 2026-07-03
+
+结论：通过（有非阻塞建议）。
+
+### 1. Step 0 实跑结论
+
+我用当前 `py312` 环境和现有 DataWorks 凭证实跑了 SDK。当前可用包是 `alibabacloud_dataworks_public20200518`。
+
+可用接口：
+
+- `ListDataSourcesRequest(project_id, page_number, page_size, ...)` / `client.list_data_sources(...)` 可用，是本 RFC 的主接口。
+- SDK 中没有普通 `GetDataSource` 方法。
+- `GetDataSourceMetaRequest(project_id, datasource_name, env_type="1", ...)` 可用，但返回的是 `Data.Meta` 字符串，shape 为 `{"dbTables": ...}`，更像数据源可见表元数据，不适合作为"数据源连接详情"主接口。
+
+`ListDataSources` 返回 shape（只记字段名 / 类型，不记录值）：
+
+- 顶层：`Data`, `HttpStatusCode`, `RequestId`, `Success`
+- `Data`: `DataSources`, `PageNumber`, `PageSize`, `TotalCount`
+- `DataSources[*]` 常见字段：`Content`, `DataSourceType`, `EnvType`, `GmtCreate`, `GmtModified`, `Id`, `Name`, `Operator`, `ProjectId`, `Sequence`, `Shared`, `Status`, `SubType`, `TenantId`
+- `Content` 是 JSON 字符串。
+
+实跑统计：
+
+- project `96107` 总数据源：65
+- 类型分布：mysql 47、mongodb 15、sqlserver 1、odps 1、holo 1
+- `Content` 全部可 JSON parse。
+- `Content` 中存在大量敏感字段名：`jdbcUrl`、`password`、`username`、`address`、`endpoint`、`accessKey` 等，不能原样落库。
+- 解析信号分布：`database` 直接字段 24；仅 `jdbcUrl` 但可解析库名 40；无库名信号 1（非本次 ODS source binding 目标）。
+
+对 TASK-048 已背书的 46 个 `source_datasource` 去重值做覆盖核对：
+
+- 46 / 46 均能在 `ListDataSources` 中按 `Name` 命中。
+- 类型分布：mysql 33、mongodb 12、sqlserver 1。
+- 解析形态：mysql 中 4 个有直接 `database` 字段，29 个需从 `jdbcUrl` 路径解析；mongodb 12 个有直接 `database` 字段；sqlserver 1 个有直接 `database` 字段。
+- 解析失败数：0。
+
+因此 RFC 的核心方向成立，但 apply task 应把接口钉死为：优先使用 `ListDataSources` 的 `DataSources[*].Content`，`GetDataSourceMeta` 只作为可选辅助或不使用。
+
+### 2. 安全红线
+
+安全红线可行，但必须实现为强约束和测试门禁。
+
+原因：
+
+- API 确实返回敏感连接信息，且敏感字段不是边缘情况：65 个数据源里 63 个含 `password` / `username`，48 个含 `jdbcUrl`。
+- 可安全提取的最小输出应限于 `datasource_name`、`db_type`、`database_name`、`resolution`、可选 `updated_at/source_hash` 这类不含连接信息的字段。
+- 解析函数必须在内部消费 `Content` 后立即丢弃原始对象，返回 sanitized DTO，禁止把 `Content` / `jdbcUrl` / `address` / `endpoint` / `host` / `port` / `username` / `password` / `accessKey` 等字段透传给上层。
+
+建议 apply task 增加硬测试：
+
+- 对 fixture 和真实 smoke 输出做字符串扫描，禁止出现 `jdbc:`、`://`、`host`、`address`、`endpoint`、`port`、`username`、`password`、`accessKey`、`secret`、`token`。
+- JDBC 解析只允许从内存字符串抽取 database segment 或 `databaseName` 参数；解析失败时只落 `resolution: failed`，不落原始 URL。
+- `instance_label` v1 建议暂缓，除非定义明确的 allowlist 来源；不要从 host、address、endpoint、jdbcUrl 派生。
+
+### 3. `datasource_map.json` 是否进 Git
+
+同意进 Git，但建议改名义：不要称为"派生层"，应沿用 RFC-028 对 `dataworks_index.json` 的口径，称为"受管共享基线"。
+
+理由：
+
+- 它不可由本地知识正文重建，依赖 DataWorks 在线 API 和凭证；团队/CI/离线答疑需要共享同一快照。
+- 它不含代码正文、连接串、host、端口、账号或凭证时，性质接近 `dataworks_index.json` / `schema_sync.json`，不是普通 lint 可重建派生层。
+- 需要在 `.gitignore` 中显式 allowlist，并在 `.ignore` 中屏蔽 `.wiki/datasource_map.json`，避免进入全文检索。
+
+建议 RFC Decision 或 TASK 中把这一句改清楚：
+
+- `.wiki/datasource_map.json` = 受管共享基线，进 Git；不是可由本地重建的普通派生层。
+- 稳定排序、无 volatile 字段、无敏感串；变更通过 `wiki_freshness` 巡检报告和 maintainer 裁决。
+
+### 非阻塞建议
+
+- `source_database` / `source_db_type` 回填到 index 是 additive，保留 `index_version=2` 可接受；但应加 fixture 证明旧 index 无字段时 reverse / freshness 仍不变。
+- 页面措辞精确化建议一次性随 RFC-031 实例 task 做，避免 TASK-048 的 330 页再被重复批量修改。
+- DataWorks datasource 名称可能存在 DEV/PROD 或 env 差异；本次实跑用 `EnvType=1` 列表已覆盖目标 46 个 datasource，TASK 中应固定 production/env 口径。
