@@ -35,7 +35,8 @@
 | [rfc_20260622_027](RFC-027-code-knowledgization.md) | DataWorks 代码知识化（M1+M2 accepted：asset-mapping 页型 + 代码梳理/传导口径；M3+M4 deferred：失效检测/回源待接口核实） | accepted | claude |
 | [rfc_20260623_028](RFC-028-code-knowledgization-ops.md) | 代码知识化工程化（全量索引 + 变更增量 + 分层建页 + sqlglot 血缘解析；不影响现有库入库/查询） | accepted | claude | `scripts/dataworks_client.py`, `scripts/wiki_freshness.py`, `scripts/wiki_index.py`, `wiki-design/02-workflows.md`, `scripts/README.md`, `tests/` | `wiki-design/02-workflows.md`, `scripts/wiki_freshness.py`, `scripts/wiki_common.py`, `scripts/README.md`, `tests/` |
 | [rfc_20260702_029](RFC-029-reverse-lookup-physical-layer-roles.md) | 反查物理层级扩展 + 推荐角色分档（DIM / S-* / TMP / DDM / EDW） | accepted | claude | `scripts/wiki_index.py`, `wiki-design/02-workflows.md`, `scripts/README.md`, `tests/` |
-| [rfc_20260703_030](RFC-030-ods-source-binding-parsed.md) | ODS 源表 binding 配置解析（parsed/inferred/unparsed/ambiguous）+ 批量快审背书流程 | accepted | claude | `scripts/wiki_index.py`, `scripts/dataworks_client.py`, `scripts/wiki_freshness.py`, `wiki-design/02-workflows.md`, `scripts/README.md`, `tests/` |
+| [rfc_20260703_030](RFC-030-ods-source-binding-parsed.md) | ODS 源表 binding 配置解析（parsed/inferred/unparsed/ambiguous）+ 批量快审背书流程 | accepted | claude |
+| [rfc_20260703_031](RFC-031-datasource-resolution.md) | DataWorks 数据源 → 线上库解析（别名 resolution + 无凭证红线） | proposed | claude | `scripts/dataworks_client.py`, `scripts/wiki_index.py`, `scripts/wiki_freshness.py`, `scripts/README.md`, `wiki-design/02-workflows.md`, `tests/` | `scripts/wiki_index.py`, `scripts/dataworks_client.py`, `scripts/wiki_freshness.py`, `wiki-design/02-workflows.md`, `scripts/README.md`, `tests/` |
 
 ## 状态
 

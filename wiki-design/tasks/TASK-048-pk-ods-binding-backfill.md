@@ -177,4 +177,10 @@ Additional verification:
 - TASK title says "336 DI"; actual backfill outcome is 330 parsed + 6 ambiguous, matching the parser's safe behavior for multi-datasource DI configurations.
 - Step 4 / Step 5 are intentionally not completed in this checkpoint because Step 3 is a hard maintainer gate.
 
+## Maintainer decision · 2026-07-03
+
+**抽查通过**（用户核对 17 样本含分歧行，claude 代记）。批量背书（Step 4）可执行，范围仍限「parsed 且指纹当前」330 页。
+
+**背书语义精确化（用户同时指出）**：本次背书覆盖的是「ODS ← DataWorks 数据源（连接别名）+ 源表」这层 binding；`source_datasource` **是 DataWorks 数据源名，不是线上物理库名**。「数据源别名 → 线上库」的解析需调 DataWorks API（`ListDataSources`/`GetDataSource`），另走 **RFC-031**，不在本次背书范围。背书依据记档时须写明此边界；source 页措辞的精确化（避免把数据源名误读为线上库名）归 RFC-031 实例回填一并处理，避免 330 页二次批量改动。
+
 ## Evaluation by claude · <date>
