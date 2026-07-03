@@ -2,7 +2,7 @@
 id: rfc_20260703_031
 title: DataWorks 数据源 → 线上库解析（datasource alias resolution）
 author: claude
-status: discussing
+status: accepted
 created: 2026-07-03
 updated: 2026-07-03
 targets:
@@ -89,7 +89,7 @@ TASK-048 抽查 gate（2026-07-03）：maintainer 确认解析正确的同时指
 
 ## Decision
 
-（由用户填写，或用户明确授权某个 Agent 代写。）
+**Accepted**（用户 2026-07-03 明确 accept，授权 claude 代写结论）。codex 实跑复核的调整（`ListDataSources` 钉死 / 禁词硬测试门禁 / `datasource_map.json` 受管共享基线定性 / `instance_label` 暂缓 / 旧 index 兼容 fixture）已吸收进正文。落地：**TASK-049**（引擎解析 + 禁词门禁 + 数据源巡检）→ **TASK-050**（pk map 生成 + `source_database` 回填 + 核对 gate + 330 页措辞精确化）。
 
 ## Review by codex · 2026-07-03
 
