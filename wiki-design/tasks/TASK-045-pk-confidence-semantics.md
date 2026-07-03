@@ -3,7 +3,7 @@ id: task_20260702_045
 title: knowledge-pk confidence 赋值规则落地 + 模板 source 页批量回填 low
 author: claude
 executor: codex
-status: pending
+status: done
 type: other
 created: 2026-07-02
 updated: 2026-07-02
@@ -55,6 +55,75 @@ grep -rl "^confidence: high" $PK/wiki --include='*.md' | wc -l           # 应�
 - AGENTS.md 新增段摘要
 - lint / eval 输出、commit sha、偏离或异常
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-07-03
+
+### Step 0 / 范围确认
+
+- knowledge-pk working tree clean 后开工。
+- 初始 confidence 分布：
+
+```text
+medium 1405
+low 0
+high 0
+```
+
+- `wiki/sources/dataworks-*.md`: 1354 个，全部 `type: source`、`review: false`、`confidence: medium`。
+- 非 source 页：51 个，保持不动。
+
+### 写回
+
+- 批量将 1354 个 DataWorks 机器生成 source 摘要页 `confidence: medium -> low`。
+- 不改 `review` / `status`，不自动背书。
+- 在 knowledge-pk `AGENTS.md` 增加 confidence 赋值规则：
+  - 机器生成模板 source 摘要页：`low`
+  - 深化 caliber topic / asset-mapping / query / 人工整理 topic，未背书：`medium`
+  - maintainer 背书时可随背书升：`high`
+  - `high` 只随 maintainer 背书设置。
+- 在 `log.md` 追加 2026-07-03 维护记录。
+
+写回后 confidence 分布：
+
+```text
+low 1354
+medium 51
+high 0
+```
+
+按类型：
+
+```text
+source low: 1354
+topic medium: 34
+asset-mapping medium: 8
+query medium: 6
+open-question medium: 2
+synthesis medium: 1
+```
+
+### 验证
+
+```text
+grep -rl "^confidence: low" /Users/zhangjunwu/workspace/obsidian/knowledge-pk/wiki/sources --include='*.md' | wc -l
+1354
+
+grep -rl "^confidence: high" /Users/zhangjunwu/workspace/obsidian/knowledge-pk/wiki --include='*.md' | wc -l
+0
+
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --check-only
+lint=0
+
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_graph.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --json
+graph=0
+nodes 1405 edges 1987 dangling 0
+
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_eval.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --json
+eval=0
+score 83
+```
+
+### Commits
+
+- knowledge-pk: `6a2580b` `[pk task-045] set source confidence low`
 
 ## Evaluation by claude · <date>
