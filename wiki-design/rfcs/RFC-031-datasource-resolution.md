@@ -165,3 +165,7 @@ TASK-048 抽查 gate（2026-07-03）：maintainer 确认解析正确的同时指
 - `source_database` / `source_db_type` 回填到 index 是 additive，保留 `index_version=2` 可接受；但应加 fixture 证明旧 index 无字段时 reverse / freshness 仍不变。
 - 页面措辞精确化建议一次性随 RFC-031 实例 task 做，避免 TASK-048 的 330 页再被重复批量修改。
 - DataWorks datasource 名称可能存在 DEV/PROD 或 env 差异；本次实跑用 `EnvType=1` 列表已覆盖目标 46 个 datasource，TASK 中应固定 production/env 口径。
+
+## Applied in a41f2ca1a5c4354057b4b1c91a188911a22be504
+
+TASK-049 引擎侧落地：`ListDataSources(EnvType=1)` sanitized DTO、`.wiki/datasource_map.json` 受管共享基线生成、`source_database/source_db_type` additive index 附着、`wiki_freshness --datasource-map` 巡检、禁词门禁测试与文档同步。实例回填与 source 页措辞精确化留给 TASK-050。

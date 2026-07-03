@@ -3,7 +3,7 @@ id: task_20260703_049
 title: Apply RFC-031 — 数据源解析 sanitized DTO + 禁词门禁 + 数据源巡检（引擎侧）
 author: claude
 executor: codex
-status: pending
+status: done
 type: apply
 created: 2026-07-03
 updated: 2026-07-03
@@ -58,6 +58,95 @@ cd /Users/zhangjunwu/workspace/llm-wiki/llm-wiki
 - test_049 明细 + 全量回归 + 离线断言 + 真实 smoke 禁词扫描结果
 - commit sha + RFC-031 `Applied in`、偏离或异常
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-07-03
+
+### Implementation
+
+- `scripts/dataworks_client.py`
+  - 新增 `DataWorksDatasourceResolution` sanitized DTO。
+  - 新增 `parse_datasource_resolution()`：支持 `database` 直取、MongoDB `authDb` 兜底、JDBC path / `databaseName` 内存解析、异常格式 `resolution: failed`。
+  - 新增 `list_datasource_resolutions(project_id)`：固定 `ListDataSources(env_type=1)`，只返回 sanitized DTO。
+  - 新增 `assert_no_datasource_secrets()` 禁词门禁，禁止 sanitized 输出包含 `jdbc:`、`://`、`host/address/endpoint/port`、`username/password/accessKey/secret/token`。
+- `scripts/wiki_index.py`
+  - 新增 `datasource-map` 子命令，生成 `.wiki/datasource_map.json` 受管共享基线。
+  - 新增 `stable_datasource_map()` / `load_datasource_map()` / `attach_datasource_resolutions()`。
+  - `--attach-datasource-map` 可在 `source_binding=parsed` 且 map 解析成功的 index item 上附加 `source_database` / `source_db_type`；`index_version` 保持 2。
+- `scripts/wiki_freshness.py`
+  - 新增 `--datasource-map` 巡检模式：重拉 datasource map，diff 本地 `.wiki/datasource_map.json`，输出 `changes` 和 `datasource_target_changed` review_queue suggestion。
+  - 默认 dry-run；`--apply` 只更新 map，不改 index / 页面。
+- `tests/test_task_049.py`
+  - 覆盖直取 / JDBC / MongoDB / failed 兜底 / 禁词门禁 / map 稳定排序 / index additive attach / 旧 index reverse 兼容 / datasource freshness diff / CLI check exit / 离线三件套零依赖。
+- `scripts/README.md`、`wiki-design/02-workflows.md`
+  - 补数据源解析层、受管共享基线定位、禁词红线、巡检入口和答疑边界。
+
+实现 commit：
+
+- `a41f2ca1a5c4354057b4b1c91a188911a22be504` (`[apply rfc-031] add datasource resolution map`)
+
+### Verification
+
+离线依赖断言：
+
+```text
+泄漏: 无
+```
+
+`tests.test_task_049`：
+
+```text
+Ran 10 tests in 0.337s
+OK
+```
+
+全量回归：
+
+```text
+Ran 177 tests in 86.224s
+OK (skipped=1)
+```
+
+docs / base knowledge lint：
+
+```text
+wiki-lint v0.1.0 --check-docs
+受管块: 6
+错误: 0
+
+wiki-lint --root knowledge --check-only
+错误: 0 · 警告: 0
+```
+
+真实 DataWorks datasource-map smoke（project 96107，按 RFC-031 review 基线，不打印库名）：
+
+```text
+items 65
+resolution {'parsed': 64, 'failed': 1}
+types {'mysql': 47, 'sqlserver': 1, 'mongodb': 15, 'odps': 1, 'holo': 1}
+forbidden_hits []
+```
+
+真实 freshness datasource-map dry-run smoke（本地尚无 map，因此全部为 added，符合预期）：
+
+```text
+mode datasource_map
+changes 65
+warnings 0
+forbidden_hits []
+```
+
+真实 index attach smoke（临时目录，`max-pages 1`）：
+
+```text
+index_version 2
+items 82
+source_database_count 26
+forbidden_hits []
+```
+
+### Deviations / notes
+
+- 未使用 `GetDataSourceMeta`，按 RFC-031 Decision 固定 `ListDataSources`。
+- `instance_label` v1 未实现，符合 task 约束。
+- 未写 knowledge-pk 实例数据；TASK-050 负责生成 pk map、回填 index、产出 46+ 数据源核对清单并在 Step 3 硬停。
 
 ## Evaluation by claude · <date>
