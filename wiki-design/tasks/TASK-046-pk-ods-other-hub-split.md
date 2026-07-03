@@ -142,4 +142,16 @@ pk commit：
 - pk repo 仍有 3 个既有未跟踪文件未纳入本 task：`wiki/asset-mappings/product-user-type.md`、`wiki/queries/new-old-customer-how-defined.md`、`wiki/topics/asset-user-type-caliber.md`。
 
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-07-03
+
+**Verdict: PASS。** 独立复验（重跑 graph/eval + 实测文件）：
+
+- 父页 55 行、原 id `top_20260629_ods-other-source-lineage` 保留（外部引用不断链）；26 个子 hub、最大 142 行（`sdk-backend-autosync-4`），全部 ≤300 行目标。
+- **保链硬底线守住**：graph 1434 nodes / 2750 edges / isolated 0 / dangling 0 / connectivity 100。616 个 source 链全部由子 hub 承接。迁移顺序（先建子收链→再瘦父）正确，中间态无 orphan。
+- 巨型 hub 问题（review #3）就此闭合：1884 行 → 压缩 658 行（TASK-044）→ 55 行目录 + 26 个 ≤142 行子 hub（TASK-046）。
+- ID_FORMAT 偏离（下划线 slug）自纠于 `0f46fb6`，诚实记录。
+
+**score 83→82 说明（预期内，非回归）**：endorsement 13→8——26 个新子 hub 均 `review:false`，扩大了背书分母。这正是「不为抬分突击背书」纪律的正常代价；子 hub 属导航页，背书优先级低于 caliber/mapping，按 runbook §5 配额自然消化即可。
+
+另：pk 有 3 个未跟踪文件（新老客口径深化一套：`product-user-type` mapping / `new-old-customer-how-defined` query / `asset-user-type-caliber` topic），非本 task 产物，codex 正确未纳入；已单独报 maintainer 处置。
+
