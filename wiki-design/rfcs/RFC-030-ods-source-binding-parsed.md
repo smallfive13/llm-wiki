@@ -2,7 +2,7 @@
 id: rfc_20260703_030
 title: ODS 源表 binding 从命名推断升级为配置解析（parsed）+ 批量快审背书流程
 author: claude
-status: proposed
+status: discussing
 created: 2026-07-03
 updated: 2026-07-03
 targets:
@@ -18,6 +18,8 @@ reviewers:
 ---
 
 # RFC-030: ODS 源表 binding 配置解析 + 批量快审背书
+
+> **作者修订 · 2026-07-03（回应 codex review 实跑结论）**：本版已按 review 调整——解析规则钉死为 reader-only 真实 shape（mysql/sqlserver `connection[]`、mongodb `collectionName`）、`source_tables` 改 list、binding 枚举扩为 `parsed/inferred/unparsed/ambiguous`、覆盖面明确 DI 336/974、freshness 只重解析 changed 项、抽样改按 reader stepType 分层。status → discussing，待用户 Decision。
 
 ## 背景
 
@@ -35,27 +37,41 @@ ODS 表对应的**线上源表**（源系统 MySQL/Mongo 表）目前是靠 **OD
 
 ### 1. binding 解析（引擎）
 
-- `dataworks_client` / `wiki_index` 增加 ODS 同步任务配置解析：从 DI 任务 content（JSON，`steps[].parameter.datasource / table` 形态）机械提取源端 `datasource` + `table`。
-- 索引 item 增加**可选**字段（additive，不 bump `index_version`，仍守受管基线——无 volatile、无代码正文）：
-  - `source_binding`: `parsed`（配置解析）/ `inferred`（命名推断）/ 缺省（未处理）
-  - `source_datasource` / `source_table`: parsed 时填解析值
-- **Step 0 必核**：survey 974 个 ODS 任务的 `program_type` 分布——多少是可解析的 DI JSON、多少是脚本模式同步（shell / 脚本内拼 SQL）；后者保持 `inferred` 不硬解析。
+**覆盖面（codex 实跑钉死）**：974 个 ODS 任务中 `DI` 336（全部 content 可 `json.loads`）、`PYODPS3` 638。**首批 parsed 上限 ≈ 336**；PYODPS3 默认保持 `inferred`，除非后续另立脚本解析策略。不得暗示"974 全可 parsed"。
+
+**解析规则（按实跑 shape，非通用 `steps[].parameter.datasource/table`）**：
+
+- 只解析 `steps[]` 中 `category == "reader"` 的 step；**writer ODPS step 的 `parameter.table` 是目标表，严禁当源表**。
+- MySQL / SQLServer reader（253 + 1 个）：从 `parameter.connection[]` 取 `datasource` + `table[]`（table 是 list）。
+- MongoDB reader（82 个）：从 `parameter.datasource` + `parameter.collectionName` 取 binding；collectionName 落入 `source_tables`，文档注明 collection→source_tables 的语义映射。
+
+**索引字段**（additive，不 bump `index_version=2`，仍守受管基线——无 volatile、无代码正文、稳定排序）：
+
+- `source_binding` 枚举四态：
+  - `parsed`：reader shape 受支持，binding 完整提取；
+  - `ambiguous`：DI JSON 可读但 shape 超出支持（多 reader、connection 缺 datasource、table 空等），附 `binding_warnings`；
+  - `unparsed`：解析尝试失败（非 JSON / 结构异常）；
+  - `inferred`：未走解析（PYODPS3 等），沿用命名推断。
+- `source_datasource` + `source_tables`（**list**，多表不截断不丢信息）；`binding_warnings`（可选）。
 
 ### 2. 三个正交信号的联动（实例约定 + 引擎支持）
 
 | 信号 | 承载 | 规则 |
 | --- | --- | --- |
 | 来源权威性 | `source_binding` + `confidence` | binding=`parsed` 的 ODS source 页 confidence 可升 `medium`（机器事实、来源权威）；`inferred` 保持 `low`。写入 pk `AGENTS.md` confidence 规则表（扩展 TASK-045）。 |
-| 变更风险 | 既有 freshness 锚点 + 增量防腐 | parsed binding 依附已有 file `code_fingerprint`；`--incremental-deployments` 发现同步任务文件漂移时，**重解析 binding 并 diff**——binding 变了（换源表/换数据源）标待复核，binding 没变仅指纹更新。 |
+| 变更风险 | 既有 freshness 锚点 + 增量防腐 | **只对 changed file 且 `program_type=DI` 或已 `source_binding=parsed` 的项**重解析 binding（本地 JSON parse，成本可忽略；不扫全量 974）。diff 结构化区分 `fingerprint_changed` 与 `binding_changed`（`binding_previous/current/changed` 字段）：仅指纹变→只更指纹；binding 变（换源表/换数据源）→标待复核。 |
 | 人工背书 | `review: true`（仍是唯一途径） | 见下"批量快审"。 |
 
 ### 3. 批量快审背书流程（写入 02-workflows）
 
 把 ODS 映射背书从"逐页考证"降为"抽查解析器 + 批量确认"：
 
-1. maintainer 对解析结果做**随机抽查**（建议 ≥20 个样本，跨数据源），核对 DataWorks 控制台配置。
-2. 抽查通过 → maintainer 可对「`source_binding=parsed` 且指纹当前」的 ODS source 页**批量设 `review: true`**，背书依据（抽查样本量、日期、解析器版本/commit）记入 log 与 review_queue 决议——背书责任仍在人，只是核对单位从"每页"变成"解析器 + 批次"。
-3. 后续增量防腐发现某 parsed 文件漂移且 binding 变化 → 该页自动进待复核（撤 review 仍需人确认，机器只标记）。
+1. maintainer 对解析结果做**分层抽查**（codex review 钉死，随机 20 不够）：
+   - 按 reader `stepType` 分层，mysql / mongodb / sqlserver 都必须覆盖（sqlserver 仅 1 个则必查）；
+   - 按 `source_datasource` 去重抽样，避免样本集中在同一源系统；
+   - 抽样记录含：解析器 commit、索引 snapshot、样本 `file_id`/`node_name`、reader stepType、`source_datasource`/`source_tables`、人工核对结论。
+2. 抽查通过 → maintainer 可批量设 `review: true`，**范围仅限「本次解析器支持且抽查通过的 binding shape」**（如 mysql connection-list、mongodb collectionName）；`ambiguous` / `unparsed` / `inferred` 一律不在批量背书范围。背书依据记入 log 与 review_queue 决议——背书责任仍在人，核对单位从"每页"变成"解析器 + 批次"。
+3. 后续增量防腐发现某 parsed 文件 `binding_changed` → 该页进待复核 queue（**只标记，不自动撤 `review:true`**，撤回仍需人确认——与 L3 红线一致）。
 
 ### 4. 答疑口径
 
@@ -69,10 +85,10 @@ ODS 表对应的**线上源表**（源系统 MySQL/Mongo 表）目前是靠 **OD
 
 ## 验证方式
 
-- Step 0 survey 输出：ODS 任务 program_type 分布、可解析比例（脱敏样本进 Execution log）。
-- 解析 fixture：DI JSON → `datasource`/`table` 提取正确；脚本模式任务不误解析、保持 inferred。
-- binding drift fixture：同步任务文件指纹变 + binding 变 → 待复核；指纹变 + binding 不变 → 仅更新指纹。
-- 真实 smoke：抽 10-20 个 ODS 任务解析并人工比对 DataWorks 控制台。
+- Step 0 已由 codex review 实跑完成：DI 336 / PYODPS3 638，336/336 JSON 可解析，reader 分布 mysql 253 / mongodb 82 / sqlserver 1（脱敏样本 shape 见 review 段）。apply-task 直接以此为基线。
+- 解析 fixture：mysql `connection[]`（含**多 table list**）、mongodb `collectionName`、sqlserver、writer ODPS step 被排除、多 reader / 缺 datasource → `ambiguous` + `binding_warnings`、非 JSON → `unparsed`、PYODPS3 → 保持 `inferred` 不误解析。
+- binding drift fixture：指纹变 + binding 变 → `binding_changed` 待复核；指纹变 + binding 不变 → 仅更新指纹；增量路径只重解析 changed 且 DI/parsed 项（断言未触碰未变更项）。
+- 真实 smoke：按 stepType 分层抽样解析并人工比对 DataWorks 控制台（sqlserver 必含）。
 - 不变量：索引 `index_version=2`、新字段 additive、无代码正文；`wiki_lint/graph/eval` 离线零依赖；全量 unittest 绿。
 
 ## 替代方案
