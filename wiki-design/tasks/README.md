@@ -49,7 +49,7 @@ Task 回答"怎么做、谁来做"，与 RFC 回答"要不要这么改"互补。
 | [task_20260702_039](TASK-039-pk-query-faq-first-batch.md) | knowledge-pk 高频问答 query 页 — 首批 FAQ | done | claude | codex | — |
 | [task_20260702_040](TASK-040-apply-rfc-029.md) | Apply RFC-029 — 反查物理层级扩展 + 推荐角色分档（引擎侧） | done | claude | codex | RFC-029 |
 | [task_20260702_041](TASK-041-pk-unknown-layer-writeback.md) | knowledge-pk 索引写回 124 确认层级 + 反查 smoke + routing 收尾 | done | claude | codex | RFC-029 |
-| [task_20260702_042](TASK-042-fix-reverse-summary-warning.md) | 修 reverse --include-summary 对 DDM/EDW 的残留「未命中该表」warning | pending | claude | codex | RFC-029 |
+| [task_20260702_042](TASK-042-fix-reverse-summary-warning.md) | 修 reverse --include-summary 对 DDM/EDW 的残留「未命中该表」warning | done | claude | codex | RFC-029 |
 | [task_20260702_043](TASK-043-pk-domain-backfill.md) | knowledge-pk 索引 domain 回填（改善反查按业务域分组） | done | claude | codex | — |
 | [task_20260702_044](TASK-044-pk-hub-page-slimming.md) | knowledge-pk 巨型路由 hub 页瘦身 — Step 0 图谱影响实测 + maintainer 拍板 | pending | claude | codex | — |
 | [task_20260702_045](TASK-045-pk-confidence-semantics.md) | knowledge-pk confidence 赋值规则落地 + 模板 source 页回填 low | done | claude | codex | — |

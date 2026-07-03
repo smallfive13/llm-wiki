@@ -3,7 +3,7 @@ id: task_20260702_042
 title: 修 reverse --include-summary 对 DDM/EDW 的残留「未命中该表」warning（引擎小修）
 author: claude
 executor: codex
-status: pending
+status: done
 type: other
 created: 2026-07-02
 updated: 2026-07-02
@@ -49,6 +49,46 @@ PK=/Users/zhangjunwu/workspace/obsidian/knowledge-pk
 - DDM/EDW --include-summary 修前/修后 warning 对比
 - test_042 + 六层回归 + 全量、commit sha、偏离或异常
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-07-03
+
+### 根因与修法
+
+- 根因：`build_reverse_report()` 的 warning 判据只检查 `upstream` / `downstream`，没有把 `summary_candidates` 和 `matched_trace_only` 计入“已命中”。因此 DDM/EDW 在 `--include-summary` 已正确展开 summary candidate 时，仍会走到“索引中未命中该表” warning。
+- 修法：新增 `has_any_match = bool(upstream or downstream or summary or trace_only)`，只有没有任何命中时才输出“索引中未命中该表”。
+- 未改 `LAYER_ROLE`、推荐排序、summary 隐藏/展开逻辑、trace-only 逻辑。
+
+### 验证
+
+真实 knowledge-pk DDM smoke：
+
+```text
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_index.py reverse --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --table pk_data.ddm_asset_limit_loan_dtl --include-summary
+
+Recommended
+-----------
+- [unknown] DDM ddm_asset_limit_loan_dtl · pk_data.ddm_asset_limit_loan_dtl · has_knowledge_page · 集市/下游派生层，默认不作为口径定义点，需 --include-summary 展开。
+
+Summary candidates
+------------------
+- [unknown] DDM ddm_asset_limit_loan_dtl · pk_data.ddm_asset_limit_loan_dtl · has_knowledge_page · 集市/下游派生层，默认不作为口径定义点，需 --include-summary 展开。
+```
+
+该输出不再包含“索引中未命中该表” warning。
+
+测试：
+
+```text
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest tests.test_task_042 tests.test_task_040
+Ran 11 tests in 0.042s
+OK
+
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest discover -s tests
+Ran 158 tests in 94.670s
+OK (skipped=1)
+```
+
+### Commits
+
+- engine: `d5c24fc` `[task-042] fix reverse summary warning`
 
 ## Evaluation by claude · <date>

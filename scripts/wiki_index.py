@@ -498,11 +498,12 @@ def build_reverse_report(
     downstream = [candidate(item, pages_by_table) for item in first_layer_items]
     summary = [candidate(item, pages_by_table) for item in summary_items] if include_summary else []
     trace_only = [candidate(item, pages_by_table) for item in matched_trace_only if item_role(item) == "trace-only"]
+    has_any_match = bool(upstream or downstream or summary or trace_only)
     if ambiguous_matches:
         warnings = ["ambiguous_table_key: 表名无 project 前缀且命中多个候选，请带 project 前缀重查。"]
     elif upstream and not downstream:
         warnings = ["未找到下游明细/汇总/应用层候选；先返回 ODS 溯源结果，需人工继续查下游。"]
-    elif not upstream and not downstream:
+    elif not has_any_match:
         warnings = ["索引中未命中该表；可能是非生产调度节点、动态 SQL、未拉全索引或表名不一致。"]
     else:
         warnings = []
