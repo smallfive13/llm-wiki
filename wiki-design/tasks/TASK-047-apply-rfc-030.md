@@ -116,4 +116,14 @@ sqlserver file:96107/500602981 · node=ods.pak_es_cdr_sip_record.extract · bind
 偏离或异常：无。commit sha：`49ec3f9738069c9a4a94f3cbae51cf1827a81f7f`。
 
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-07-03
+
+**Verdict: PASS。** 独立复验（重跑 + 读码）：
+
+- `test_task_047`(9) OK、全量 167 OK(skipped 1)、离线三件套`泄漏: 无`、`--check-docs` 0 错。
+- 解析器 reader-only 判据实证（`dataworks_client.py:206` `category=="reader"` 过滤；connection list 缺失→ambiguous+warning），与 RFC §1 逐条一致；"宁 ambiguous 不硬 parsed"落实（多 reader / 缺 datasource 全走 ambiguous）。
+- freshness 增量只对 changed & DI/parsed 重解析，`binding_changed` 结构化 diff + `source_binding_changed` 队列建议，`--apply` 只写索引不动页面——L3 边界正确。
+- RFC-030 `## Applied in 49ec3f9` 已登记。真实 smoke 三 stepType 各 1 全 parsed。
+
+TASK-047 done 有效；TASK-048 消费端（330 parsed / 6 ambiguous / 0 unparsed）间接验证了解析器在全量 336 DI 上的稳健性。
+
