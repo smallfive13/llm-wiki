@@ -55,6 +55,60 @@ wc -l $PK/wiki/topics/ods-other-source-lineage.md 2>/dev/null || echo "(已拆�
 - apply 后 graph / eval / lint 输出、单页行数分布、commit sha
 - 偏离或异常
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-07-03
+
+### Step 0 实测（已按要求停下，未改 hub 页）
+
+当前 ODS hub 页行数：
+
+```text
+ods-other-source-lineage.md    1884
+ods-user-source-lineage.md      588
+ods-merchant-source-lineage.md  216
+ods-capital-source-lineage.md   180
+ods-sms-source-lineage.md       126
+ods-trade-source-lineage.md      90
+ods-risk-source-lineage.md       81
+ods-rhino-source-lineage.md      45
+```
+
+当前 hub 出度与唯一入链承担：
+
+```text
+ods-other-source-lineage.md    out_edges=617 targets=617 unique_targets=615
+ods-user-source-lineage.md     out_edges=185 targets=185 unique_targets=184
+ods-merchant-source-lineage.md out_edges=61  targets=61  unique_targets=60
+ods-capital-source-lineage.md  out_edges=49  targets=49  unique_targets=48
+ods-sms-source-lineage.md      out_edges=31  targets=31  unique_targets=30
+ods-trade-source-lineage.md    out_edges=19  targets=19  unique_targets=18
+ods-risk-source-lineage.md     out_edges=16  targets=16  unique_targets=15
+ods-rhino-source-lineage.md    out_edges=4   targets=4   unique_targets=3
+```
+
+基线 graph/eval：
+
+```text
+nodes 1405
+edges 1987
+isolated 0
+score 83
+connectivity 100
+```
+
+临时副本 dry-run 对比（只模拟 `ods-other` + `ods-user` 两个最大 hub）：
+
+| 方案 | ods-other 行数 | ods-user 行数 | edges | isolated | score | connectivity |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| baseline | 1884 | 588 | 1987 | 0 | 83 | 100 |
+| strip-links / 降级去链接 | 1268 | 404 | 1186 | 799 | 71 | 43 |
+| compress-keep-links / 压缩正文但保留链接 | 1257 | 393 | 1987 | 0 | 83 | 100 |
+
+结论：
+
+- 直接砍链 / 降级会制造 799 个 isolated 节点，connectivity 从 100 降到 43，不可直接执行。
+- 压缩正文但保留链接可保持 graph/eval 不变，并把两个最大 hub 行数从 1884/588 降到 1257/393，风险最低。
+- 推荐 maintainer 先拍板方案 b：压缩正文，保留 frontmatter `source_ids` 与正文最小 wikilink 清单；后续若要进一步拆分为多个子 hub，再单独设计迁移规则，确保 source 页入链不丢。
+
+按本 task 约束，Step 0 到此停止，未改 knowledge-pk hub 页，未提交 pk 内容变更。
 
 ## Evaluation by claude · <date>
