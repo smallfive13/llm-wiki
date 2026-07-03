@@ -3,7 +3,7 @@ id: task_20260702_043
 title: knowledge-pk 索引 domain 回填（改善反查按业务域分组）
 author: claude
 executor: codex
-status: pending
+status: done
 type: other
 created: 2026-07-02
 updated: 2026-07-02
@@ -50,6 +50,93 @@ python3 -c "import json,collections;d=json.load(open('$PK/.wiki/dataworks_index.
 - 索引基线确认（v2 / 1353 / 无代码正文）
 - lint / graph / eval、commit sha、偏离或异常
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-07-03
+
+### Step 0 / 规则确认
+
+- knowledge-pk working tree clean 后开工。
+- 当前索引基线：`index_version=2` / `items=1353` / 无 code payload。
+- 初始 domain 分布：
+
+```text
+None 1263
+asset 24
+user 24
+risk 16
+oper 8
+merchant 6
+coll 5
+cib 2
+mkt 2
+capital 2
+fin 1
+```
+
+推断规则按表名 / node_name 优先，血缘作为弱补充；已有人工 domain 一律保留，不覆盖 TASK-041 的人工判定。关键词：
+
+```text
+asset: asset, loan, listing, repay, debt, deal, bnpl, delay
+coll: coll, collection, case, collector, recovery, overdue_debt
+risk: risk, audit, limit, datacheck, tasdeeq, pata, seon, blacklist, anti
+user: user, device, applist, trackapp, identity, account_cancel, fill_info, h5element, gps, signup, register, ocr
+merchant: merchant, vendor, pos, daira, daraz
+capital: capital, acct, fund, owing
+oper: oper, ddp, pms, call, staff, department, large_screen, conv_remind, service/cs
+mkt: mkt, marketing, appsflyer, utm, campaign, channel
+cib: cib
+fin: fin, erp_dm_op_internation, acct_company, bad_amount, transaction_detail, fund_detail
+```
+
+### 写回结果
+
+- 保留已有非空 domain：90 项。
+- 从原 None 项回填：1036 项。
+- 保留 None：227 项，主要是训练、系统配置、Mongo 水位、未识别 ODS/internal 处理链等不硬判项。
+
+写回后 domain 分布：
+
+```text
+asset 175
+user 268
+cib 5
+risk 213
+None 227
+oper 144
+mkt 9
+coll 129
+fin 17
+capital 75
+merchant 91
+```
+
+### Reverse smoke
+
+```text
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_index.py reverse --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --table dwd_asset_loan_list
+
+Downstream candidates
+---------------------
+[asset]
+- DWD dwd_asset_loan_list · pk_data.dwd_asset_loan_list · has_knowledge_page · 明细定义层，通常优先作为业务口径候选。
+```
+
+### 验证
+
+```text
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --check-only
+lint=0
+
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_graph.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --json
+graph=0
+nodes 1405 edges 1987 dangling 0
+
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_eval.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --json
+eval=0
+score 83
+```
+
+### Commits
+
+- knowledge-pk: `4e7dd59` `[pk task-043] backfill dataworks index domains`
 
 ## Evaluation by claude · <date>
