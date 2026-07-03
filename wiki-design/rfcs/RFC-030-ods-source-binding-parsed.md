@@ -92,3 +92,92 @@ ODS 表对应的**线上源表**（源系统 MySQL/Mongo 表）目前是靠 **OD
 ## Decision
 
 （由用户填写，或用户明确授权某个 Agent 代写。）
+
+## Review by codex · 2026-07-03
+
+结论：需调整。
+
+我同意 RFC 的核心方向：把 ODS 源表映射拆成 `source_binding` 这类正交信号，而不是污染 `review:true` 语义；批量快审也比 974 页逐页背书更可操作。但实跑 survey 发现提案里对 DI JSON 字段路径和覆盖面的描述不够准确，必须先钉死，否则 TASK 容易实现错解析器。
+
+### 1. 可解析性实跑结论
+
+基于当前 knowledge-pk `.wiki/dataworks_index.json`（`index_version=2`、1353 items）筛 ODS 任务，得到：
+
+```text
+total_items 1353
+ods_items 974
+program_type_distribution
+PYODPS3 638
+DI 336
+```
+
+也就是说，DI 只覆盖 336/974（约 34.5%），多数 ODS 任务是 `PYODPS3` 脚本/预处理任务。RFC 里“脚本模式保持 inferred”方向对，但后续实例 task 不能暗示 974 个 ODS 都能 parsed；应明确首批 parsed 上限约为 DI 336，PYODPS3 638 默认 inferred，除非后续另开脚本解析策略。
+
+我用 `GetFile` 抽样并全量扫了 336 个 DI：
+
+- 336/336 的 `GetFile.Content` 都是可 `json.loads` 的 JSON。
+- JSON 顶层含 `steps`，常见 step 组合是 reader / writer / processor。
+- 真实 reader 分布：`reader|mysql` 253、`reader|mongodb` 82、`reader|sqlserver` 1。
+
+关键反例：提案写的 `steps[].parameter.datasource / table` 不是通用 reader 路径。
+
+真实 reader shape 是：
+
+- MySQL / SQLServer：`steps[].category == "reader"`，`parameter.connection` 是 list，元素形态含 `datasource` 和 `table` list；reader 参数本身没有 `datasource/table`。
+- MongoDB：`steps[].category == "reader"`，`parameter.datasource` + `parameter.collectionName`，不是 `table`。
+- Writer step 是 ODPS 目标表，也有 `parameter.table`，不能被误当成源表；解析器必须只取 `category=reader` 的源端 step。
+
+脱敏样本 shape：
+
+```text
+DI sample file:96107/500410074 · node=ods.app_server_em_flow_deployment.extract
+reader stepType=mysql · parameter keys: column, connection, encoding, envType, socketTimeout, splitPk, tableComment, useSpecialSecret, where
+connection[0] keys: datasource, table(list)
+
+DI sample file:96107/500618917 · node=ods.sdk_backend_autosync_4_darazevent.extract.fix
+reader stepType=mongodb · parameter keys: batchSize, collectionName, column, cursorTimeoutInMs, datasource, enableJsonPrintNull, envType, objectIdOutputType, query, tableComment, useSplitVector
+```
+
+调整建议：RFC 提案段把解析规则改成：
+
+- 只解析 `steps[]` 中 `category == "reader"` 的 step。
+- MySQL/SQLServer：从 `parameter.connection[]` 取 `datasource` 和 `table[]`；若多 table，`source_table` 要定义为 list 还是拒绝 parsed，需要钉死。我倾向 `source_tables: []` 或 `source_table` 允许 list，否则多表源会丢信息。
+- MongoDB：从 `parameter.datasource` + `parameter.collectionName` 取 binding；字段名可仍落入 `source_table`，但文档要说明 collection 映射到 source_table，或新增 `source_object` 避免语义混淆。
+- Writer ODPS step 不参与 source binding。
+
+### 2. 索引契约
+
+`source_binding/source_datasource/source_table` 作为 additive optional 字段，不 bump `index_version=2`，原则上不冲突 RFC-028 受管共享基线：不含代码正文、不含 volatile、稳定排序即可。
+
+但基于实跑 shape，我认为字段契约还不够：
+
+- `source_table` 单值不足以表达 `connection[].table` list、多 reader、多源表情形。
+- 如果保持单值，必须定义多表时 `source_binding=ambiguous` 或 `inferred`，并记录 warning；否则会产生看似权威但实际截断的 binding。
+- 建议枚举扩为 `parsed / inferred / unparsed / ambiguous`，至少把“DI JSON 可读但源表多值或 shape 不支持”和“命名推断”区分开。若不扩枚举，也要有 `source_binding_reason` 或 `binding_warnings`，否则治理和抽查会混淆。
+
+### 3. freshness 联动
+
+挂在 `wiki_freshness.py --incremental-deployments` 是合适的，因为该路径已经按 changed file 拉 `GetFile` 算 fingerprint，重解析同一个 content 是本地 JSON parse，额外成本很小，不会显著拖慢增量路径。
+
+需要在 TASK 里钉死两点：
+
+- 只对 changed file 且 index item 已有 `source_binding=parsed` 或 `program_type=DI` 的项重解析；不要在增量路径里扫全量 974。
+- diff 维度要区分 `fingerprint_changed` 与 `binding_changed`：fingerprint 变但 binding 不变只更新指纹；binding 变则进待复核。这个 RFC 已有方向，但 TASK 需要结构化字段，例如 `binding_previous/current/changed`。
+
+### 4. 批量快审流程
+
+“抽查 ≥20 后批量 review:true”方向可以，但治理表述还不够严。336 个 DI 覆盖 mysql/mongodb/sqlserver，且解析规则至少有两类不同 shape；随机 20 可能漏掉 Mongo/SQLServer 或多表 edge case。
+
+建议调整为分层抽样：
+
+- 按 reader `stepType` 分层：mysql、mongodb、sqlserver 都必须覆盖；sqlserver 只有 1 个则必查。
+- 按数据源 / source_datasource 去重抽样，避免 20 个样本都来自同一系统。
+- 抽样记录应包括解析器 commit、索引 snapshot、样本 file_id/node_name、reader stepType、source_datasource/source_table、人工核对结论。
+- 批量背书范围仅限“本次解析器支持且抽查通过的 binding shape”，例如 mysql connection-list 与 mongodb collectionName；不应覆盖 `ambiguous/unparsed/inferred`。
+- 后续 drift 自动进待复核可以只标 queue，不自动撤 `review:true`，这一点与 L3 红线一致。
+
+### 5. 其他边界
+
+- RFC 写“DI 任务配置里明确写着 DataSource + table”需要改成更精确的“DataWorks DI JSON reader 配置里明确写源端 datasource 与 table/collection；不同 reader stepType 字段路径不同”。
+- `confidence` 从 low 升 medium 只应适用于 parsed 且无 ambiguity 的 ODS source；不应扩大到 PYODPS3 inferred。
+- accepted 后建议拆两步：先实现 parser + index 字段 + fixtures + survey report；再做 pk 实例回填和批量快审文档，避免把工具契约和批量背书动作混在一个 commit。
