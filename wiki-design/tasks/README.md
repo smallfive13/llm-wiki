@@ -51,7 +51,7 @@ Task 回答"怎么做、谁来做"，与 RFC 回答"要不要这么改"互补。
 | [task_20260702_041](TASK-041-pk-unknown-layer-writeback.md) | knowledge-pk 索引写回 124 确认层级 + 反查 smoke + routing 收尾 | done | claude | codex | RFC-029 |
 | [task_20260702_042](TASK-042-fix-reverse-summary-warning.md) | 修 reverse --include-summary 对 DDM/EDW 的残留「未命中该表」warning | done | claude | codex | RFC-029 |
 | [task_20260702_043](TASK-043-pk-domain-backfill.md) | knowledge-pk 索引 domain 回填（改善反查按业务域分组） | done | claude | codex | — |
-| [task_20260702_044](TASK-044-pk-hub-page-slimming.md) | knowledge-pk 巨型路由 hub 页瘦身 — Step 0 图谱影响实测 + maintainer 拍板 | pending | claude | codex | — |
+| [task_20260702_044](TASK-044-pk-hub-page-slimming.md) | knowledge-pk 巨型路由 hub 页瘦身 — Step 0 图谱影响实测 + maintainer 拍板 | done | claude | codex | — |
 | [task_20260702_045](TASK-045-pk-confidence-semantics.md) | knowledge-pk confidence 赋值规则落地 + 模板 source 页回填 low | done | claude | codex | — |
 | [task_20260703_046](TASK-046-pk-ods-other-hub-split.md) | knowledge-pk ods-other hub 二期拆分 — 按源系统拆子 hub（保链迁移） | pending | claude | codex | — |
 

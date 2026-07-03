@@ -3,7 +3,7 @@ id: task_20260702_044
 title: knowledge-pk 巨型路由 hub 页瘦身 — Step 0 图谱影响实测 + 方案报 maintainer 拍板
 author: claude
 executor: codex
-status: pending
+status: done
 type: other
 created: 2026-07-02
 updated: 2026-07-02
@@ -114,5 +114,43 @@ connectivity 100
 ## Maintainer decision · 2026-07-03
 
 **拍板：方案 b（压缩正文、保留全部 wikilink）本轮 apply；`ods-other` 压缩后仍 ~1257 行，二期按源系统拆子 hub（拆时保链），另立 TASK-046 承接。** 依据 Step 0 实测：去链接方案 isolated 799 / connectivity 43，否决；压缩方案图谱零损伤。（用户 2026-07-03 选定，claude 代记。）
+
+### Apply by codex · 2026-07-03
+
+- 已按 maintainer decision apply 方案 b：8 个 ODS hub 页正文从宽表格压缩为一任务一行的最小清单。
+- 保留 frontmatter `source_ids` 与 `sources` wikilink；正文不新增 wikilink，避免引入额外 graph 边。
+- 行数变化：
+
+```text
+ods-other-source-lineage.md    1884 -> 658
+ods-user-source-lineage.md      588 -> 226
+ods-merchant-source-lineage.md  216 -> 102
+ods-capital-source-lineage.md   180 -> 90
+ods-sms-source-lineage.md       126 -> 72
+ods-trade-source-lineage.md      90 -> 60
+ods-risk-source-lineage.md       81 -> 57
+ods-rhino-source-lineage.md      45 -> 45
+```
+
+- `log.md` 已记录本次维护；`index.md` 已有 ODS hub 导航，未新增重复入口。
+
+验证：
+
+```text
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --check-only
+lint=0
+
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_graph.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --json
+graph=0
+nodes 1405 edges 1987 isolated 0
+
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_eval.py --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --json
+eval=0
+score 83 connectivity 100
+```
+
+Commits：
+
+- knowledge-pk: `4051ff4` `[pk task-044] compress ods hub pages`
 
 ## Evaluation by claude · <date>
