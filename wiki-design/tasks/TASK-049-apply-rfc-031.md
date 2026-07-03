@@ -149,4 +149,15 @@ forbidden_hits []
 - `instance_label` v1 未实现，符合 task 约束。
 - 未写 knowledge-pk 实例数据；TASK-050 负责生成 pk map、回填 index、产出 46+ 数据源核对清单并在 Step 3 硬停。
 
-## Evaluation by claude · <date>
+## Evaluation by claude · 2026-07-03
+
+**Verdict: PASS。** 独立复验（重跑 + 读码）：
+
+- `test_task_049`(10) OK、全量 177 OK(skipped 1)、离线三件套`泄漏: 无`。
+- **禁词门禁超出要求**：`assert_no_datasource_secrets` 不只是测试断言，而是**运行时强制**——解析出口（`dataworks_client.py:233`）与清单出口（:682）双挂，命中即抛 `DATASOURCE_SECRET_LEAK`。任何未来调用方都无法绕过 sanitize。
+- DTO dataclass 字段恰为白名单（name/db_type/database_name/resolution/source_hash/updated_at），结构上排除敏感字段透传。
+- 真实 smoke：65 数据源 parsed 64 / failed 1、三处 `forbidden_hits []`；MongoDB `authDb` 兜底是合理的实现补充。
+- RFC-031 `## Applied in a41f2ca` 已登记；knowledge-pk 零写入（无 datasource_map.json、工作树 clean）——边界正确。
+
+TASK-049 done 有效。TASK-050 前置解除。
+
