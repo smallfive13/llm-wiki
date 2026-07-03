@@ -2,7 +2,7 @@
 id: rfc_20260703_031
 title: DataWorks 数据源 → 线上库解析（datasource alias resolution）
 author: claude
-status: proposed
+status: discussing
 created: 2026-07-03
 updated: 2026-07-03
 targets:
@@ -19,6 +19,8 @@ reviewers:
 
 # RFC-031: DataWorks 数据源 → 线上库解析
 
+> **作者修订 · 2026-07-03（吸收 codex review 实跑结论）**：主接口钉死 `ListDataSources`（SDK 无普通 `GetDataSource`；`GetDataSourceMeta` 是表元数据、不用）；固定 `EnvType=1`（PROD）口径；安全红线升级为字符串禁词硬测试；`instance_label` v1 暂缓；`datasource_map.json` 定性为**受管共享基线**（非派生层）。status → discussing，待用户 Decision。
+
 ## 背景
 
 RFC-030 落地后，ODS binding 的 `source_datasource` 是 **DataWorks 数据源名（连接别名）**，不是线上系统的物理库名（maintainer 在 TASK-048 抽查时指出）。例如 `pak_vendor_biz_autosync_2` 是 DataWorks 里配的连接名，它背后真正指向哪个 MySQL/Mongo 实例、哪个 database，要调 DataWorks 数据源 API（`ListDataSources` / `GetDataSource` 一类）才能拿到。
@@ -29,22 +31,25 @@ RFC-030 落地后，ODS binding 的 `source_datasource` 是 **DataWorks 数据�
 
 ### 1. 数据源解析（引擎）
 
-- `dataworks_client` 增加数据源清单/详情查询：按 project 拉取数据源列表，提取每个数据源的**线上库信息**。
-- **Step 0 必核**（本 RFC 最大不确定点）：实跑确认 SDK 的可用接口（`ListDataSources` / 新版 `ListDataSourceInstances` 等）、返回 shape、以及连接信息以什么形态暴露（结构化字段还是 JDBC URL 字符串）。
-- 产出一张**数据源解析表**：`datasource_name → {db_type, database_name, instance_label?}`。
+- **主接口钉死（codex Step 0 实跑）**：`ListDataSources`（`EnvType=1` PROD 口径），消费 `DataSources[*].Content`（JSON 字符串）。SDK 无普通 `GetDataSource`；`GetDataSourceMeta` 返回的是数据源可见表元数据，不作为连接详情来源。
+- **实跑基线**（apply-task 直接引用，不重跑 survey）：project 96107 共 65 个数据源（mysql 47 / mongodb 15 / sqlserver 1 / odps 1 / holo 1），`Content` 全部可 parse；TASK-048 涉及的 46 个 `source_datasource` **46/46 命中、解析失败 0**（`database` 直取字段 17、`jdbcUrl` 拆库名 29）。
+- 产出**数据源解析表**：`datasource_name → {db_type, database_name, resolution}`，可选 `updated_at` / `source_hash`（不含连接信息的稳定字段）。`instance_label` v1 **暂缓**（无明确 allowlist 来源前不做，严禁从 host/address/endpoint/jdbcUrl 派生）。
 
 ### 2. 安全红线（比解析本身更重要）
 
 数据源详情通常携带连接串 / host / 端口 / 账号——purpose.md 硬红线明确**不收连接串、不收凭证**：
 
-- **只提取并落库**：`db_type`（mysql/mongodb/sqlserver）、`database_name`（物理库名）；可选 `instance_label`（人可读的实例别称，如有且不含敏感信息）。
-- **严禁落库**：完整 JDBC/连接 URL、host、端口、用户名、密码、AK/SK。解析函数必须在返回前丢弃这些字段，fixture 断言输出不含 `jdbc:` / `host` / `password` 等模式。
-- 若 API 返回的 URL 无法安全拆出库名（格式异常），标 `resolution: failed`，不落任何原始串。
+敏感面实测非边缘情况：65 个数据源里 63 个含 `password`/`username`、48 个含 `jdbcUrl`——安全过滤必须是强约束 + 测试门禁，不是尽力而为：
+
+- **只提取并落库**：`datasource_name`、`db_type`（mysql/mongodb/sqlserver）、`database_name`（物理库名）、`resolution`，可选 `updated_at`/`source_hash`。
+- **严禁落库/透传**：`Content` 原文、`jdbcUrl`、`address`、`endpoint`、`host`、`port`、`username`、`password`、`accessKey`、AK/SK。解析函数在内部消费 `Content` 后立即丢弃原始对象，只返回 **sanitized DTO**。
+- **禁词硬测试（本 RFC 核心门禁）**：对 fixture 与真实 smoke 的全部输出做字符串扫描，禁止出现 `jdbc:`、`://`、`host`、`address`、`endpoint`、`port`、`username`、`password`、`accessKey`、`secret`、`token`。
+- JDBC 解析只允许从内存字符串抽取 database segment 或 `databaseName` 参数；无法安全拆出库名 → `resolution: failed`，不落任何原始串。
 
 ### 3. 索引与页面落点
 
-- 索引 item（additive，不 bump `index_version=2`）：`source_database` / `source_db_type`（仅 binding=parsed 且解析成功的项）。
-- 数据源解析表落 `.wiki/datasource_map.json`（受管派生物，进 Git，同守"无凭证/无连接串"基线）。
+- 索引 item（additive，不 bump `index_version=2`）：`source_database` / `source_db_type`（仅 binding=parsed 且解析成功的项）。补 fixture：旧 index 无新字段时 reverse / freshness 行为逐字节不变。
+- 数据源解析表落 `.wiki/datasource_map.json`，定性为**受管共享基线**（对齐 RFC-028 对 `dataworks_index.json` 的口径，**不是**可本地重建的普通派生层）：进 Git（`.gitignore` 显式 allowlist）、`.ignore` 屏蔽全文检索、稳定排序、无 volatile、无敏感串；变更走 `wiki_freshness` 巡检报告 + maintainer 裁决。
 - source 页正文措辞一并精确化（消化 TASK-048 遗留）：改为「同步来源：DataWorks 数据源 `<ds>`（线上库 `<db_type>:<database>`）· 源表 `<tables>`」；解析失败的只写数据源名并注明"线上库待确认"。
 
 ### 4. 防腐联动
@@ -63,10 +68,11 @@ TASK-048 抽查 gate（2026-07-03）：maintainer 确认解析正确的同时指
 
 ## 验证方式
 
-- Step 0 实跑：可用 API、返回 shape、连接信息形态（脱敏记录，只记字段名不记值）。
-- 解析 fixture：结构化字段 / JDBC URL 两种形态拆库名；异常格式 → `resolution: failed`；**输出不含凭证/host/端口/URL 的断言**（安全 fixture 是本 RFC 的核心测试）。
-- 真实 smoke：拉全量数据源（预计几十个），人工比对 2-3 个已知库。
-- 不变量：索引 additive / v2 不变；`datasource_map.json` 无敏感串；离线三件套零依赖；全量回归绿。
+- Step 0 已由 codex review 实跑完成（`ListDataSources` shape、65 数据源、46/46 命中、敏感字段分布），apply-task 直接引用为基线，固定 `EnvType=1`。
+- 解析 fixture：`database` 直取 / `jdbcUrl` 拆库名两种形态；异常格式 → `resolution: failed`；**禁词硬测试**（§2 清单）覆盖 fixture 与真实 smoke 全部输出。
+- 兼容 fixture：旧 index 无 `source_database`/`source_db_type` 时 reverse / freshness 行为逐字节不变。
+- 真实 smoke：拉全量 65 个数据源，人工比对 2-3 个已知库。
+- 不变量：索引 additive / v2 不变；`datasource_map.json` 无敏感串、稳定排序；离线三件套零依赖；全量回归绿。
 
 ## 替代方案
 
