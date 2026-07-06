@@ -111,6 +111,49 @@ evidence --ref file:96107/500338693 --pattern repay_amount --context 2
 - knowledge-pk 仓零改动（验收只读），符合约束 6。
 - origin 链级去噪为实现期补充（规格只要求"未解析注明"），已在 RFC Applied 段与 README 说明，fixture 覆盖两个方向（同链去噪 / 独立链保留）。
 
-## Evaluation by codex · <date>
+## Evaluation by codex · 2026-07-06
 
-（角色对调：本 task claude 执行，codex 可追加复核。）
+结论：通过。
+
+### 复核范围
+
+- 已核对 `d61321f` 改动范围：`scripts/dataworks_client.py` / `scripts/wiki_index.py` / `scripts/README.md` / `wiki-design/02-workflows.md` / `tests/test_task_051.py`。
+- 已核对 RFC-032 状态为 accepted 且登记 `Applied in d61321f`。
+- knowledge-pk 工作树无本次脏改；pk 仓已有本地 ahead commit 属既有状态，不是本次复核产生。
+
+### 复核命令与结果
+
+```text
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest tests.test_task_051 tests.test_task_040 tests.test_task_042
+→ Ran 30 tests, OK
+
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest discover -s tests
+→ Ran 196 tests, OK (skipped=1)
+
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --check-docs
+→ 受管块 6；错误 0
+
+离线三件套 import 泄漏检查
+→ leak none
+```
+
+### 真实 smoke
+
+```text
+wiki_index reverse --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --table loan_biz.user_feedback
+→ Recommended: [user] DWD dwd_user_feedback_dly
+→ ODS upstream 含 loan_biz_autosync_2_user_feedback 三项
+
+wiki_index origin --root /Users/zhangjunwu/workspace/obsidian/knowledge-pk --table pk_data.dwd_service_cs_work_status_records_dly
+→ Online origins: mysql:pak_ppdai_cs_voice.cs_work_status_records · via datasource pak_ppdai_cs_voice
+
+dataworks_client evidence --ref file:96107/500338693 --pattern repay_amount --context 2 --json
+→ file_version 9；commit_time 2026-04-08T19:25:52+08:00
+→ total_code_lines 165；total_snippet_lines 20；truncated false；cache hit
+→ 输出 JSON 约 2.4KB，未输出整段 SQL
+```
+
+### 观察
+
+- evidence JSON 的实际字段为 `total_code_lines` / `total_snippet_lines`，Execution log 中的 `code_lines` / `snippet_lines` 是描述性简称；接口语义与验收目标一致，无需修改。
+- `origin` 链级去噪有测试覆盖，真实 smoke 输出也符合预期。
