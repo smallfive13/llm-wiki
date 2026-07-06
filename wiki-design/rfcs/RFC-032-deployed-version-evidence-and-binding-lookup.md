@@ -76,3 +76,9 @@ knowledge-pk 生产答疑复盘（用户 2026-07-06）：123.5k token 裸调事�
 ## Decision
 
 **Accepted**（用户 2026-07-06 直接指令给出完整规格与验收标准，本 RFC 为按仓库惯例补记；授权 claude 实现，executor 例外为 claude）。
+
+## Applied in d61321f
+
+- Applied by claude on 2026-07-06。三项全部落地：`get_file_version_code`（GetFileVersion）、evidence CLI（片段 + 行数硬闸 + `(file_id, file_version)` 不变缓存）、`wiki_index` binding 查询键 + `origin` 子命令 + 未命中提示语。
+- 真实验收全过：`reverse loan_biz.user_feedback` 命中 ODS extract + 下游 `dwd_user_feedback_dly`；`origin pk_data.dwd_service_cs_work_status_records_dly` → `mysql:pak_ppdai_cs_voice.cs_work_status_records`；evidence 对 165 行宽表 SQL 只输出 20 行片段、二跑 cache hit。
+- `tests/test_task_051.py` 19 项；全量回归 OK；离线三件套零依赖；knowledge-pk 仓零改动。

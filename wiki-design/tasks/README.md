@@ -58,7 +58,7 @@ Task 回答"怎么做、谁来做"，与 RFC 回答"要不要这么改"互补。
 | [task_20260703_048](TASK-048-pk-ods-binding-backfill.md) | knowledge-pk ODS binding 回填（336 DI）+ 分层抽查 gate + 批量背书 | done | claude | codex | RFC-030 |
 | [task_20260703_049](TASK-049-apply-rfc-031.md) | Apply RFC-031 — 数据源解析 sanitized DTO + 禁词门禁 + 数据源巡检（引擎侧） | done | claude | codex | RFC-031 |
 | [task_20260703_050](TASK-050-pk-datasource-map-backfill.md) | knowledge-pk 数据源解析表生成 + source_database 回填 + 核对 gate + 措辞精确化 | pending | claude | codex | RFC-031 |
-| [task_20260706_051](TASK-051-apply-rfc-032.md) | Apply RFC-032 — GetFileVersion 取码 + evidence 片段模式 + reverse binding 键 / origin | in-progress | claude | claude | RFC-032 |
+| [task_20260706_051](TASK-051-apply-rfc-032.md) | Apply RFC-032 — GetFileVersion 取码 + evidence 片段模式 + reverse binding 键 / origin | done | claude | claude | RFC-032 |
 
 > 注：本表在 TASK-031 后存在既有欠账（032-035 已存在于目录但未回填索引行）；036-050 为本轮新增。
 
