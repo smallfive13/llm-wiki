@@ -42,7 +42,7 @@ Task 回答"怎么做、谁来做"，与 RFC 回答"要不要这么改"互补。
 | [task_20260622_028](TASK-028-apply-rfc-027-m1-m2.md) | Apply RFC-027 M1+M2 — asset-mapping profile + 代码梳理/传导口径方法论 | done | claude | codex | RFC-027 |
 | [task_20260622_029](TASK-029-apply-rfc-027-m3.md) | Apply RFC-027 M3 — DataWorks 直连失效检测（dataworks_client + wiki_freshness + 代码锚点） | done | claude | codex | RFC-027 |
 | [task_20260622_030](TASK-030-apply-rfc-027-m4.md) | Apply RFC-027 M4 — 答疑回源策略（默认信库 + 触发式回源 DataWorks） | done | claude | codex | RFC-027 |
-| [task_20260623_031](TASK-031-apply-rfc-028-m1.md) | Apply RFC-028 M1 — DataWorks 全量代码索引（受管共享基线 + 分层 + 指纹） | pending | claude | codex | RFC-028 |
+| [task_20260623_031](TASK-031-apply-rfc-028-m1.md) | Apply RFC-028 M1 — DataWorks 全量代码索引（受管共享基线 + 分层 + 指纹） | done | claude | codex | RFC-028 |
 | [task_20260702_036](TASK-036-pk-freshness-reconcile.md) | knowledge-pk 增量防腐待复核 — B122/B032 回源比对 + 索引/页面裁决 | done | claude | codex | RFC-028 |
 | [task_20260702_037](TASK-037-pk-unknown-layer-classify.md) | knowledge-pk Unknown 层 124 任务归类（实例侧；索引/反查改动见 RFC-029） | done | claude | codex | RFC-029 |
 | [task_20260702_038](TASK-038-pk-dwd-dwb-caliber-deepen.md) | knowledge-pk DWD/DWB 业务口径深化 — 深化模板 + 首批优先表 | done | claude | codex | RFC-027, RFC-028 |
@@ -57,7 +57,7 @@ Task 回答"怎么做、谁来做"，与 RFC 回答"要不要这么改"互补。
 | [task_20260703_047](TASK-047-apply-rfc-030.md) | Apply RFC-030 — ODS 源表 binding 解析器 + freshness binding diff（引擎侧） | done | claude | codex | RFC-030 |
 | [task_20260703_048](TASK-048-pk-ods-binding-backfill.md) | knowledge-pk ODS binding 回填（336 DI）+ 分层抽查 gate + 批量背书 | done | claude | codex | RFC-030 |
 | [task_20260703_049](TASK-049-apply-rfc-031.md) | Apply RFC-031 — 数据源解析 sanitized DTO + 禁词门禁 + 数据源巡检（引擎侧） | done | claude | codex | RFC-031 |
-| [task_20260703_050](TASK-050-pk-datasource-map-backfill.md) | knowledge-pk 数据源解析表生成 + source_database 回填 + 核对 gate + 措辞精确化 | pending | claude | codex | RFC-031 |
+| [task_20260703_050](TASK-050-pk-datasource-map-backfill.md) | knowledge-pk 数据源解析表生成 + source_database 回填 + 核对 gate + 措辞精确化 | done | claude | codex | RFC-031 |
 | [task_20260706_051](TASK-051-apply-rfc-032.md) | Apply RFC-032 — GetFileVersion 取码 + evidence 片段模式 + reverse binding 键 / origin | done | claude | claude | RFC-032 |
 
 > 注：本表在 TASK-031 后存在既有欠账（032-035 已存在于目录但未回填索引行）；036-050 为本轮新增。
