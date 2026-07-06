@@ -3,10 +3,10 @@ id: task_20260703_050
 title: knowledge-pk 数据源解析表生成 + source_database 回填 + 核对 gate + 措辞精确化
 author: claude
 executor: codex
-status: pending
+status: done
 type: other
 created: 2026-07-03
-updated: 2026-07-03
+updated: 2026-07-06
 related_rfcs: [RFC-031]
 ---
 
@@ -164,5 +164,28 @@ git -C $PK diff HEAD~1 --stat -- 'wiki/sources/*.md' | tail -1
 - pk eval after map/index: exit 0；score 82 / integrity 100 / connectivity 100 / review_coverage 6/70。
 - pk working tree clean after two pk commits.
 - `wiki/sources/*.md` 未修改，Step 4 未执行。
+
+### Gate decision by maintainer · 2026-07-06
+
+- maintainer 已确认抽样重点项与整体 46 条 datasource 映射均正确。
+- 确认这些映射来自 DataWorks DataSource 接口脱敏解析结果，不是表名启发式猜测。
+- 更新机制确认：`.wiki/datasource_map.json` 是受管共享基线，进 Git；lint / graph / eval 不联网、不自动刷新。后续 datasource 指向变化必须显式运行 datasource-map refresh，并通过 diff review 后再更新 source 页措辞。
+- Gate 通过，授权执行 Step 4 的 330 页措辞精确化。
+
+### Step 4 · source wording precision
+
+- 修改范围：330 个 `source_binding=parsed` 且 datasource map 解析成功的 ODS source 页。
+- 替换规则：`线上源表（解析自同步任务配置）` → `同步来源：DataWorks 数据源 <ds>（线上库 <db_type>:<database>）· 源表 <tables>`。
+- 统计：旧行删除 330；新 `同步来源：DataWorks 数据源` 行新增 330。
+- `review` / `last_verified` / `confidence` diff 行数均为 0；仅正常更新 frontmatter `updated: 2026-07-06`。
+- `log.md` 已记录 maintainer gate、受管基线更新机制和本次背书边界。
+- pk commit：`d4bab3348ad4202d1cadd040cd1530ac087805ea` (`[pk task-050] precise ODS source database wording`)
+
+### Final verification
+
+- pk lint after Step 4: exit 0（0 错 0 警）。
+- pk graph after Step 4: exit 0；nodes 1431 / edges 2707 / dangling 0 / isolated 0。
+- pk eval after Step 4: exit 0；score 82 / integrity 100 / connectivity 100 / review_coverage 6/70。
+- pk working tree clean after Step 4 commit.
 
 ## Evaluation by claude · <date>
