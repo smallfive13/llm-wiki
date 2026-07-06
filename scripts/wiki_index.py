@@ -444,6 +444,41 @@ def item_basename_keys(item: Dict[str, Any], keys: Iterable[str] = ("table", "in
     return values
 
 
+def item_binding_keys(item: Dict[str, Any]) -> Set[str]:
+    """Online-source lookup keys from RFC-030/031 binding fields (parsed only).
+
+    Lets reverse/origin resolve queries phrased as online names —
+    ``<source_database>.<table>`` / ``<source_datasource>.<table>`` — against
+    the ODS sync item. Read-only: consumes fields already backfilled into the
+    index; absent fields mean no extra keys (legacy behavior unchanged).
+    """
+    if item.get("source_binding") != "parsed":
+        return set()
+    values: Set[str] = set()
+    prefixes = [item.get("source_database"), item.get("source_datasource")]
+    for raw in item.get("source_tables") or []:
+        table = str(raw or "").strip()
+        if not table:
+            continue
+        for prefix in prefixes:
+            if isinstance(prefix, str) and prefix.strip():
+                normalized = normalize_table_key(f"{prefix.strip()}.{table}")
+                if normalized:
+                    values.add(normalized)
+    return values
+
+
+def item_binding_basename_keys(item: Dict[str, Any]) -> Set[str]:
+    if item.get("source_binding") != "parsed":
+        return set()
+    values: Set[str] = set()
+    for raw in item.get("source_tables") or []:
+        basename = table_basename_key(str(raw or ""))
+        if basename:
+            values.add(basename)
+    return values
+
+
 def item_lookup_keys(item: Dict[str, Any]) -> Set[str]:
     values = item_keys(item, ("table", "inputs", "outputs"))
     node_name = item.get("node_name")
@@ -451,6 +486,7 @@ def item_lookup_keys(item: Dict[str, Any]) -> Set[str]:
         normalized = normalize_table_key(node_name)
         if normalized:
             values.add(normalized)
+    values |= item_binding_keys(item)
     return values
 
 
@@ -461,6 +497,7 @@ def item_lookup_basename_keys(item: Dict[str, Any]) -> Set[str]:
         basename = table_basename_key(node_name)
         if basename:
             values.add(basename)
+    values |= item_binding_basename_keys(item)
     return values
 
 
@@ -598,7 +635,10 @@ def build_reverse_report(
     elif upstream and not downstream:
         warnings = ["未找到下游明细/汇总/应用层候选；先返回 ODS 溯源结果，需人工继续查下游。"]
     elif not has_any_match:
-        warnings = ["索引中未命中该表；可能是非生产调度节点、动态 SQL、未拉全索引或表名不一致。"]
+        warnings = [
+            "索引中未命中该表；可能是非生产调度节点、动态 SQL、未拉全索引或表名不一致。"
+            "若查询的是线上库表（datasource.table），已支持直接输入线上表名反查；仍未命中可能是该同步任务 binding 未解析。"
+        ]
     else:
         warnings = []
     all_candidates = upstream + downstream + summary
@@ -667,6 +707,153 @@ def render_reverse(report: Dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def build_origin_report(index: Dict[str, Any], table: str, *, max_hops: int = 10) -> Dict[str, Any]:
+    """Trace a warehouse table upstream to its online source bindings.
+
+    Walks ``inputs`` upward until reaching ODS sync items carrying RFC-030
+    source bindings; lists every online ``datasource.table`` found and notes
+    upstream items whose binding is not ``parsed``. Offline: reads only the
+    local managed index.
+    """
+    items = [item for item in index.get("items", []) if isinstance(item, dict)]
+    wanted = normalize_table_key(table)
+    wanted_basename = table_basename_key(table)
+    query_has_project = "." in normalize_table(table)
+    warnings: List[str] = []
+    ambiguous: List[Dict[str, Any]] = []
+    if wanted and not query_has_project:
+        basename_hits = [item for item in items if wanted_basename and wanted_basename in item_lookup_basename_keys(item)]
+        if len(basename_hits) == 1:
+            candidates = sorted(key for key in item_lookup_keys(basename_hits[0]) if key.split(".")[-1] == wanted_basename)
+            qualified = [key for key in candidates if "." in key]
+            wanted = (qualified or candidates or sorted(item_lookup_keys(basename_hits[0])))[0]
+        elif len(basename_hits) > 1:
+            ambiguous = basename_hits
+    start_items = [] if ambiguous else [item for item in items if wanted and wanted in item_lookup_keys(item)]
+
+    origins: List[Dict[str, Any]] = []
+    unresolved: List[Dict[str, Any]] = []
+    seen_nodes: Set[str] = set()
+    seen_origins: Set[Tuple[str, str, str]] = set()
+
+    def collect_binding(item: Dict[str, Any]) -> None:
+        binding = item.get("source_binding")
+        if not binding:
+            return
+        if binding == "parsed":
+            for raw in item.get("source_tables") or []:
+                key = (
+                    str(item.get("source_datasource") or ""),
+                    str(item.get("source_database") or ""),
+                    str(raw),
+                )
+                if key in seen_origins:
+                    continue
+                seen_origins.add(key)
+                origins.append(
+                    {
+                        "source_db_type": item.get("source_db_type"),
+                        "source_database": item.get("source_database"),
+                        "source_datasource": item.get("source_datasource"),
+                        "source_table": str(raw),
+                        "ods_table": item.get("table"),
+                        "node_name": item.get("node_name"),
+                    }
+                )
+        else:
+            unresolved.append(
+                {
+                    "ods_table": item.get("table"),
+                    "node_name": item.get("node_name"),
+                    "source_binding": binding,
+                }
+            )
+
+    frontier: Set[str] = set()
+    for item in start_items:
+        seen_nodes.add(str(item.get("node_id")))
+        collect_binding(item)
+        frontier |= item_keys(item, ("inputs",))
+    hops = 0
+    while frontier and hops < max(1, int(max_hops)):
+        hops += 1
+        next_frontier: Set[str] = set()
+        progressed = False
+        for item in items:
+            key = str(item.get("node_id"))
+            if key in seen_nodes:
+                continue
+            if not (item_keys(item, ("table", "outputs")) & frontier):
+                continue
+            seen_nodes.add(key)
+            progressed = True
+            collect_binding(item)
+            next_frontier |= item_keys(item, ("inputs",))
+        if not progressed:
+            break
+        frontier = next_frontier
+
+    # 同一 ODS 处理链（normalize 后同键）已由 extract 项给出 parsed 来源时，
+    # 该链的 pre/终表等 inferred 阶段不再列为 unresolved（去噪）。
+    parsed_chain_keys = {normalize_table_key(str(entry.get("ods_table") or "")) for entry in origins}
+    unresolved = [
+        entry
+        for entry in unresolved
+        if normalize_table_key(str(entry.get("ods_table") or "")) not in parsed_chain_keys
+    ]
+    if ambiguous:
+        warnings.append("ambiguous_table_key: 表名无 project 前缀且命中多个候选，请带 project 前缀重查。")
+    elif not start_items:
+        warnings.append(
+            "索引中未命中该表；可能是非生产调度节点、动态 SQL、未拉全索引或表名不一致。"
+            "若查询的是线上库表（datasource.table），已支持直接输入线上表名反查；仍未命中可能是该同步任务 binding 未解析。"
+        )
+    elif not origins and not unresolved:
+        warnings.append("未追溯到线上来源：上游链路中无 source binding（可能是仓内加工链或 binding 未回填）。")
+    origins.sort(key=lambda entry: (str(entry.get("source_database") or ""), str(entry.get("source_table") or "")))
+    unresolved.sort(key=lambda entry: str(entry.get("ods_table") or ""))
+    return {
+        "table": table,
+        "normalized_key": wanted,
+        "caveat": CAVEAT,
+        "hops_used": hops,
+        "origins": origins,
+        "unresolved_bindings": unresolved,
+        "ambiguous_matches": [candidate(item, {}) for item in ambiguous],
+        "warnings": warnings,
+    }
+
+
+def render_origin(report: Dict[str, Any]) -> str:
+    lines = [
+        "wiki-index origin",
+        "=================",
+        f"table: {report['table']}",
+        f"normalized_key: {report['normalized_key']}",
+        f"caveat: {report['caveat']}",
+        "",
+        "Online origins",
+        "--------------",
+    ]
+    for entry in report["origins"]:
+        database = entry.get("source_database") or entry.get("source_datasource") or "?"
+        db_type = entry.get("source_db_type") or "unknown"
+        via = entry.get("source_datasource") or "?"
+        ods = entry.get("ods_table") or entry.get("node_name") or "?"
+        lines.append(f"- {db_type}:{database}.{entry['source_table']} · via datasource {via} · ODS {ods}")
+    if not report["origins"]:
+        lines.append("- (none)")
+    if report["unresolved_bindings"]:
+        lines.extend(["", "Unresolved bindings", "-------------------"])
+        for entry in report["unresolved_bindings"]:
+            ods = entry.get("ods_table") or entry.get("node_name") or "?"
+            lines.append(f"- {ods} · source_binding={entry.get('source_binding')} · 线上来源未解析")
+    if report["warnings"]:
+        lines.extend(["", "Warnings", "--------"])
+        lines.extend(f"- {item}" for item in report["warnings"])
+    return "\n".join(lines) + "\n"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build DataWorks managed code index")
     subparsers = parser.add_subparsers(dest="command")
@@ -684,6 +871,13 @@ def build_parser() -> argparse.ArgumentParser:
     reverse.add_argument("--depth", type=int, default=1, help="ODS traversal depth before detail layer; default: 1")
     reverse.add_argument("--include-summary", action="store_true", help="also include DWS/ADS summary candidates")
     reverse.add_argument("--json", action="store_true", help="output JSON")
+
+    origin = subparsers.add_parser("origin", help="trace a warehouse table upstream to online datasource.table bindings")
+    origin.add_argument("--root", help="wiki instance root; default: knowledge")
+    origin.add_argument("--index", default=DEFAULT_INDEX_REL, help="index path relative to instance root")
+    origin.add_argument("--table", required=True, help="warehouse table to trace upstream")
+    origin.add_argument("--max-hops", type=int, default=10, help="max upstream hops; default: 10")
+    origin.add_argument("--json", action="store_true", help="output JSON")
 
     parser.add_argument("--root", help="wiki instance root; default: knowledge")
     parser.add_argument("--project-id", type=int, help="DataWorks project id")
@@ -717,6 +911,18 @@ def main(argv: Optional[List[str]] = None, *, client_factory: Optional[Any] = No
             print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
         else:
             print(render_reverse(report), end="")
+        return 0
+    if args.command == "origin":
+        try:
+            index = load_index(root, args.index)
+            report = build_origin_report(index, args.table, max_hops=args.max_hops)
+        except ConfigError as exc:
+            print(f"wiki-index config error: {exc}", file=sys.stderr)
+            return 2
+        if args.json:
+            print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+        else:
+            print(render_origin(report), end="")
         return 0
     if args.command == "datasource-map":
         try:

@@ -322,6 +322,12 @@ Agent 用知识库答疑时默认先信库，不把 DataWorks 当作每问必查
 2. 回源合并答：命中页面 `status: stale`，或 `review: false` 且问题关键，或用户明确问"当前实现"、"最新"、"线上怎么算"、"代码里怎么写"、"字段从哪来"、"哪张表"、"口径细节"这类需要当前精确事实的问题时，用 `scripts/dataworks_client.py` 查询 DataWorks 当前代码 / 表结构，再和库内结论合并回答。
 3. 未命中：只有数仓、表、字段、代码、口径类问题才回源，并登记 `source-gap`；非数仓类问题未命中时，回答"库内无依据"，不调用 SDK。
 
+回源取码规则（RFC-032）：
+
+- **确认"线上怎么算"必须走已部署版本链路**：`get_latest_deployed_version` 定位 prod `file_version` → `get_file_version_code`（GetFileVersion）取那一版内容。`get_file_code`（GetFile）返回设计态最新草稿，可能比任何 DEPLOYED 版本新，不得用于回答线上口径。
+- **优先 evidence 片段模式**（`dataworks_client.py evidence --ref ... --pattern ...`）：只把命中行 ±N 行片段带进回答上下文，合计行数硬封顶。禁止裸调 SDK 拉多版本 `FileContent` 全文——历史事故一次把约 123.5k token 代码灌进模型上下文。
+- 已提交版本不可变，evidence 自带按 `(file_id, file_version)` 的引擎侧缓存，重复答疑不重复取码。
+
 回源只复用 M3 的 DataWorks 访问层：`dataworks_client.py`，region `ap-southeast-1`，凭证只从环境变量读取。不要新增旁路访问层，不要把 AK/SK、token、连接串写入库、日志或回答。
 
 L3 人控：如果回源发现 DataWorks 当前实现与库内口径不一致，只能把差异标为 maintainer 复核项（例如 review queue 或 source-gap），不得自动改正本、不得直接设置 `review: true`。
@@ -332,6 +338,7 @@ L3 人控：如果回源发现 DataWorks 当前实现与库内口径不一致，
 
 ```bash
 python3 scripts/wiki_index.py reverse --root <instance-root> --table <table-name>
+python3 scripts/wiki_index.py origin --root <instance-root> --table <warehouse-table>
 ```
 
 反查输出必须包含贴源 ODS、下游候选、每个候选的层级说明、主题域分组、是否已有知识页、以及调度血缘 caveat。Agent 使用结果时按以下顺序判断：
@@ -342,7 +349,9 @@ python3 scripts/wiki_index.py reverse --root <instance-root> --table <table-name
 4. 默认推荐明细层候选；ODS / TMP / Dexin 投影只能作为溯源证据，不作为直接取数推荐。若用户精确查询 TMP 或 Dexin 投影，输出会显式标注"仅溯源，不建议作为取数定义点"。
 5. 只有 ODS 且无下游时，返回 ODS 溯源结果并说明"未找到下游候选，需人工继续查"。
 6. 无 project 前缀表名（例如 `dim_x`、`s_dwd_x`、`tmp_x`）只有唯一命中时才自动 resolve；若同 basename 命中多个 project，输出 `ambiguous_table_key`，必须带 project 前缀重查。
-7. 反查结果只代表 DataWorks 调度血缘，可能漏掉动态 SQL、脚本内临时表、`tmp_` 临时表中转后的间接下游或未登记依赖；不得自动写 wiki 正本。
+7. **线上表名直接反查**（RFC-032）：查询可以是线上 `source_database.table` / `source_datasource.table`（如 `loan_biz.user_feedback`），命中 `source_binding=parsed` 的 ODS 同步 item 并照常给下游候选；未命中提示会说明可能是该同步任务 binding 未解析。
+8. **origin 溯源**：问"这张仓内表来自线上哪个库哪张表"用 `origin` 子命令——沿 `inputs` 上追到带 binding 的 ODS item，输出 `db_type:database.table`（含 via datasource 别名），多上游全列；`source_binding != parsed` 的上游在 Unresolved bindings 段注明。
+9. 反查结果只代表 DataWorks 调度血缘，可能漏掉动态 SQL、脚本内临时表、`tmp_` 临时表中转后的间接下游或未登记依赖；不得自动写 wiki 正本。
 
 回答出处：
 

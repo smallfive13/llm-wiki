@@ -8,13 +8,16 @@ usable without SDK or network access.
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
 import re
+import sys
 from hashlib import sha256
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from wiki_common import LOCAL_TZ
@@ -550,6 +553,42 @@ class DataWorksClient:
                 return version
         return None
 
+    def get_file_version_code(self, raw_ref: str, file_version: int) -> DataWorksFileCode:
+        """Fetch the content of one committed file version via GetFileVersion.
+
+        GetFile returns the latest saved draft which may be newer than every
+        DEPLOYED version; to answer "what runs in prod", locate the version via
+        get_latest_deployed_version() first, then fetch that exact version here.
+        Committed versions are immutable.
+        """
+        ref = parse_ref(raw_ref)
+        if ref.kind != "file" or ref.file_id is None:
+            raise DataWorksClientError("INVALID_REF", "get_file_version_code requires file:<project>/<fileId>")
+        if not isinstance(file_version, int) or file_version <= 0:
+            raise DataWorksClientError("INVALID_VERSION", "file_version must be a positive integer")
+        kwargs: dict[str, Any] = {"file_id": ref.file_id, "file_version": file_version}
+        if ref.project.isdigit():
+            kwargs["project_id"] = int(ref.project)
+        else:
+            kwargs["project_identifier"] = ref.project
+        try:
+            body = obj_to_map(self._client.get_file_version(self._models.GetFileVersionRequest(**kwargs)).body)
+        except Exception as exc:
+            raise _safe_error(exc) from exc
+        data = (body or {}).get("Data") or {}
+        content = data.get("FileContent")
+        if not isinstance(content, str):
+            raise DataWorksClientError("CONTENT_MISSING", "GetFileVersion response missing Data.FileContent")
+        sort_path = str(data.get("FileName") or ref.raw)
+        fingerprint = code_sha256([(sort_path, content)])
+        return DataWorksFileCode(
+            ref=ref,
+            content=content,
+            content_path="Data.FileContent",
+            sort_path=sort_path,
+            fingerprint=fingerprint,
+        )
+
     def list_successful_prod_deployment_items(
         self,
         project_id: int,
@@ -799,3 +838,191 @@ class DataWorksClient:
             )
         result.sort(key=lambda node: (node.node_name, node.node_id))
         return result
+
+
+DEFAULT_EVIDENCE_CONTEXT = 5
+DEFAULT_EVIDENCE_MAX_LINES = 200
+
+
+def default_version_cache_dir() -> Path:
+    """Engine-side cache for immutable committed-version contents.
+
+    The engine .gitignore is allowlist-style ("*" first), so this directory is
+    never tracked by git nor scanned by gitignore-aware search tools. Code
+    bodies must not be cached inside any wiki instance.
+    """
+    return Path(__file__).resolve().parent.parent / ".cache" / "dataworks" / "file_versions"
+
+
+def version_cache_path(cache_dir: Path, ref: DataWorksRef, file_version: int) -> Path:
+    return Path(cache_dir) / f"{ref.project}-{ref.file_id}-v{int(file_version)}.code"
+
+
+def load_cached_version_code(cache_dir: Path, ref: DataWorksRef, file_version: int) -> Optional[str]:
+    path = version_cache_path(cache_dir, ref, file_version)
+    if path.is_file():
+        return path.read_text(encoding="utf-8")
+    return None
+
+
+def store_cached_version_code(cache_dir: Path, ref: DataWorksRef, file_version: int, content: str) -> Path:
+    path = version_cache_path(cache_dir, ref, file_version)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(content, encoding="utf-8")
+    tmp.replace(path)
+    return path
+
+
+def scan_code_evidence(
+    content: Any,
+    patterns: Sequence[str],
+    *,
+    context: int = DEFAULT_EVIDENCE_CONTEXT,
+    ignore_case: bool = True,
+    max_total_lines: int = DEFAULT_EVIDENCE_MAX_LINES,
+) -> Dict[str, Any]:
+    """Scan code in-process and return only matched snippets.
+
+    The total number of emitted snippet lines is hard-capped so a pathological
+    pattern (e.g. ``.*``) cannot degenerate this mode into a full code dump.
+    """
+    lines = str(content or "").split("\n")
+    flags = re.IGNORECASE if ignore_case else 0
+    context = max(0, int(context))
+    budget = max(1, int(max_total_lines))
+    emitted = 0
+    truncated = False
+    results: List[Dict[str, Any]] = []
+    for raw_pattern in patterns:
+        try:
+            compiled = re.compile(str(raw_pattern), flags)
+        except re.error as exc:
+            raise DataWorksClientError("INVALID_PATTERN", f"invalid regex {raw_pattern!r}: {exc}") from exc
+        hit_lines = [idx for idx, line in enumerate(lines) if compiled.search(line)]
+        ranges: List[Tuple[int, int]] = []
+        for idx in hit_lines:
+            start = max(0, idx - context)
+            end = min(len(lines) - 1, idx + context)
+            if ranges and start <= ranges[-1][1] + 1:
+                ranges[-1] = (ranges[-1][0], max(ranges[-1][1], end))
+            else:
+                ranges.append((start, end))
+        snippets: List[Dict[str, Any]] = []
+        for start, end in ranges:
+            if emitted >= budget:
+                truncated = True
+                break
+            take = min(end - start + 1, budget - emitted)
+            if take < end - start + 1:
+                truncated = True
+            snippet_lines = lines[start : start + take]
+            emitted += len(snippet_lines)
+            snippets.append({"line_start": start + 1, "line_end": start + take, "lines": snippet_lines})
+        results.append(
+            {
+                "pattern": str(raw_pattern),
+                "matched": bool(hit_lines),
+                "match_count": len(hit_lines),
+                "snippets": snippets,
+            }
+        )
+    return {
+        "patterns": results,
+        "total_snippet_lines": emitted,
+        "total_code_lines": len(lines),
+        "truncated": truncated,
+    }
+
+
+def render_evidence(report: Dict[str, Any]) -> str:
+    lines = [
+        "dataworks-client evidence",
+        "=========================",
+        f"ref: {report['ref']}",
+        f"file_version: {report['file_version']} (DEPLOYED)",
+        f"commit_time: {report.get('commit_time')}",
+        f"fingerprint: {report.get('fingerprint')}",
+        f"cache: {report.get('cache')}",
+        f"code_lines: {report.get('total_code_lines')} · snippet_lines: {report.get('total_snippet_lines')}"
+        + (" · TRUNCATED（收紧 pattern 或调 --max-lines）" if report.get("truncated") else ""),
+    ]
+    for entry in report.get("patterns", []):
+        lines.extend(["", f"Pattern: {entry['pattern']}", f"matched: {entry['matched']} · match_count: {entry['match_count']}"])
+        for snippet in entry.get("snippets", []):
+            lines.append(f"--- L{snippet['line_start']}-L{snippet['line_end']} ---")
+            lines.extend(snippet["lines"])
+        if entry["matched"] and not entry.get("snippets"):
+            lines.append("(snippets omitted: line budget exhausted)")
+    return "\n".join(lines) + "\n"
+
+
+def run_evidence(args: argparse.Namespace, *, client_factory: Optional[Any] = None) -> int:
+    try:
+        ref = parse_ref(args.ref)
+        if ref.kind != "file":
+            raise DataWorksClientError("INVALID_REF", "evidence requires file:<project>/<fileId>")
+        cache_dir = Path(args.cache_dir) if args.cache_dir else default_version_cache_dir()
+        client = client_factory() if client_factory else DataWorksClient.from_env()
+        version = client.get_latest_deployed_version(args.ref)
+        if version is None or version.file_version is None:
+            print(f"dataworks-client warning: NO_DEPLOYED_VERSION: {args.ref} 未发现 DEPLOYED 版本（已扫描页内）")
+            return 1
+        content = load_cached_version_code(cache_dir, ref, version.file_version)
+        cache_state = "hit"
+        if content is None:
+            cache_state = "miss"
+            content = client.get_file_version_code(args.ref, version.file_version).content
+            store_cached_version_code(cache_dir, ref, version.file_version, content)
+        fingerprint = code_sha256([(str(version.file_name or ref.raw), content)])
+        evidence = scan_code_evidence(
+            content,
+            args.pattern,
+            context=args.context,
+            ignore_case=not args.case_sensitive,
+            max_total_lines=args.max_lines,
+        )
+    except DataWorksClientError as exc:
+        print(f"dataworks-client warning: {exc.code}: {exc.message}", file=sys.stderr)
+        return 1
+    report = {
+        "ref": args.ref,
+        "file_id": ref.file_id,
+        "file_version": version.file_version,
+        "commit_time": version.commit_time_iso,
+        "fingerprint": fingerprint,
+        "cache": cache_state,
+        **evidence,
+    }
+    if args.json:
+        print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        print(render_evidence(report), end="")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="DataWorks access CLI（evidence：按最新 DEPLOYED 版本取码，只输出证据片段）")
+    sub = parser.add_subparsers(dest="command")
+    evidence = sub.add_parser("evidence", help="scan latest DEPLOYED version, print matched snippets only")
+    evidence.add_argument("--ref", required=True, help="file:<project>/<fileId>")
+    evidence.add_argument("--pattern", action="append", required=True, help="regex to match; repeatable")
+    evidence.add_argument("--context", type=int, default=DEFAULT_EVIDENCE_CONTEXT, help="context lines around each hit; default 5")
+    evidence.add_argument("--max-lines", type=int, default=DEFAULT_EVIDENCE_MAX_LINES, help="hard cap on total snippet lines; default 200")
+    evidence.add_argument("--case-sensitive", action="store_true", help="patterns are case-insensitive by default (SQL)")
+    evidence.add_argument("--cache-dir", help="override version cache dir; default <engine>/.cache/dataworks/file_versions")
+    evidence.add_argument("--json", action="store_true", help="output JSON")
+    return parser
+
+
+def main(argv: Optional[List[str]] = None, *, client_factory: Optional[Any] = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.command == "evidence":
+        return run_evidence(args, client_factory=client_factory)
+    parser.print_help()
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

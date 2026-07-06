@@ -463,6 +463,24 @@ python3 scripts/wiki_freshness.py --root /abs/path/to/knowledge-pk --datasource-
 - `1`：`--check` 下发现 drift 或增量部署模式下存在 index update
 - `2`：参数或实例路径配置错误
 
+## dataworks-client evidence
+
+实现：见 [`dataworks_client.py`](dataworks_client.py)（RFC-032）
+
+确认"线上怎么算"的标准取码链路是**已部署版本**，不是设计态草稿：`GetFile`（`get_file_code`）返回最新保存草稿，可能比任何 DEPLOYED 版本新。`evidence` 动词封装正确路径——`get_latest_deployed_version` 定位 prod `file_version` → `get_file_version_code`（GetFileVersion）拉那一版内容 → 进程内 regex 扫描，**stdout 只输出命中片段，严禁整段代码**：
+
+```bash
+python3 scripts/dataworks_client.py evidence --ref file:96107/500338693 --pattern repay_amount
+python3 scripts/dataworks_client.py evidence --ref file:96107/500338693 --pattern repay_amount --pattern is_deal --context 3
+python3 scripts/dataworks_client.py evidence --ref file:96107/500338693 --pattern repay_amount --json
+```
+
+- 输出：`file_id` / `file_version`（DEPLOYED）/ `commit_time` / `dw-code-v1` 指纹 / 每 pattern 命中数与命中行 ±N 行片段。
+- 硬闸：全部片段合计行数封顶（默认 200，`--max-lines` 调整），超限截断并标记 `TRUNCATED`——`.*` 这类 pattern 无法把片段模式退化成全量 dump。
+- pattern 默认忽略大小写（SQL 语境），`--case-sensitive` 关闭。
+- 缓存：按 `(project, file_id, file_version)` 缓存在 `<engine>/.cache/dataworks/file_versions/`；已提交版本不可变，缓存永不失效。引擎 `.gitignore` 为 allowlist 模式，该目录不进 Git、不被 gitignore-aware 检索扫到；不得改到知识库实例目录。
+- Agent 约定：需要看线上代码时**先用 evidence，不裸调 SDK**（`ListFileVersions` 的 `FileContent` 多版本全文会冲爆模型上下文——真实事故约 123.5k token）；确需更多上下文时逐步扩 `--context` / 加 pattern，而不是拉全文。
+
 ## wiki-index
 
 实现：见 [`wiki_index.py`](wiki_index.py)
@@ -510,9 +528,16 @@ python3 scripts/wiki_index.py --root /abs/path/to/knowledge-pk --project-id 9610
 python3 scripts/wiki_index.py reverse --root /abs/path/to/knowledge-pk --table mysql_trade.orders
 python3 scripts/wiki_index.py reverse --root /abs/path/to/knowledge-pk --table mysql_trade.orders --include-summary
 python3 scripts/wiki_index.py reverse --root /abs/path/to/knowledge-pk --table mysql_trade.orders --json
+python3 scripts/wiki_index.py reverse --root /abs/path/to/knowledge-pk --table loan_biz.user_feedback
+python3 scripts/wiki_index.py origin --root /abs/path/to/knowledge-pk --table pk_data.dwd_service_cs_work_status_records_dly
 ```
 
 默认是 dry-run，只打印将写入的摘要；只有显式 `--write` 才更新 `.wiki/dataworks_index.json`。
+
+线上表名反查与 origin 溯源（RFC-032，均离线只读本地索引）：
+
+- `reverse` 的查询键包含 ODS source binding（仅 `source_binding=parsed` 项）：可直接输入线上 `source_database.table`（如 `loan_biz.user_feedback`）、`source_datasource.table`（如 `loan_biz_autosync_3.user_feedback`）或裸表名（basename 唯一命中时兜底），命中对应 ODS 同步 item 并照常给出下游 DWD/DWB 候选。未命中提示会说明线上表名反查已支持、以及 binding 未解析的可能。
+- `origin` 从仓内表沿 `inputs` 向上追到带 binding 的 ODS item，输出线上来源 `db_type:database.table`（含 via datasource 别名）；多条上游全部列出。同一 ODS 处理链已由 extract 项给出 parsed 来源时，链上 `pre`/终表等 inferred 阶段不再列为未解析；真正无 parsed binding 的上游会在 `Unresolved bindings` 段注明。
 
 全量初始化不传 `--max-pages`，会按 DataWorks `PageNumber` / `PageSize` 翻页拉完整 PROD 调度清单；验证或排障时可以用 `--max-pages 2` 做限量 smoke。`reverse` 子命令只读本地索引，不调用 DataWorks：给定线上表或离线表名后，反查时实时归一化表名（`ods.X.extract/pre/assign/fix` 与 `ods_X` 统一，保留 `_dly/_snp` 等身份后缀），再做精确血缘匹配。默认穿过 ODS 内部处理环节并收敛到第一层明细候选，按主题域分组输出候选、层级说明、是否已有知识页，以及 caveat："基于 DataWorks 调度血缘，可能漏掉动态 SQL、脚本内临时表或未登记依赖"。
 
