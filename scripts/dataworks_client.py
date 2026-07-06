@@ -101,6 +101,19 @@ class DataWorksDeploymentItem:
 
 
 @dataclass(frozen=True)
+class DataWorksFileVersion:
+    file_version: Optional[int]
+    commit_time_ms: Optional[int]
+    commit_time_iso: Optional[str]
+    commit_user: Optional[str]
+    change_type: Optional[str]
+    status: Optional[str]
+    use_type: Optional[str]
+    file_name: Optional[str]
+    comment: Optional[str]
+
+
+@dataclass(frozen=True)
 class DataWorksSourceBinding:
     source_binding: str
     source_datasource: Optional[str]
@@ -474,6 +487,68 @@ class DataWorksClient:
 
     def get_file_fingerprint(self, raw_ref: str) -> str:
         return self.get_file_code(raw_ref).fingerprint
+
+    def list_file_versions(self, raw_ref: str, *, page_size: int = 10, max_pages: Optional[int] = 1) -> List[DataWorksFileVersion]:
+        """List committed versions of a design file, newest first.
+
+        GetFile returns the latest saved draft, which may be newer than every
+        committed version; per-file deployment questions should be answered
+        here (newest DEPLOYED version), not by scanning deployment records.
+        """
+        ref = parse_ref(raw_ref)
+        if ref.kind != "file" or ref.file_id is None:
+            raise DataWorksClientError("INVALID_REF", "list_file_versions requires file:<project>/<fileId>")
+        kwargs: dict[str, Any] = {"file_id": ref.file_id}
+        if ref.project.isdigit():
+            kwargs["project_id"] = int(ref.project)
+        else:
+            kwargs["project_identifier"] = ref.project
+        result: List[DataWorksFileVersion] = []
+        page_number = 1
+        while True:
+            try:
+                body = obj_to_map(
+                    self._client.list_file_versions(
+                        self._models.ListFileVersionsRequest(page_number=page_number, page_size=page_size, **kwargs)
+                    ).body
+                )
+            except Exception as exc:
+                raise _safe_error(exc) from exc
+            data = (body or {}).get("Data") or {}
+            versions = data.get("FileVersions") or []
+            if not isinstance(versions, list) or not versions:
+                break
+            for item in versions:
+                if not isinstance(item, dict):
+                    continue
+                commit_ms = _int_or_none(item.get("CommitTime"))
+                result.append(
+                    DataWorksFileVersion(
+                        file_version=_int_or_none(item.get("FileVersion")),
+                        commit_time_ms=commit_ms,
+                        commit_time_iso=epoch_ms_to_iso(commit_ms),
+                        commit_user=_string_or_none(item.get("CommitUser")),
+                        change_type=_string_or_none(item.get("ChangeType")),
+                        status=_string_or_none(item.get("Status")),
+                        use_type=_string_or_none(item.get("UseType")),
+                        file_name=_string_or_none(item.get("FileName")),
+                        comment=_string_or_none(item.get("Comment")),
+                    )
+                )
+            total = data.get("TotalCount")
+            if max_pages is not None and page_number >= max_pages:
+                break
+            if not isinstance(total, int) or page_number * page_size >= total:
+                break
+            page_number += 1
+        result.sort(key=lambda version: version.file_version or 0, reverse=True)
+        return result
+
+    def get_latest_deployed_version(self, raw_ref: str, *, page_size: int = 10, max_pages: Optional[int] = 5) -> Optional[DataWorksFileVersion]:
+        for version in self.list_file_versions(raw_ref, page_size=page_size, max_pages=max_pages):
+            if (version.status or "").upper() == "DEPLOYED":
+                return version
+        return None
 
     def list_successful_prod_deployment_items(
         self,
