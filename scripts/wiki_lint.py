@@ -33,6 +33,7 @@ from wiki_common import (
     MarkdownDoc,
     PROFILE_ERROR_CODES,
     ProfileIssue,
+    WikiCliConfigError,
     find_generated_doc_blocks,
     generate_doc_block,
     effective_id_regex,
@@ -45,6 +46,7 @@ from wiki_common import (
     normalize_alias,
     now_iso,
     profile_name,
+    resolve_instance_root_arg,
     staleness_age_days,
     staleness_threshold,
     strip_code_spans,
@@ -174,14 +176,11 @@ def _repo_root() -> Path:
 
 
 def _instance_root(repo_root: Path, raw_root: Optional[str]) -> Path:
-    path = Path(raw_root) if raw_root else repo_root / "knowledge"
-    if not path.is_absolute():
-        path = repo_root / path
-    path = path.resolve()
-    if not path.is_dir():
-        print(f"wiki-lint config error: instance root not found: {path}", file=sys.stderr)
+    try:
+        return resolve_instance_root_arg(repo_root, raw_root)
+    except WikiCliConfigError as exc:
+        print(f"wiki-lint config error: {exc}", file=sys.stderr)
         sys.exit(2)
-    return path
 
 
 def configure(args: argparse.Namespace) -> None:
@@ -1505,7 +1504,7 @@ def check_docs(fix: bool) -> Tuple[int, Dict[str, Any], str]:
     return (1 if errors else 0), data, "\n".join(lines)
 
 
-def main() -> int:
+def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="wiki-lint MVP")
     parser.add_argument("--root", help="实例根目录；缺省为 ./knowledge")
     parser.add_argument("--check-only", action="store_true")
@@ -1515,7 +1514,7 @@ def main() -> int:
     parser.add_argument("--fix", action="store_true", help="配合 --check-docs 只修复 GENERATED 块内部")
     parser.add_argument("--scan-wiki-pii", action="store_true")
     parser.add_argument("--now", type=lambda value: datetime.strptime(value, "%Y-%m-%d").date(), help=argparse.SUPPRESS)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.now is None:
         args.now = datetime.now(LOCAL_TZ).date()
     if args.ingest_status:

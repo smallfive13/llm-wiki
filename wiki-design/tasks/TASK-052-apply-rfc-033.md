@@ -3,7 +3,7 @@ id: task_20260707_052
 title: Apply RFC-033 — bin/wiki 在线子命令 + @alias 解析收敛 + conf 两级安全 + doctor（含云端 smoke 硬 gate）
 author: claude
 executor: codex
-status: pending
+status: in-progress
 type: apply
 created: 2026-07-07
 updated: 2026-07-07
@@ -61,6 +61,103 @@ python3 -c "import sys; sys.path.insert(0,'scripts'); import wiki_lint,wiki_grap
 - **云端 smoke 证据**（doctor 与 freshness --help 输出，脱敏）或「停等 gate」说明
 - commit sha + RFC-033 Applied、偏离或异常
 
-## Execution log by codex · <date>
+## Execution log by codex · 2026-07-07
+
+状态：**停在云端 smoke gate，未 done**。引擎侧四件事已实现并通过本地验证；但本会话仍无法到达生产云端 shell，按强约束 6 不推进 `status: done`，也不进入 TASK-053。
+
+实现位置：
+
+- `bin/wiki`：新增 `freshness` / `index` / `evidence` / `doctor`；`evidence` 只在命令映射层 prepend 固定 argv `evidence`，用户参数仍原样透传；旧 `lint/graph/eval/init` 行为保留。
+- `bin/wiki` + `scripts/wiki_common.py`：`.wiki-cli.conf` 结构化解析；只允许 `python=` / `root.<alias>=`；未知 key hard fail；高置信凭证样式 hard fail；弱关键词路径仅 `doctor` warning。
+- `scripts/wiki_common.py`：新增 `load_wiki_cli_config()` / `resolve_instance_root_arg()`；`@alias` grammar 为 `^[A-Za-z][A-Za-z0-9_-]*$`，裸 `@alias` 保留别名语义。
+- 已替换五个 root 解析调用点：`scripts/wiki_lint.py`、`scripts/wiki_graph.py`、`scripts/wiki_eval.py`、`scripts/wiki_freshness.py`、`scripts/wiki_index.py`。直调脚本也会解析 `--root @pk`。
+- `scripts/README.md`、`wiki-design/02-workflows.md` 已同步新 CLI、conf 模板、doctor、在线子命令与 `@alias` 说明。
+- `tests/test_task_052.py` 覆盖旧/新子命令转发、evidence 固定前缀、五脚本 alias 生效、三类 alias error、`./@pk` 不触发别名、conf 安全双向 fixture、doctor 凭证值不泄漏、离线隔离。
+- `tests/test_task_022.py` 的空 `python=` 回归用例已改为备份/恢复本机 `.wiki-cli.conf`，避免 RFC-033 的 per-machine conf 变成全量测试噪声。
+
+本地验证：
+
+```bash
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest tests.test_task_052 tests.test_task_022
+# Ran 15 tests in 33.754s — OK
+
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest tests.test_task_029 tests.test_task_031 tests.test_task_032 tests.test_task_035 tests.test_task_049
+# Ran 41 tests in 0.753s — OK (skipped=1)
+
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -m unittest discover -s tests
+# Ran 202 tests in 46.374s — OK (skipped=1)
+
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python scripts/wiki_lint.py --root knowledge --check-docs
+# 错误: 0
+
+./bin/wiki lint --root @pk --check-only
+# lint=0；knowledge-pk 扫描 1431 wiki 页 / 1354 source，错误: 0 · 警告: 0
+
+./bin/wiki freshness --root @pk --help >/dev/null
+# freshness=0
+
+./bin/wiki evidence --help >/dev/null
+# evidence=0
+
+./bin/wiki index reverse --root @pk --help >/dev/null
+# index_reverse_help=0
+
+ALIBABA_CLOUD_ACCESS_KEY_ID='id-value-should-not-print' ALIBABA_CLOUD_ACCESS_KEY_SECRET='secret-value-should-not-print' ./bin/wiki doctor
+# doctor 只显示 ALIBABA_CLOUD_ACCESS_KEY_ID/SECRET: present，未打印 env 值；@pk 指向本机 knowledge-pk 且 exists
+
+/Users/zhangjunwu/soft/anaconda3/bin/conda run -n py312 python -c "import sys; sys.path.insert(0,'scripts'); import wiki_lint,wiki_graph,wiki_eval; print('泄漏:', [m for m in sys.modules if any(k in m.lower() for k in ('dataworks','alibabacloud','sqlglot'))] or '无')"
+# 泄漏: 无
+```
+
+本地临时 conf（`.wiki-cli.conf`，gitignored）：
+
+```ini
+python=/Users/zhangjunwu/soft/anaconda3/bin/conda run --no-capture-output -n py312 python
+root.pk=/Users/zhangjunwu/workspace/obsidian/knowledge-pk
+```
+
+云端 gate 尝试：
+
+```bash
+ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new js_zhangjunwu@cbdhdpfatfat029089 '...'
+# Connection closed by 198.18.1.40 port 22
+
+ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new root@cbdhdpfatfat029089 '...'
+# Connection closed by 198.18.1.40 port 22
+
+ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new cbdhdpfatfat029089 '...'
+# Connection closed by 198.18.1.40 port 22
+
+aliyun configure list
+# AK1 * Invalid region ap-southeast-1.data.aliyun.com
+```
+
+待 maintainer 在云端执行的命令清单（硬 gate）：
+
+```bash
+cd /home/js_zhangjunwu/llm-wiki
+
+cat > .wiki-cli.conf <<'EOF'
+python=/home/js_zhangjunwu/miniconda3-py311/bin/python
+root.pk=/home/js_zhangjunwu/knowledge-pk
+EOF
+
+./bin/wiki doctor
+./bin/wiki freshness --root @pk --help >/tmp/rfc033-freshness-help.out
+echo "freshness_help=$?"
+sed -n '1,20p' /tmp/rfc033-freshness-help.out
+```
+
+通过标准：
+
+- `doctor` 不打印任何凭证值，只显示 DataWorks env present/absent。
+- `python_version` 正常，且使用 `/home/js_zhangjunwu/miniconda3-py311/bin/python`。
+- alias 列表显示 `@pk -> /home/js_zhangjunwu/knowledge-pk [exists]`。
+- `freshness_help=0`，help 输出为 `wiki_freshness.py` 的帮助文本。
+
+后续：
+
+- 云端 gate 通过后，才能把本 task 状态推进 `done`、创建 commit、并在 RFC-033 末尾登记 `## Applied in <sha>`。
+- 只有 TASK-052 done 后才能接 TASK-053；本轮未进入 TASK-053。
 
 ## Evaluation by claude · <date>

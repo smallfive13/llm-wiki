@@ -21,7 +21,7 @@ from dataworks_client import (
     parse_di_source_binding,
     source_binding_to_index_fields,
 )
-from wiki_common import write_json_atomic
+from wiki_common import WikiCliConfigError, resolve_instance_root_arg, write_json_atomic
 
 
 INDEX_VERSION = 2
@@ -77,13 +77,10 @@ def find_repo_root() -> Path:
 
 
 def resolve_instance_root(repo_root: Path, raw_root: Optional[str]) -> Path:
-    root = Path(raw_root) if raw_root else repo_root / "knowledge"
-    if not root.is_absolute():
-        root = repo_root / root
-    root = root.resolve()
-    if not root.is_dir():
-        raise ConfigError(f"instance root not found: {root}")
-    return root
+    try:
+        return resolve_instance_root_arg(repo_root, raw_root)
+    except WikiCliConfigError as exc:
+        raise ConfigError(str(exc)) from exc
 
 
 def infer_layer(name: Optional[str], tables: Iterable[str]) -> Tuple[str, str]:

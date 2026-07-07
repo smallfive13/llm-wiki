@@ -8,7 +8,7 @@ import os
 import re
 import uuid
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
@@ -177,6 +177,25 @@ PROFILE_NAME_RE = re.compile(r"^[a-z][a-z0-9-]*$")
 PROFILE_TYPE_RE = re.compile(r"^[a-z][a-z0-9-]*$")
 PROFILE_PREFIX_RE = re.compile(r"^[a-z]{2,5}$")
 PROFILE_FIELD_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+CLI_ALIAS_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
+CLI_ROOT_KEY_RE = re.compile(r"^root\.([A-Za-z][A-Za-z0-9_-]*)$")
+CLI_SECRET_RE = re.compile(
+    r"(?i)(ALIBABA_CLOUD_ACCESS_KEY_[A-Z_]*|ACCESS_KEY_(?:ID|SECRET)\s*=|LTAI[A-Za-z0-9]{12,}|password\s*[:=]|token\s*[:=]|secret\s*[:=]|bearer\s+)"
+)
+CLI_WEAK_SECRET_RE = re.compile(r"(?i)(token|password|secret)")
+
+
+class WikiCliConfigError(Exception):
+    pass
+
+
+@dataclass
+class WikiCliConfig:
+    path: Path
+    exists: bool
+    python: Optional[str] = None
+    roots: Dict[str, str] = field(default_factory=dict)
+    warnings: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -241,6 +260,72 @@ def clamp_0_100(value: float) -> float:
 
 def round_half_up(value: float) -> int:
     return int(value + 0.5)
+
+
+def wiki_cli_conf_path(engine_root: Path) -> Path:
+    return Path(engine_root) / ".wiki-cli.conf"
+
+
+def _cli_secret_match(text: str) -> Optional[str]:
+    match = CLI_SECRET_RE.search(text)
+    return match.group(0) if match else None
+
+
+def _line_has_weak_keyword(value: str) -> bool:
+    return bool(CLI_WEAK_SECRET_RE.search(value)) and _cli_secret_match(value) is None
+
+
+def load_wiki_cli_config(engine_root: Path) -> WikiCliConfig:
+    path = wiki_cli_conf_path(engine_root)
+    config = WikiCliConfig(path=path, exists=path.is_file())
+    if not config.exists:
+        return config
+
+    for lineno, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            raise WikiCliConfigError(f"{path}:{lineno}: invalid line, expected key=value")
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        secret = _cli_secret_match(f"{key}={value}")
+        if secret:
+            raise WikiCliConfigError(f"{path}:{lineno}: credential-like content is not allowed: {secret}")
+        if key == "python":
+            config.python = value
+            continue
+        root_match = CLI_ROOT_KEY_RE.match(key)
+        if root_match:
+            alias = root_match.group(1)
+            config.roots[alias] = value
+            if _line_has_weak_keyword(value):
+                config.warnings.append(f"{path}:{lineno}: root.{alias} path contains weak keyword; verify it is not a credential path")
+            continue
+        raise WikiCliConfigError(f"{path}:{lineno}: unsupported key {key!r}; allowed keys are python and root.<alias>")
+    return config
+
+
+def resolve_instance_root_arg(repo_root: Path, raw_root: Optional[str], *, must_exist: bool = True) -> Path:
+    if raw_root and raw_root.startswith("@"):
+        alias = raw_root[1:]
+        if not CLI_ALIAS_RE.match(alias):
+            raise WikiCliConfigError(f"invalid root alias {raw_root!r}; alias must match ^[A-Za-z][A-Za-z0-9_-]*$")
+        config = load_wiki_cli_config(repo_root)
+        if alias not in config.roots:
+            raise WikiCliConfigError(f"root alias @{alias} is not configured; add root.{alias}=<本机路径> to {config.path}")
+        path = Path(config.roots[alias]).expanduser()
+        if not path.is_absolute():
+            raise WikiCliConfigError(f"root alias @{alias} must resolve to an absolute path: {path}")
+    else:
+        path = Path(raw_root).expanduser() if raw_root else repo_root / "knowledge"
+        if not path.is_absolute():
+            path = repo_root / path
+    path = path.resolve()
+    if must_exist and not path.is_dir():
+        raise WikiCliConfigError(f"instance root not found: {path}")
+    return path
 
 
 def ingest_progress(source_manifest: Dict[str, Any], statuses: List[str]) -> Dict[str, Any]:

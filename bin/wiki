@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<'EOF'
-usage: wiki <lint|graph|eval|init> [args...]
+usage: wiki <lint|graph|eval|init|freshness|index|evidence|doctor> [args...]
 
 Set WIKI_PY or .wiki-cli.conf python=... to override the Python command.
 EOF
@@ -19,19 +19,40 @@ fi
 
 sub="$1"
 shift
+PREFIX=()
 
 case "$sub" in
   lint)
     SCRIPT="scripts/wiki_lint.py"
+    PREFIX=()
     ;;
   graph)
     SCRIPT="scripts/wiki_graph.py"
+    PREFIX=()
     ;;
   eval)
     SCRIPT="scripts/wiki_eval.py"
+    PREFIX=()
     ;;
   init)
     SCRIPT="scripts/wiki_init.py"
+    PREFIX=()
+    ;;
+  freshness)
+    SCRIPT="scripts/wiki_freshness.py"
+    PREFIX=()
+    ;;
+  index)
+    SCRIPT="scripts/wiki_index.py"
+    PREFIX=()
+    ;;
+  evidence)
+    SCRIPT="scripts/dataworks_client.py"
+    PREFIX=("evidence")
+    ;;
+  doctor)
+    SCRIPT=""
+    PREFIX=()
     ;;
   *)
     echo "wiki: unknown subcommand: $sub" >&2
@@ -40,19 +61,68 @@ case "$sub" in
     ;;
 esac
 
-read_conf_python() {
+CONF_PYTHON=""
+CONF_HAS_PYTHON=0
+CONF_ROOT_KEYS=()
+CONF_ROOT_VALUES=()
+CONF_WARNINGS=()
+
+secret_match() {
+  local text="$1"
+  [[ "$text" =~ (ALIBABA_CLOUD_ACCESS_KEY_[A-Z_]*|ACCESS_KEY_(ID|SECRET)[[:space:]]*=|LTAI[A-Za-z0-9]{12,}|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd][[:space:]]*[:=]|[Tt][Oo][Kk][Ee][Nn][[:space:]]*[:=]|[Ss][Ee][Cc][Rr][Ee][Tt][[:space:]]*[:=]|[Bb][Ee][Aa][Rr][Ee][Rr][[:space:]]+) ]]
+}
+
+weak_keyword() {
+  local text="$1"
+  [[ "$text" =~ ([Tt][Oo][Kk][Ee][Nn]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Ss][Ee][Cc][Rr][Ee][Tt]) ]]
+}
+
+parse_conf() {
   local conf="$ENGINE/.wiki-cli.conf"
-  [[ -f "$conf" ]] || return 1
-  local line
-  while IFS= read -r line; do
-    case "$line" in
-      python=*)
-        printf '%s\n' "${line#python=}"
-        return 0
-        ;;
-    esac
+  [[ -f "$conf" ]] || return 0
+  local line lineno key value alias
+  lineno=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    lineno=$((lineno + 1))
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    if [[ "$line" != *=* ]]; then
+      echo "wiki: $conf:$lineno: invalid line, expected key=value" >&2
+      exit 2
+    fi
+    key="${line%%=*}"
+    value="${line#*=}"
+    key="${key#"${key%%[![:space:]]*}"}"
+    key="${key%"${key##*[![:space:]]}"}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    if secret_match "$key=$value"; then
+      echo "wiki: $conf:$lineno: credential-like content is not allowed" >&2
+      exit 2
+    fi
+    if [[ "$key" == "python" ]]; then
+      CONF_PYTHON="$value"
+      CONF_HAS_PYTHON=1
+    elif [[ "$key" =~ ^root\.([A-Za-z][A-Za-z0-9_-]*)$ ]]; then
+      alias="${BASH_REMATCH[1]}"
+      CONF_ROOT_KEYS+=("$alias")
+      CONF_ROOT_VALUES+=("$value")
+      if weak_keyword "$value" && ! secret_match "$value"; then
+        CONF_WARNINGS+=("root.$alias path contains weak keyword; verify it is not a credential path")
+      fi
+    else
+      echo "wiki: $conf:$lineno: unsupported key '$key'; allowed keys are python and root.<alias>" >&2
+      exit 2
+    fi
   done < "$conf"
-  return 1
+}
+
+parse_conf
+
+read_conf_python() {
+  [[ "$CONF_HAS_PYTHON" -eq 1 ]] || return 1
+  printf '%s\n' "$CONF_PYTHON"
 }
 
 interp_str=""
@@ -88,5 +158,52 @@ if ! command -v "${INTERP[0]}" >/dev/null 2>&1; then
   exit 127
 fi
 
+if [[ "$sub" == "doctor" ]]; then
+  echo "wiki doctor"
+  echo "engine: $ENGINE"
+  echo "conf: $ENGINE/.wiki-cli.conf"
+  if [[ -n "$interp_str" ]]; then
+    echo "python: $interp_str"
+    if version_out="$("${INTERP[@]}" --version 2>&1)"; then
+      echo "python_version: $version_out"
+    else
+      echo "python_version: failed"
+    fi
+  fi
+  echo "aliases:"
+  if [[ ${#CONF_ROOT_KEYS[@]} -eq 0 ]]; then
+    echo "  (none)"
+  else
+    for i in "${!CONF_ROOT_KEYS[@]}"; do
+      path="${CONF_ROOT_VALUES[$i]}"
+      if [[ -d "$path" ]]; then
+        exists="exists"
+      else
+        exists="missing"
+      fi
+      echo "  @${CONF_ROOT_KEYS[$i]} -> $path [$exists]"
+    done
+  fi
+  echo "credentials:"
+  for name in ALIBABA_CLOUD_ACCESS_KEY_ID ALIBABA_CLOUD_ACCESS_KEY_SECRET; do
+    if [[ -n "${!name:-}" ]]; then
+      echo "  $name: present"
+    else
+      echo "  $name: absent"
+    fi
+  done
+  if [[ ${#CONF_WARNINGS[@]} -gt 0 ]]; then
+    echo "warnings:"
+    for warning in "${CONF_WARNINGS[@]}"; do
+      echo "  $warning"
+    done
+  fi
+  exit 0
+fi
+
 cd "$ENGINE"
-exec "${INTERP[@]}" "$SCRIPT" "$@"
+if [[ ${#PREFIX[@]} -gt 0 ]]; then
+  exec "${INTERP[@]}" "$SCRIPT" "${PREFIX[@]}" "$@"
+else
+  exec "${INTERP[@]}" "$SCRIPT" "$@"
+fi

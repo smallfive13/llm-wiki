@@ -11,17 +11,14 @@ from typing import Any, Dict, List, Optional
 
 import wiki_graph
 import wiki_lint
-from wiki_common import BASE_SCHEMA, clamp_0_100, now_iso, round_half_up
+from wiki_common import BASE_SCHEMA, WikiCliConfigError, clamp_0_100, now_iso, resolve_instance_root_arg, round_half_up
 
 
 DIM_ORDER = ["integrity", "freshness", "endorsement", "connectivity"]
 
 
 def instance_root(repo_root: Path, raw_root: Optional[str]) -> Path:
-    path = Path(raw_root) if raw_root else repo_root / "knowledge"
-    if not path.is_absolute():
-        path = repo_root / path
-    return path.resolve()
+    return resolve_instance_root_arg(repo_root, raw_root)
 
 
 def _active_nodes(graph: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -300,16 +297,20 @@ def check_exit_code(result: Dict[str, Any]) -> int:
     return 1
 
 
-def main() -> int:
+def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Evaluate llm-wiki knowledge health")
     parser.add_argument("--root", help="实例根目录；缺省为 ./knowledge")
     parser.add_argument("--json", action="store_true", dest="json_output")
     parser.add_argument("--snapshot", action="store_true")
     parser.add_argument("--check", action="store_true")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     repo_root = Path(__file__).resolve().parents[1]
-    root = instance_root(repo_root, args.root)
+    try:
+        root = instance_root(repo_root, args.root)
+    except WikiCliConfigError as exc:
+        print(f"wiki-eval config error: {exc}", file=sys.stderr)
+        return 2
     result = evaluate(root)
     previous = read_last_snapshot(root)
     snapshot_written = append_snapshot(root, result) if args.snapshot else False

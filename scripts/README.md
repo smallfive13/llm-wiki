@@ -5,15 +5,19 @@
 ## wiki CLI wrapper
 
 实现：见 [`../bin/wiki`](../bin/wiki)
-设计：见 [`../wiki-design/rfcs/RFC-022-wiki-cli-wrapper.md`](../wiki-design/rfcs/RFC-022-wiki-cli-wrapper.md)
+设计：见 [`../wiki-design/rfcs/RFC-022-wiki-cli-wrapper.md`](../wiki-design/rfcs/RFC-022-wiki-cli-wrapper.md) 与 [`../wiki-design/rfcs/RFC-033-per-machine-env-config.md`](../wiki-design/rfcs/RFC-033-per-machine-env-config.md)
 
-`bin/wiki` 是薄 wrapper，只做引擎根定位、Python 解释器解析、子命令映射和参数透传；不包含业务逻辑，不改变 `scripts/wiki_*.py` 默认行为。它会从自身位置推出引擎根并 `cd` 过去，因此可在任意 cwd 调用。
+`bin/wiki` 是薄 wrapper，只做引擎根定位、Python 解释器解析、子命令映射和参数透传；不包含业务逻辑，不改变 `scripts/wiki_*.py` 默认行为。它会从自身位置推出引擎根并 `cd` 过去，因此可在任意 cwd 调用。`wiki evidence` 只在命令映射层追加固定 argv 前缀 `evidence`，用户参数仍原样透传。
 
 ```bash
 bin/wiki lint --root knowledge --check-only
 bin/wiki graph --root knowledge
 bin/wiki eval --root knowledge --json
 bin/wiki init --root /abs/path/to/instance --sync-schema --force
+bin/wiki freshness --root @pk --incremental-deployments --project-id 96107 --check
+bin/wiki index reverse --root @pk --table pk_data.ods_x
+bin/wiki evidence --ref file:96107/123456 --pattern product_user_type
+bin/wiki doctor
 ```
 
 子命令映射：
@@ -24,6 +28,10 @@ bin/wiki init --root /abs/path/to/instance --sync-schema --force
 | `wiki graph [args]` | `python scripts/wiki_graph.py [args]` |
 | `wiki eval [args]` | `python scripts/wiki_eval.py [args]` |
 | `wiki init [args]` | `python scripts/wiki_init.py [args]` |
+| `wiki freshness [args]` | `python scripts/wiki_freshness.py [args]` |
+| `wiki index [args]` | `python scripts/wiki_index.py [args]` |
+| `wiki evidence [args]` | `python scripts/dataworks_client.py evidence [args]` |
+| `wiki doctor` | wrapper 自检：解释器、conf、别名、DataWorks env present/absent |
 
 解释器解析顺序：
 
@@ -33,6 +41,34 @@ bin/wiki init --root /abs/path/to/instance --sync-schema --force
 4. `python3`。
 
 `bin/wiki` 使用 bash 数组执行：解释器命令先拆成 argv，用户参数始终用 `"$@"` 原样透传，退出码由目标脚本透传。解释器 token 不支持空格；`.wiki-cli.conf` 是每机器配置，已 gitignore。`bin/wiki` 不支持 symlink 安装，推荐把 `<engine>/bin` 加入 `PATH`，或直接调用 `<engine>/bin/wiki`。
+
+### 每机器 `.wiki-cli.conf`
+
+引擎根可放一份本机私有 `.wiki-cli.conf`，不进 Git：
+
+```ini
+python=/Users/zhangjunwu/soft/anaconda3/bin/conda run --no-capture-output -n py312 python
+root.pk=/Users/zhangjunwu/workspace/obsidian/knowledge-pk
+```
+
+云端示例：
+
+```ini
+python=/home/js_zhangjunwu/miniconda3-py311/bin/python
+root.pk=/home/js_zhangjunwu/knowledge-pk
+```
+
+`root.<alias>=<绝对路径>` 可让 `--root @pk` 在 `wiki_lint.py` / `wiki_graph.py` / `wiki_eval.py` / `wiki_freshness.py` / `wiki_index.py` 中统一解析；直调脚本也生效。alias 必须匹配 `^[A-Za-z][A-Za-z0-9_-]*$`。裸 `@pk` 是保留别名语义；真实目录若叫 `@pk`，请写 `./@pk`。
+
+`.wiki-cli.conf` 只允许 `python=` 和 `root.<alias>=`。未知 key 直接拒跑；高置信凭证样式（如 `ACCESS_KEY_SECRET=...`、`LTAI...`、`password=`、`token=`、`secret=`、`bearer ...`）直接拒跑。路径中普通出现 `token/password/secret` 只在 `wiki doctor` warning，不拒跑；凭证仍只能来自环境变量。
+
+排障入口：
+
+```bash
+bin/wiki doctor
+```
+
+`doctor` 打印引擎根、解释器与版本、conf 路径、已配置别名及路径存在性、DataWorks 凭证 env 的 present/absent；不会打印任何凭证值。
 
 ## wiki-lint
 

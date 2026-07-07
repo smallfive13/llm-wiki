@@ -151,7 +151,7 @@ class Task022WikiWrapperTest(unittest.TestCase):
 
     def test_empty_config_python_does_not_empty_exec(self) -> None:
         conf = REPO / ".wiki-cli.conf"
-        self.assertFalse(conf.exists(), "test assumes no checked-in .wiki-cli.conf")
+        existing = conf.read_text(encoding="utf-8") if conf.exists() else None
         try:
             conf.write_text("python=\n", encoding="utf-8")
             result = subprocess.run(
@@ -166,6 +166,8 @@ class Task022WikiWrapperTest(unittest.TestCase):
             self.assertIn("python= is empty", result.stderr)
         finally:
             conf.unlink(missing_ok=True)
+            if existing is not None:
+                conf.write_text(existing, encoding="utf-8")
 
     def test_exit_code_passthrough_for_lint_error_and_config_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

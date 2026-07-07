@@ -582,9 +582,13 @@ python3 scripts/wiki_eval.py --root <实例路径> --check
 
 ```bash
 wiki init --root <实例路径>
-wiki lint --root <实例路径> --check-only
-wiki graph --root <实例路径>
-wiki eval --root <实例路径> --json
+wiki lint --root @pk --check-only
+wiki graph --root @pk
+wiki eval --root @pk --json
+wiki freshness --root @pk --incremental-deployments --project-id 96107 --check
+wiki index reverse --root @pk --table <table-name>
+wiki evidence --ref file:<project>/<fileId> --pattern <regex>
+wiki doctor
 ```
 
-`wiki` 目前只包装 `init` / `lint` / `graph` / `eval` 四个工具命令；上下文读取、query、ingest、crystallize、review/apply 仍按本文件流程由 Agent 读写 Markdown 与 JSON 正本。
+`wiki` 包装离线工具与 DataWorks 在线辅助工具：`init` / `lint` / `graph` / `eval` / `freshness` / `index` / `evidence` / `doctor`。每机器路径与解释器放在引擎根 `.wiki-cli.conf`；实例路径建议写成 `--root @<alias>`，例如 `@pk`。`@alias` 由 Python 公共层解析，因此直调脚本也生效。上下文读取、query、ingest、crystallize、review/apply 仍按本文件流程由 Agent 读写 Markdown 与 JSON 正本。

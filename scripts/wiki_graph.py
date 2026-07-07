@@ -20,6 +20,7 @@ from wiki_common import (
     BASE_SCHEMA,
     LOCAL_TZ,
     MarkdownDoc,
+    WikiCliConfigError,
     first_h1,
     is_stale,
     load_markdown,
@@ -28,6 +29,7 @@ from wiki_common import (
     normalize_alias,
     now_iso,
     profile_name,
+    resolve_instance_root_arg,
     staleness_age_days,
     staleness_threshold,
     strip_code_spans,
@@ -53,14 +55,11 @@ def find_root() -> Path:
 
 
 def instance_root(repo_root: Path, raw_root: Optional[str]) -> Path:
-    path = Path(raw_root) if raw_root else repo_root / "knowledge"
-    if not path.is_absolute():
-        path = repo_root / path
-    path = path.resolve()
-    if not path.is_dir():
-        print(f"wiki-graph config error: instance root not found: {path}", file=sys.stderr)
+    try:
+        return resolve_instance_root_arg(repo_root, raw_root)
+    except WikiCliConfigError as exc:
+        print(f"wiki-graph config error: {exc}", file=sys.stderr)
         sys.exit(2)
-    return path
 
 
 def load_effective_schema(root: Path) -> Tuple[Dict[str, Any], str]:
@@ -662,11 +661,11 @@ def evaluate_instance(root: Path) -> Dict[str, Any]:
     }
 
 
-def main() -> int:
+def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Build llm-wiki graph projection")
     parser.add_argument("--root", help="实例根目录；缺省为 ./knowledge")
     parser.add_argument("--json", action="store_true", dest="json_output")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     root = instance_root(find_root(), args.root)
     schema, active_profile = load_effective_schema(root)
     print(f"wiki-graph instance root: {root} · profile: {active_profile}", file=sys.stderr)
