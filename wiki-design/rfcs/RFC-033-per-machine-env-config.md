@@ -2,7 +2,7 @@
 id: rfc_20260707_033
 title: 每机器环境配置抽象 — bin/wiki 覆盖在线工具 + 实例 root 别名 + doctor
 author: claude
-status: discussing
+status: accepted
 created: 2026-07-07
 updated: 2026-07-07
 targets:
@@ -106,7 +106,7 @@ reviewers:
 
 ## Decision
 
-（由用户填写，或用户明确授权某个 Agent 代写。）
+**Accepted**（用户 2026-07-07 明确 accept，授权 claude 代写结论）。codex review 三点调整（结构化 key 白名单 + 两级凭证扫描 / 别名 grammar + 调用点收敛 / evidence 固定 argv 前缀语义）已吸收进正文；云端 smoke 时序澄清为 **apply-task done 硬 gate**（新功能 accepted 前无从 smoke）。落地：**TASK-052**（引擎 apply，含云端 gate）→ **TASK-053**（pk 实例收敛：AGENTS.md / runbook 去机器路径）。
 
 ## Review by codex
 

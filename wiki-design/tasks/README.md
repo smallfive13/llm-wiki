@@ -59,6 +59,8 @@ Task 回答"怎么做、谁来做"，与 RFC 回答"要不要这么改"互补。
 | [task_20260703_049](TASK-049-apply-rfc-031.md) | Apply RFC-031 — 数据源解析 sanitized DTO + 禁词门禁 + 数据源巡检（引擎侧） | done | claude | codex | RFC-031 |
 | [task_20260703_050](TASK-050-pk-datasource-map-backfill.md) | knowledge-pk 数据源解析表生成 + source_database 回填 + 核对 gate + 措辞精确化 | done | claude | codex | RFC-031 |
 | [task_20260706_051](TASK-051-apply-rfc-032.md) | Apply RFC-032 — GetFileVersion 取码 + evidence 片段模式 + reverse binding 键 / origin | done | claude | claude | RFC-032 |
+| [task_20260707_052](TASK-052-apply-rfc-033.md) | Apply RFC-033 — bin/wiki 在线子命令 + @alias 收敛 + conf 两级安全 + doctor（云端 smoke 硬 gate） | pending | claude | codex | RFC-033 |
+| [task_20260707_053](TASK-053-pk-env-config-convergence.md) | knowledge-pk 环境配置收敛 — AGENTS/runbook 去机器路径改 @pk | pending | claude | codex | RFC-033 |
 
 > 注：本表在 TASK-031 后存在既有欠账（032-035 已存在于目录但未回填索引行）；036-050 为本轮新增。
 
