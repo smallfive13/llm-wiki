@@ -38,7 +38,7 @@
 | [rfc_20260703_030](RFC-030-ods-source-binding-parsed.md) | ODS 源表 binding 配置解析（parsed/inferred/unparsed/ambiguous）+ 批量快审背书流程 | accepted | claude |
 | [rfc_20260703_031](RFC-031-datasource-resolution.md) | DataWorks 数据源 → 线上库解析（别名 resolution + 无凭证红线） | accepted | claude | `scripts/dataworks_client.py`, `scripts/wiki_index.py`, `scripts/wiki_freshness.py`, `scripts/README.md`, `wiki-design/02-workflows.md`, `tests/` | `scripts/wiki_index.py`, `scripts/dataworks_client.py`, `scripts/wiki_freshness.py`, `wiki-design/02-workflows.md`, `scripts/README.md`, `tests/` |
 | [rfc_20260706_032](RFC-032-deployed-version-evidence-and-binding-lookup.md) | 已部署版本取码 + evidence 证据片段模式 + reverse binding 键 / origin 溯源 | accepted | claude | `scripts/dataworks_client.py`, `scripts/wiki_index.py`, `scripts/README.md`, `wiki-design/02-workflows.md`, `tests/` |
-| [rfc_20260707_033](RFC-033-per-machine-env-config.md) | 每机器环境配置抽象 — bin/wiki 覆盖在线工具 + 实例 root 别名 + doctor | proposed | claude | `bin/wiki`, `scripts/wiki_common.py`, `scripts/README.md`, `wiki-design/02-workflows.md`, `tests/` |
+| [rfc_20260707_033](RFC-033-per-machine-env-config.md) | 每机器环境配置抽象 — bin/wiki 覆盖在线工具 + 实例 root 别名 + doctor | discussing | claude | `bin/wiki`, `scripts/wiki_common.py`, `scripts/README.md`, `wiki-design/02-workflows.md`, `tests/` |
 
 ## 状态
 
